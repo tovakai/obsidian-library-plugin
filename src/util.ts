@@ -27,6 +27,14 @@ export function parseWatched(val: unknown): number {
 	return match ? Number(match[1]) : 0
 }
 
+// The note has been marked by hand since the last sync wrote or received
+// it: their progress and rating stay, the list may only fill what the note
+// leaves empty (an empty Progress means no opinion).
+export function editedSince(echo: { p: string; r: number } | undefined, progress: string, score: number): boolean {
+	if (!echo || !progress.trim()) return false
+	return parseWatched(echo.p) !== parseWatched(progress) || echo.r !== score
+}
+
 export function parseDate(val: unknown): number {
 	if (!val) return 0
 	const raw = toStr(val)
@@ -232,11 +240,12 @@ export function isFinished(fm: Record<string, unknown>, kind?: ContentType): boo
 	return total > 0 ? Number(match?.[1]) >= total : isComplete(fm)
 }
 
-// A title that will not grow: a series with an End Year, an anime that has
-// finished airing or was cancelled, and any book.
+// A title that will not grow: a series with an End Year, a finished anime,
+// and any book. The sources give the full episode total, so an anime with
+// every episode watched is done — no status text is kept in the note.
 export function hasEnded(fm: Record<string, unknown>, kind?: ContentType): boolean {
 	if (kind === 'book' || toStr(fm['End Year']).trim()) return true
-	return kind === 'anime' && /^(finished|cancelled)/i.test(toStr(fm.Status))
+	return kind === 'anime' && isFinished(fm, 'anime')
 }
 
 // The share of a title to show as progress, or null for none. Movies never

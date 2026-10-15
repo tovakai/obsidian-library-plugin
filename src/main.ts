@@ -43,13 +43,14 @@ import { LibrarySearchModal } from './ui/librarySearchModal'
 import { PromptModal } from './ui/promptModal'
 import { DuplicateRemovalModal, type DuplicateGroup } from './ui/duplicateModal'
 import { ShareModal, shareTargetFromFile } from './ui/shareModal'
-import { aniListViewer, fetchList, listStatus, pushEntry, type AniListEntry } from './anilistSync'
+import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
-import { ownedGames, playtimeHours, resolveSteamId } from './steamLibrary'
-import { anilistIdsFor, animeIds, fetchMalList, isExpired, malIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
+import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSession, type SteamSession } from './steamLibrary'
+import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal } from './ui/psnLoginModal'
+import { AuthModal } from './ui/authModal'
 import { renderTrophies } from './ui/trophyIcons'
 import { renderPlatformLabels } from './ui/platformIcons'
 import { createEmbedPlayer, toEmbed } from './trailer'
@@ -61,6 +62,7 @@ import {
 	toStr,
 	toStrArray,
 	parseWatched,
+	editedSince,
 	isFinished,
 	shownProgress,
 	spentTime,
@@ -123,6 +125,18 @@ interface AnimeNote {
 	mal: number | null
 }
 
+// One row of a fetched list, whichever service it came from: everything the
+// import needs to find the note (or create it) without caring about the source.
+interface ImportRow {
+	sourceId: string | null
+	altId: string | null
+	title: string
+	total: number
+	progress: number
+	score: number
+	complete: boolean
+}
+
 export default class LibraryPlugin extends Plugin {
 	settings!: ILibrarySettings
 	private registry = new ProviderRegistry()
@@ -131,10 +145,15 @@ export default class LibraryPlugin extends Plugin {
 	private bannerRetries = 0
 	private isRefreshing = false
 	// One MyAnimeList token refresh at a time; concurrent callers share it.
+	private settingTab: LibrarySettingTab | null = null
 	private malRefreshing: Promise<string | null> | null = null
 	private psnRefreshing: Promise<string | null> | null = null
 	private steamImporting = false
 	private psnImporting = false
+	private malImporting = false
+	private anilistImporting = false
+	// A note we pushed to MyAnimeList is being written back: no echo push.
+	private malPushing = false
 	private psnTimer: number | null = null
 	// The sign-in ran out: said once a session, not on every attempt.
 	private psnExpiredSaid = false
@@ -144,6 +163,7 @@ export default class LibraryPlugin extends Plugin {
 	private refreshCooldowns = new Map<string, number>()
 	private syncingLinks = new Set<string>()
 	private linkTimers = new Map<string, number>()
+	private malPushTimers = new Map<string, number>()
 	private enrichTimer: number | null = null
 	private enrichSleepTimer: number | null = null
 	private enrichWait: (() => void) | null = null
@@ -175,13 +195,14 @@ export default class LibraryPlugin extends Plugin {
 			new WikidataGameProvider()
 		))
 		this.registry.register(new DeezerProvider())
-		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => this.settings.malClientId)))
+		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => MAL_CLIENT_ID)))
 		this.registry.register(new ComicsAggregatorProvider(
 			new ComicsProvider(() => this.settings.comicVineApiKey),
 			new WikidataComicProvider(),
 			new MangaProvider()
 		))
-		this.addSettingTab(new LibrarySettingTab(this.app, this))
+		this.settingTab = new LibrarySettingTab(this.app, this)
+		this.addSettingTab(this.settingTab)
 
 		this.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, this))
 		this.addRibbonIcon('library', tr('view.title'), () => { void this.activateView() })
@@ -219,6 +240,13 @@ export default class LibraryPlugin extends Plugin {
 						this.linkTimers.delete(file.path)
 						void this.syncNote(file)
 					}, 800))
+					// MyAnimeList keeps its side current too, on the same debounce.
+					const existingPush = this.malPushTimers.get(file.path)
+					if (existingPush) window.clearTimeout(existingPush)
+					this.malPushTimers.set(file.path, window.setTimeout(() => {
+						this.malPushTimers.delete(file.path)
+						void this.malPush(file)
+					}, 800))
 				})
 			)
 			this.refreshBanner()
@@ -227,6 +255,11 @@ export default class LibraryPlugin extends Plugin {
 			// then every hour, imported once a day.
 			this.registerInterval(window.setTimeout(() => this.psnSyncIfDue(), 60000))
 			this.registerInterval(window.setInterval(() => this.psnSyncIfDue(), 3600000))
+			// MyAnimeList and AniList likewise: re-imported once a day on
+			// desktop, one after the other — two imports running at once
+			// could create the same note twice.
+			this.registerInterval(window.setTimeout(() => this.syncTick(), 60000))
+			this.registerInterval(window.setInterval(() => this.syncTick(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
 
@@ -318,6 +351,12 @@ export default class LibraryPlugin extends Plugin {
 		})
 
 		this.addCommand({
+			id: 'anilist-import',
+			name: tr('cmd.anilistImport'),
+			callback: () => { void this.anilistImport(true) }
+		})
+
+		this.addCommand({
 			id: 'mal-push',
 			name: tr('cmd.malPush'),
 			checkCallback: (checking: boolean) => {
@@ -336,9 +375,15 @@ export default class LibraryPlugin extends Plugin {
 		})
 
 		this.addCommand({
+			id: 'mal-import',
+			name: tr('cmd.malImport'),
+			callback: () => { void this.malImport(true) }
+		})
+
+		this.addCommand({
 			id: 'steam-import',
 			name: tr('cmd.steamImport'),
-			callback: () => { void this.steamImport() }
+			callback: () => { void this.steamImport(true) }
 		})
 
 		this.addCommand({
@@ -353,9 +398,11 @@ export default class LibraryPlugin extends Plugin {
 		if (this.refreshTimer) window.clearTimeout(this.refreshTimer)
 		if (this.bannerTimer) window.clearTimeout(this.bannerTimer)
 		for (const timer of this.linkTimers.values()) window.clearTimeout(timer)
+		for (const timer of this.malPushTimers.values()) window.clearTimeout(timer)
 		this.refreshTimer = null
 		this.bannerTimer = null
 		this.linkTimers.clear()
+		this.malPushTimers.clear()
 		this.refreshCooldowns.clear()
 		if (this.enrichTimer) window.clearTimeout(this.enrichTimer)
 		if (this.enrichSleepTimer) window.clearTimeout(this.enrichSleepTimer)
@@ -569,24 +616,34 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	// Imports the user's Steam library into the first Games category, made with
-	// the first new game when there is none: a note per owned game, Playtime in hours. Safe to run again: known games (matched by
-	// store URL) only get their Playtime updated. Store lookups are spaced out,
-	// since the store API limits requests per minute.
-	private async steamImport(): Promise<void> {
-		if (this.steamImporting) return
-		const key = this.settings.steamApiKey.trim()
+	// the first new game when there is none: a note per owned game, Playtime in
+	// hours, and for the games that moved since the last run their achievements
+	// as a ratio, Progress as that share, and Last Played. The library is read
+	// as the user, through the session the sign-in window leaves behind, so no
+	// key is involved. Safe to run again: known games (matched by store URL)
+	// only get their fields written when something changed. Store lookups are
+	// spaced out, since the store API limits requests per minute.
+	async steamImport(loud = false): Promise<void> {
+		if (this.steamImporting) {
+			if (loud) new Notice(tr('notice.steam.importing'))
+			return
+		}
+		if (!Platform.isDesktopApp) { new Notice(tr('notice.steam.desktopOnly')); return }
 		const profile = this.settings.steamId.trim()
-		if (!key || !profile) { new Notice(tr('notice.steam.noKey')); return }
+		if (!profile) { new Notice(tr('notice.steam.notConnected')); return }
 		let category = this.settings.categories.find(c => c.contentType === 'game')
 		const provider = this.registry.forType('game')
 		if (!provider) return
 		// Without a Games category yet, notes of the Type it gets still count as known games.
 		const typeValue = category?.typeValue ?? TYPE_DEFAULTS.game ?? 'Game'
 		this.steamImporting = true
+		let session: SteamSession | null = null
 		try {
 			new Notice(tr('notice.steam.importing'))
-			const steamId = await resolveSteamId(key, profile)
-			const games = steamId ? await ownedGames(key, steamId) : null
+			const steam = await steamSession(profile)
+			if (!steam) { new Notice(tr('notice.steam.failed')); return }
+			session = steam
+			const games = await ownedGames(steam.token, profile)
 			if (!games) { new Notice(tr('notice.steam.failed')); return }
 			const byUrl = new Map<string, TFile>()
 			const gameNotes: TFile[] = []
@@ -603,17 +660,45 @@ export default class LibraryPlugin extends Plugin {
 			})
 			let created = 0
 			let updated = 0
+			const today = dmyOf(new Date().toISOString())
 			for (const game of games) {
 				if (this.unloaded) return
 				const url = `https://store.steampowered.com/app/${String(game.appId)}/`
 				const hours = playtimeHours(game.minutes)
+				const lastPlayed = game.lastPlayed > 0 ? dmyOf(new Date(game.lastPlayed * 1000).toISOString()) : ''
 				const existing = byUrl.get(url) ?? byName(game.name)
 				try {
+					const fm = existing ? this.app.metadataCache.getFileCache(existing)?.frontmatter : undefined
+					const listed = existing ? toStrArray(fm?.Platforms).some(value => value.toLowerCase() === 'steam') : false
+					// A stats call only for the games that moved: new playtime, a new
+					// last-played day, or a session today still in progress. A
+					// session under six minutes can leave every stored number as it
+					// was, so its achievements wait for the next real change.
+					const moved = !existing || !listed || Number(fm?.['Playtime Steam']) !== hours
+						|| (lastPlayed !== '' && toStr(fm?.['Last Played']) !== lastPlayed)
+						|| lastPlayed === today
+					const stats = moved && game.minutes > 0 ? await steam.stats(game.appId) : null
+					const pairs: Array<[string, unknown]> = []
+					if (lastPlayed) pairs.push(['Last Played', lastPlayed])
+					if (stats) {
+						pairs.push(['Achievements', `${String(stats.achieved)}/${String(stats.total)}`])
+						pairs.push(['Progress', `${String(Math.round((stats.achieved / stats.total) * 100))}/100`])
+						if (stats.achieved === stats.total) pairs.push(['Complete', true])
+					}
+					// On a note PlayStation owns, Progress and Last Played come from
+					// its trophies: Steam's copy of the same game writes only its own
+					// fields, so the two imports never push each other's numbers around.
+					const psnOwned = !!fm && 'PSN ID' in fm
+					const wanted = pairs.filter(([field]) => !(psnOwned && (field === 'Progress' || field === 'Last Played' || field === 'Complete')))
 					if (existing) {
-						const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
-						const listed = toStrArray(fm?.Platforms).some(value => value.toLowerCase() === 'steam')
-						if (listed && Number(fm?.['Playtime Steam']) === hours) continue
+						const unchanged = listed && Number(fm?.['Playtime Steam']) === hours
+							&& wanted.every(([field, value]) => toStr(fm?.[field]) === toStr(value))
+						if (unchanged) continue
 						await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
+							for (const [field, value] of wanted) {
+								if (field === 'Complete' && current.Complete === true) continue
+								current[field] = value
+							}
 							addPlatform(current, 'Steam', hours)
 						})
 						updated++
@@ -628,6 +713,7 @@ export default class LibraryPlugin extends Plugin {
 					if (!category) category = await this.categoryFor('game')
 					const extra: Record<string, unknown> = {}
 					addPlatform(extra, 'Steam', hours)
+					for (const [field, value] of wanted) extra[field] = value
 					const file = await this.newNote(category, provider.id, sourceId, toStr(meta.fields.Name) || game.name, meta, extra)
 					byUrl.set(url, file)
 					gameNotes.push(file)
@@ -639,6 +725,7 @@ export default class LibraryPlugin extends Plugin {
 			}
 			new Notice(tr('notice.steam.imported', { created, updated }))
 		} finally {
+			session?.close()
 			this.steamImporting = false
 			this.steamTimer = null
 		}
@@ -908,6 +995,78 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
+	// Opens MyAnimeList's sign-in window; true once the account is connected.
+	connectMal(): Promise<boolean> {
+		if (!Platform.isDesktopApp) {
+			new Notice(tr('notice.mal.desktopOnly'))
+			return Promise.resolve(false)
+		}
+		return new Promise<boolean>((resolve) => {
+			const verifier = makeVerifier()
+			const { id, secret } = malClientPair(this.settings)
+			new AuthModal(this.app, malAuthUrl(id, verifier), (code) => {
+				void (async () => {
+					const tokens = code ? await exchangeCode(id, secret, code, verifier) : null
+					if (tokens) {
+						this.settings.malTokens = tokens
+						await this.saveSettings()
+					}
+					if (code) new Notice(tr(tokens ? 'notice.mal.connected' : 'notice.mal.connectFailed'))
+					resolve(tokens !== null)
+					if (tokens) void this.malImport(true)
+				})()
+			}, { title: tr('mal.loginTitle'), extract: codeFromRedirect }).open()
+		})
+	}
+
+	// Opens AniList's sign-in window; true once the account is connected. The
+	// implicit grant hands the token over in the redirect's fragment — no
+	// exchange, the token itself is stored.
+	connectAnilist(): Promise<boolean> {
+		if (!Platform.isDesktopApp) {
+			new Notice(tr('notice.anilist.desktopOnly'))
+			return Promise.resolve(false)
+		}
+		return new Promise<boolean>((resolve) => {
+			new AuthModal(this.app, anilistAuthUrl(ANILIST_CLIENT_ID), (answer) => {
+				void (async () => {
+					const token = answer ?? ''
+					const viewer = token ? await aniListViewer(token) : null
+					if (viewer) {
+						this.settings.anilistToken = token
+						await this.saveSettings()
+					}
+					if (answer) new Notice(tr(viewer ? 'settings.anilist.connected' : 'notice.anilist.connectFailed', { name: viewer?.name ?? '' }))
+					resolve(viewer !== null)
+					if (viewer) void this.anilistImport(true)
+				})()
+			}, { title: tr('anilist.loginTitle'), extract: tokenFromRedirect }).open()
+		})
+	}
+
+	// Opens Steam's sign-in window; true once the account is connected. Steam
+	// hands the account back in the address the window lands on, and the window
+	// keeps the session the import later reads the library with.
+	connectSteam(): Promise<boolean> {
+		if (!Platform.isDesktopApp) {
+			new Notice(tr('notice.steam.desktopOnly'))
+			return Promise.resolve(false)
+		}
+		return new Promise<boolean>((resolve) => {
+			new AuthModal(this.app, steamAuthUrl(), (answer) => {
+				void (async () => {
+					const steamId = answer ?? ''
+					if (steamId) {
+						this.settings.steamId = steamId
+						await this.saveSettings()
+					}
+					resolve(steamId !== '')
+					if (steamId) void this.steamImport(true)
+				})()
+			}, { title: tr('steam.loginTitle'), extract: steamIdFromRedirect }).open()
+		})
+	}
+
 	// Everything PlayStation tells about the user: played games, trophy lists,
 	// trophy level. Null when not connected or Sony does not answer.
 	async psnData(): Promise<{ owned: PsnOwnedGame[]; played: PsnPlayedGame[]; trophies: PsnTrophyTitle[]; summary: PsnTrophySummary | null } | null> {
@@ -1091,6 +1250,27 @@ export default class LibraryPlugin extends Plugin {
 		void this.psnImport(false)
 	}
 
+	// MyAnimeList re-import, once a day and only on desktop: a shared vault
+	// would have both devices create the same missing notes.
+	private malSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.malTokens || this.malImporting || this.anilistImporting) return Promise.resolve()
+		if (Date.now() - this.settings.malLastImport < 24 * 3600000) return Promise.resolve()
+		return this.malImport(false)
+	}
+
+	// AniList re-import on the same daily desktop schedule.
+	private anilistSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.anilistToken.trim() || this.anilistImporting || this.malImporting) return Promise.resolve()
+		if (Date.now() - this.settings.anilistLastImport < 24 * 3600000) return Promise.resolve()
+		return this.anilistImport(false)
+	}
+
+	// The daily tick: MyAnimeList first, AniList after it — the imports share
+	// the same notes, and interleaved runs could create one twice.
+	private syncTick(): void {
+		void this.malSyncIfDue().then(() => this.anilistSyncIfDue())
+	}
+
 	// A valid PlayStation access token, refreshed when it is about to expire;
 	// null when not connected or the sign-in has run out.
 	async psnToken(): Promise<string | null> {
@@ -1127,7 +1307,8 @@ export default class LibraryPlugin extends Plugin {
 
 	private async refreshMalToken(refresh: string): Promise<string | null> {
 		try {
-			const next = await refreshTokens(this.settings.malClientId.trim(), this.settings.malClientSecret.trim(), refresh)
+			const { id, secret } = malClientPair(this.settings)
+			const next = await refreshTokens(id, secret, refresh)
 			if (!next) return null
 			this.settings.malTokens = next
 			await this.saveSettings()
@@ -1153,7 +1334,7 @@ export default class LibraryPlugin extends Plugin {
 		if (!malId) { new Notice(tr('notice.mal.noMalId')); return }
 		const watched = parseWatched(fm.Progress)
 		const rating = Number(toStr(fm['My Rating']))
-		const ok = await pushMalEntry(token, malId, watched, malStatus(isFinished(fm, this.kindOf(fm) ?? 'anime'), watched),
+		const ok = await pushMalEntry(token, malId, 'anime', watched, malStatus(isFinished(fm, this.kindOf(fm) ?? 'anime'), watched),
 			Number.isFinite(rating) ? rating : null)
 		new Notice(ok
 			? tr('notice.mal.pushed', { name: toStr(fm.Name) || file.basename })
@@ -1177,6 +1358,272 @@ export default class LibraryPlugin extends Plugin {
 			return entry && { progress: entry.progress, complete: entry.status === 'completed' }
 		})
 		new Notice(tr('notice.mal.pulled', { count: updated }))
+	}
+
+	// A note changed: send its progress and rating to MyAnimeList. Nothing is
+	// sent when it matches what we last pushed, so a vault re-indexed by the
+	// enrich pass or a sync conflict does not storm the API.
+	private async malPush(file: TFile): Promise<void> {
+		// A push or import in flight would drop this edit — the timer entry is
+		// already gone — so arm the same debounce again and try once more.
+		if (this.malImporting || this.malPushing) {
+			this.malPushTimers.set(file.path, window.setTimeout(() => {
+				this.malPushTimers.delete(file.path)
+				void this.malPush(file)
+			}, 800))
+			return
+		}
+		if (!this.settings.malTokens) return
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		if (!fm) return
+		const isAnime = toStr(fm.Source) === 'anilist'
+		if (!isAnime && toStr(fm.Source) !== 'comics') return
+		const ids = isAnime ? animeIds(toStr(fm['Source ID'])) : mangaIds(toStr(fm['Source ID']))
+		if (!ids) return
+		const progress = toStr(fm.Progress)
+		const rating = Number(toStr(fm['My Rating']))
+		const score = Number.isFinite(rating) && rating > 0 ? rating : 0
+		const echo = this.settings.malEcho[file.path]
+		if (echo && echo.p === progress && echo.r === score) return
+		const token = await this.malToken()
+		if (!token) return
+		let malId = ids.mal
+		if (malId === null && ids.anilist !== null) {
+			const map = isAnime
+				? await malIdsFor([ids.anilist])
+				: await malMangaIdsFor([ids.anilist])
+			malId = (map && map.get(ids.anilist)) ?? null
+		}
+		if (malId === null) return
+		// Only a finished note says so: an in-progress one leaves the MAL status
+		// alone, so it never overwrites an on-hold or dropped entry.
+		const status = isFinished(fm, this.kindOf(fm) ?? (isAnime ? 'anime' : 'comic')) ? 'completed' : null
+		this.malPushing = true
+		try {
+			const chapters = parseWatched(progress)
+			const ok = await pushMalEntry(token, malId, isAnime ? 'anime' : 'manga', chapters, status, score > 0 ? score : null)
+			if (ok) {
+				this.settings.malEcho[file.path] = { p: progress, r: score }
+				await this.saveSettings()
+			}
+		} catch (e) {
+			console.error('Library: MyAnimeList push error', file.path, e)
+		} finally {
+			this.malPushing = false
+		}
+	}
+
+	// Brings the MyAnimeList anime and manga lists into the library: every
+	// started title becomes a note carrying its progress and score. A title
+	// already in the library, by its source id or by name, is updated in
+	// place — unless their own mark says otherwise. Running it again keeps
+	// the list current; it runs once a day on its own.
+	async malImport(loud: boolean): Promise<void> {
+		if (this.malImporting || this.anilistImporting) {
+			if (loud) new Notice(tr('notice.mal.importing'))
+			return
+		}
+		const token = await this.malToken()
+		if (!token) { if (loud) new Notice(tr('notice.mal.noToken')); return }
+		this.malImporting = true
+		try {
+			if (loud) new Notice(tr('notice.mal.importing'))
+			const [anime, manga] = await Promise.all([fetchMalList(token), fetchMalList(token, 'manga')])
+			if (!anime || !manga) { if (loud) new Notice(tr('notice.mal.importFailed')); return }
+			const a = await this.importMalEntries(anime, 'anime')
+			const m = await this.importMalEntries(manga, 'manga')
+			this.settings.malStats = { anime: a.created + a.updated, manga: m.created + m.updated, updated: Date.now() }
+			this.settings.malLastImport = Date.now()
+			this.pruneEcho()
+			await this.saveSettings()
+			// New categories, tops and notes may have appeared; the settings
+			// tab may be open, and the fresh notes still need their covers.
+			this.settingTab?.refresh()
+			this.scheduleEnrich(ENRICH_STEP_DELAY)
+			if (loud || a.created + m.created > 0) new Notice(tr('notice.mal.imported', { created: a.created + m.created, updated: a.updated + m.updated }))
+		} finally {
+			this.malImporting = false
+		}
+	}
+
+	// Brings the AniList anime and manga lists into the library, like the
+	// MyAnimeList import: a title already in the library is updated in place,
+	// a new one becomes a note carrying its progress and score. Runs right
+	// after the account is connected and once a day after that; the commands
+	// and the library's Update button force it right away.
+	async anilistImport(loud: boolean): Promise<void> {
+		if (this.anilistImporting || this.malImporting) {
+			if (loud) new Notice(tr('notice.mal.importing'))
+			return
+		}
+		const token = this.settings.anilistToken.trim()
+		if (!token) { if (loud) new Notice(tr('notice.anilist.noToken')); return }
+		this.anilistImporting = true
+		try {
+			if (loud) new Notice(tr('notice.mal.importing'))
+			const viewer = await aniListViewer(token)
+			if (!viewer) { if (loud) new Notice(tr('notice.anilist.importFailed')); return }
+			const [anime, manga] = await Promise.all([
+				fetchList(token, viewer.id, 'ANIME'),
+				fetchList(token, viewer.id, 'MANGA')
+			])
+			if (!anime || !manga) { if (loud) new Notice(tr('notice.anilist.importFailed')); return }
+			const rows = (entries: AniListEntry[], kind: 'anime' | 'manga'): ImportRow[] => entries
+				.filter(entry => entry.status !== 'PLANNING')
+				.map(entry => ({
+					// The AniList id is the anime note's own; manga notes live
+					// under "manga:<id>", exactly what a MyAnimeList import wrote.
+					sourceId: kind === 'anime' ? String(entry.mediaId) : `${MangaProvider.PREFIX}${String(entry.mediaId)}`,
+					altId: kind === 'anime' && entry.idMal !== null ? `${MalProvider.PREFIX}${String(entry.idMal)}` : null,
+					title: entry.title,
+					total: entry.total,
+					progress: entry.progress,
+					score: toTenPoint(entry.score, viewer.scoreFormat),
+					complete: entry.status === 'COMPLETED'
+				}))
+			const a = await this.importRows(rows(anime, 'anime'), 'anime')
+			const m = await this.importRows(rows(manga, 'manga'), 'manga')
+			this.settings.anilistLastImport = Date.now()
+			this.pruneEcho()
+			await this.saveSettings()
+			// New categories, tops and notes may have appeared; the settings
+			// tab may be open, and the fresh notes still need their covers.
+			this.settingTab?.refresh()
+			this.scheduleEnrich(ENRICH_STEP_DELAY)
+			if (loud || a.created + m.created > 0) new Notice(tr('notice.mal.imported', { created: a.created + m.created, updated: a.updated + m.updated }))
+		} finally {
+			this.anilistImporting = false
+		}
+	}
+
+	// The library's Update button: every connected platform re-imports, the
+	// anime sites first and one after the other (they write the same notes),
+	// the game platforms after. A platform that is not connected stays quiet.
+	async updateAll(): Promise<void> {
+		if (this.settings.malTokens) await this.malImport(true)
+		if (this.settings.anilistToken.trim()) await this.anilistImport(true)
+		if (this.settings.psnTokens) await this.psnImport(true)
+		if (this.settings.steamId.trim()) await this.steamImport(true)
+	}
+
+	// Entries for notes that no longer exist only grow the settings file.
+	private pruneEcho(): void {
+		const paths = new Set(this.app.vault.getMarkdownFiles().map((file) => file.path))
+		for (const path of Object.keys(this.settings.malEcho)) {
+			if (!paths.has(path)) delete this.settings.malEcho[path]
+		}
+	}
+
+	// One MyAnimeList list (anime or manga) into the notes of its medium.
+	private async importMalEntries(entries: MalEntry[], kind: 'anime' | 'manga'): Promise<{ created: number; updated: number }> {
+		const anilistOf = entries.length === 0 ? new Map<number, number>()
+			: kind === 'anime' ? await anilistIdsFor(entries.map(e => e.malId)) : await anilistMangaIdsFor(entries.map(e => e.malId))
+		const anilist = anilistOf ?? new Map<number, number>()
+		const rows: ImportRow[] = entries.map((entry) => {
+			const alId = anilist.get(entry.malId) ?? null
+			// A manga note keeps AniList's id, so a manga MyAnimeList cannot
+			// name yet has nowhere to go: the next import catches it.
+			const sourceId = kind === 'anime'
+				? `${MalProvider.PREFIX}${String(entry.malId)}`
+				: alId === null ? null : `${MangaProvider.PREFIX}${String(alId)}`
+			return {
+				sourceId,
+				altId: kind === 'anime' && alId !== null ? String(alId) : null,
+				title: entry.title,
+				total: entry.total,
+				progress: entry.progress,
+				score: entry.score,
+				complete: entry.status === 'completed'
+			}
+		})
+		return this.importRows(rows, kind)
+	}
+
+	// One fetched list (anime or manga) into the notes of its medium: every row
+	// becomes a note carrying its progress and score. A title already in the
+	// library, by its source id or by name, is updated in place — a note
+	// edited by hand since the last sync keeps its marks. Shared by the
+	// MyAnimeList and AniList imports.
+	private async importRows(rows: ImportRow[], kind: 'anime' | 'manga'): Promise<{ created: number; updated: number }> {
+		const source = kind === 'anime' ? 'anilist' : 'comics'
+		let category = kind === 'anime'
+			? this.settings.categories.find(c => c.contentType === 'anime')
+			: this.settings.categories.find(c => c.typeValue === this.settings.malMangaType)
+		if (!category) {
+			if (kind === 'anime') {
+				category = await this.categoryFor('anime')
+			} else {
+				// Manga gets its own category: a comic by content type, named
+				// for the medium so it reads as manga in the library.
+				category = newCategory('comic', this.settings)
+				category.name = tr('settings.mal.mangaCategory')
+				category.folder = joinFolder(this.settings.libraryFolder, category.name)
+				this.settings.malMangaType = category.typeValue
+				this.settings.categories.push(category)
+				addCategoryTop(this.settings, category.typeValue)
+				await this.saveSettings()
+				new Notice(tr('notice.categoryCreated', { name: category.name }))
+			}
+		}
+		const notes = this.app.vault.getMarkdownFiles().filter(file =>
+			!isTemplateFile(file.path) && toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.Type) === category.typeValue)
+		const bySourceId = new Map<string, TFile>()
+		for (const file of notes) bySourceId.set(toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.['Source ID']), file)
+		let created = 0
+		let updated = 0
+		for (const row of rows) {
+			if (this.unloaded) return { created, updated }
+			const sourceId = row.sourceId
+			let existing = sourceId ? bySourceId.get(sourceId) : undefined
+			if (!existing && row.altId) existing = bySourceId.get(row.altId)
+			if (!existing) existing = notes.find(file => {
+				const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+				return sameTitle(toStr(fm?.Name) || file.basename, row.title)
+			})
+			const existingFm = existing ? this.app.metadataCache.getFileCache(existing)?.frontmatter : undefined
+			const progressStr = toStr(existingFm?.Progress)
+			const match = progressStr.match(progressPattern)
+			// Keep the note's own episode total: a source leaves the total empty
+			// for titles it does not know, and "12/1" would be nonsense.
+			const total = Math.max(row.total, match ? Number(match[2]) : 0, 1)
+			const watched = Math.max(parseWatched(existingFm?.Progress), row.progress)
+			const rating = Number(toStr(existingFm?.['My Rating']))
+			const score = Number.isFinite(rating) && rating > 0 ? rating : 0
+			const progress = `${String(watched)}/${String(total)}`
+			try {
+				if (existing) {
+					// Their own mark wins: a note edited since the last sync
+					// keeps its progress and rating; the list only fills what
+					// the note leaves empty and never moves progress back.
+					if (editedSince(this.settings.malEcho[existing.path], progressStr, score)) continue
+					await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
+						current.Progress = progress
+						if (row.complete) current.Complete = true
+						// A rating once present — theirs or any list's — stays.
+						if (row.score > 0 && score === 0) current['My Rating'] = row.score
+					})
+					// Remember what the note says now: the next import can tell
+					// their edit from its own write (the echo push compares to).
+					this.settings.malEcho[existing.path] = { p: progress, r: score || row.score }
+					updated++
+					continue
+				}
+				if (!sourceId) continue
+				const extra: Record<string, unknown> = { Name: row.title }
+				if (row.score > 0) extra['My Rating'] = row.score
+				extra.Progress = progress
+				if (row.complete) extra.Complete = true
+				const file = await this.newNote(category, source, sourceId, row.title, { fields: { Name: row.title }, progressTotal: null, imdbId: null }, extra)
+				bySourceId.set(sourceId, file)
+				// A fresh note says what the list said; their first edit after
+				// it is recognisable as theirs.
+				this.settings.malEcho[file.path] = { p: progress, r: row.score }
+				created++
+			} catch (e) {
+				console.error('Library: list import error', sourceId ?? row.title, e)
+			}
+		}
+		return { created, updated }
 	}
 
 	findDuplicates(): DuplicateGroup[] {

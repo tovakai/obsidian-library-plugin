@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  Your watchlist, reading list, and game backlog as a gallery of covers, kept as plain Markdown notes in your vault. Search a title, pick a result, and Library writes the note: cover, year, genres, and creators, plus a trailer for movies, series, anime, and games.
+  Your watchlist, reading list, and game backlog become a gallery of covers, kept as plain Markdown notes in your vault. Search a title, pick a result, and Library writes the note: cover, year, genres, and creators, plus a trailer for movies, series, anime, and games.
   <br />
   <a href="https://community.obsidian.md/plugins/library">Community Plugins directory</a> · <a href="https://github.com/venvk/obsidian-library-plugin/wiki">Wiki</a>
 </p>
@@ -20,16 +20,16 @@
 ## Features
 
 - Ratings and stills for movies, series, anime, and games when the source has them; cast for movies and series.
-- Movies, series, games, and comics can be found by their title in another language.
-- Tick episodes or chapters and score them; `Progress` and `My Rating` follow. A movie is watched or not.
+- Movies, series, games, and comics can also be found by a title in another language.
+- Tick episodes or chapters and score them; `Progress` and `My Rating` update to match. A movie is watched or not.
 - Categories and their folders (Library/Movies, Library/Books) appear as you add titles.
-- Titles you haven't started get an eye on the cover and gather in Up next.
+- Titles you haven't started show an eye icon on the cover and gather in Up next.
 - Similar titles under movie, series, anime, game, and book notes.
-- Start new notes from a template of your own, and keep source fields you don't want out of them.
+- Start new notes from a template of your own, and exclude the source fields you don't want.
 - Anime sync with AniList and MyAnimeList, Steam library import, and share cards.
-- Connect PlayStation in Settings → Library → Games: your played games, playtime, progress, and trophies come into Games and stay up to date. One note per game, with PS4, PS5, and Steam badges and hours per platform.
-- Each section shows how many titles it holds and the time spent on them; hover for the exact hours. Statistics compare that time with facts about space, sport, and books.
-- Genres, creators, and actors are links that collect their titles.
+- Connect PlayStation and Steam in Settings → Library → Games: played games, playtime, progress, trophies, and Steam achievements come into Games and stay up to date. One note per game, with PS4, PS5, and Steam badges and hours per platform.
+- Each section shows how many titles it holds and the time spent on them; hover for the exact hours. Statistics put that time in perspective against reference facts from space, sport, and books.
+- Genres, creators, and actors are links; each linked note collects the titles it appears in.
 - Every field is in frontmatter, so Bases and Dataview can read it.
 - Desktop and mobile, with the interface in every language Obsidian supports.
 
@@ -37,37 +37,37 @@
 
 1. Install Library from Settings → Community plugins, or from [GitHub Releases](https://github.com/venvk/obsidian-library-plugin/releases).
 2. Open the Library tab from the ribbon, press +, pick what you are adding (Movies, Series, Books, Comics, Games, Music, Anime, or your own), and search. The first title of each kind creates its category and folder.
-3. For movies and series, a year after the title picks between films that share a name: `dune 1984`.
+3. For movies and series, add a year after the title to pick between films that share a name: `dune 1984`.
 
-Settings → Library → Categories renames categories and moves their folders; the notes can move along.
+Settings → Library → Categories renames categories and moves their folders; the notes can move with them.
 
-The [wiki](https://github.com/venvk/obsidian-library-plugin/wiki) has the details: [API keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync), [Steam import](https://github.com/venvk/obsidian-library-plugin/wiki/Steam-library-import), and [note properties](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference).
+The [wiki](https://github.com/venvk/obsidian-library-plugin/wiki) has the details: [API keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync), and [Steam import](https://github.com/venvk/obsidian-library-plugin/wiki/Steam-library-import).
 
 ## Sources
 
-| Category | Sources | First, with a key |
+| Category | Sources | Preferred source, when set up |
 | --- | --- | --- |
 | Movies, series | Cinemeta, Wikidata | [OMDb](https://www.omdbapi.com/apikey.aspx) |
 | Books | Open Library | [Google Books](https://console.cloud.google.com/apis/library/books.googleapis.com) |
 | Games | Steam, Wikidata | [RAWG](https://rawg.io/apidocs) |
 | Music | Deezer | |
-| Anime | AniList | [MyAnimeList](https://myanimelist.net/apiconfig) Client ID |
+| Anime | AniList sign-in | MyAnimeList sign-in |
 | Comics | Wikidata, AniList for manga | [Comic Vine](https://comicvine.gamespot.com/api/) |
 | Anything else | Manual: you fill the fields | |
 
-Keys go in Settings → Library → API keys. A [TMDB key](https://www.themoviedb.org/settings/api) adds season ratings and more stills, a [Twitch application](https://dev.twitch.tv/console/apps) adds game trailers from IGDB, and a [Steam Web API key](https://steamcommunity.com/dev/apikey) imports the games you own with their playtime. Settings → Library → Show recommendations hides the similar titles.
+Keys go in Settings → Library → API keys. A [TMDB key](https://www.themoviedb.org/settings/api) adds season ratings and more stills and a [Twitch application](https://dev.twitch.tv/console/apps) adds game trailers from IGDB. Steam sits in Settings → Library → Games: on desktop, Connect signs you in on Steam's own page and imports the games you own with their playtime and achievements; similar titles under a game come from Steam's store. Turn off Settings → Library → Show recommendations to hide the similar titles.
 
 ## Progress and statistics
 
 Open a season in a series note to tick episodes and score them from 1 to 10. `Progress` counts the ticked episodes, and `My Rating` averages the season scores. Anime is one season. Books get chapters from Open Library, or from Add chapters in the note header.
 
-A series, anime, or book is done when its progress is full; a finished series and a read book then hide their progress. A movie has no progress: `Complete` says whether you watched it.
+A series, anime, or book is done when its progress is full; a finished series or book then hides its progress. A movie has no progress: `Complete` says whether you watched it.
 
-Settings → Library can hide Up next or keep its titles out of their categories. The statistics panel shows the top lists you pick and your hours on movies, series, and anime.
+Settings → Library can hide Up next or keep its titles out of the categories they came from. The statistics panel shows the top lists you pick and your hours on movies, series, and anime.
 
 ## Anime sync
 
-Anime notes sync with AniList and MyAnimeList through four commands. Push sends the open note's progress, status, and score; pull updates your notes from your list, never moves progress back, and leaves `My Rating` alone. Nothing syncs on its own. The [wiki](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync) shows how to connect each site.
+Anime and manga notes sync with AniList and MyAnimeList. Connect either site in settings: the authorization window opens, and your lists come in as notes with progress and ratings. Both sites re-import once a day. The Update button in the library header, beside Add content and Search, brings every connected platform in right away; the Import from AniList and Import from MyAnimeList commands do the same for one site each. Progress and score are pushed back to MyAnimeList whenever you change a note; the Push command sends them to AniList. A note you have marked yourself wins: the import never moves your progress backwards and fills `My Rating` only while it is empty. The [wiki](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync) shows how to connect each site.
 
 ## Frontmatter
 
@@ -93,11 +93,11 @@ Source ID: tt4574334
 ---
 ```
 
-A refresh fills empty fields and updates the sources' ratings, never yours. The [wiki](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference) lists every property.
+A refresh fills empty fields and updates the source ratings but never your own. The [wiki](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference) lists every property.
 
 ## Privacy and network use
 
-Your library is plain notes that open offline; covers load from the web. The plugin goes online to search, refresh, sync, or share, when you open a library note (at most once in 5 minutes), and once after an update or a key change. It has no telemetry or self-update, and each key goes only to its own service.
+Your library is plain notes that open offline; covers load from the web. The plugin goes online to search, refresh, sync, or share when you open a library note (at most once in 5 minutes), and once after an update or a key change. It has no telemetry or self-update, and each key goes only to its own service.
 
 | Hosts | Use | Data sent |
 | --- | --- | --- |
@@ -108,15 +108,17 @@ Your library is plain notes that open offline; covers load from the web. The plu
 | `openlibrary.org`, `covers.openlibrary.org` | Books, chapters, covers | Title, author, ISBN, genres |
 | `www.googleapis.com`, `books.google.com` | Book search with a key, its covers | Title, key |
 | `api.rawg.io`, `media.rawg.io` | Games, with a key | Title or id, genre, key |
-| `store.steampowered.com`, `cdn.cloudflare.steamstatic.com`, `video.akamai.steamstatic.com`, `shared.akamai.steamstatic.com`, `api.steampowered.com` | Games, trailers, Steam import | Title or app id; key and SteamID on import |
+| `store.steampowered.com`, `steamcommunity.com`, `cdn.cloudflare.steamstatic.com`, `video.akamai.steamstatic.com`, `shared.akamai.steamstatic.com`, `shared.fastly.steamstatic.com`, `api.steampowered.com` | Games, trailers, Steam import | Title or app id; sign-in and your library on import |
 | `id.twitch.tv`, `api.igdb.com` | Game trailers, with Twitch keys | Twitch ID and secret, game |
 | `api.deezer.com`, `cdn-images.dzcdn.net` | Music search, covers | Album or artist |
 | `graphql.anilist.co`, `anilist.co`, `s4.anilist.co`, streaming services' image hosts | Anime, manga, sync | Title or ids; your token, progress, status, score |
-| `myanimelist.net`, `api.myanimelist.net`, `api-cdn.myanimelist.net` | Anime search with a Client ID, covers, sync | Search text, Client ID and secret; your token, progress, status, score |
+| `myanimelist.net`, `api.myanimelist.net`, `api-cdn.myanimelist.net` | Anime and manga search, covers, sign-in, list import, sync | Search text, your sign-in on MyAnimeList's page (the plugin keeps only the token); your token, progress, status, score |
 | `ca.account.sony.com`, `my.account.sony.com`, `m.np.playstation.com`, `web.np.playstation.com`, `image.api.playstation.com`, `psnobj.prod.dl.playstation.net` | PlayStation sign-in, played games, trophies, covers | Your sign-in on Sony's page (the plugin keeps only the token); the token |
 | `comicvine.gamespot.com` | Comic search, with a key | Title, key |
 | `www.youtube.com`, `www.youtube-nocookie.com`, `i.ytimg.com`, `player.vimeo.com`, `www.dailymotion.com` | Trailers | Video id |
 | `twitter.com`, `t.me`, `wa.me`, `www.reddit.com`, `www.facebook.com`, `www.linkedin.com`, `vk.com`, `bsky.app`, `www.pinterest.com` | Share buttons | Caption with title, score, and link; the image stays local |
+
+`specs.openid.net` is the name of the OpenID fields inside the Steam sign-in request; nothing is ever sent to it.
 
 ## Commands
 
@@ -129,6 +131,7 @@ Your library is plain notes that open offline; covers load from the web. The plu
 - `Share current note`
 - `Push current note to AniList`, `Pull progress from AniList`
 - `Push current note to MyAnimeList`, `Pull progress from MyAnimeList`
+- `Import from AniList`, `Import from MyAnimeList`
 - `Import Steam library`
 - `Import PlayStation games and trophies`
 

@@ -6,8 +6,9 @@ import { claim, entities, itemIds, languages, searchItems, textIn, yearIn } from
 
 // Titles similar to a note's, from whichever source can say so:
 // AniList's user recommendations for anime, TMDB's for movies and series (with
-// a key; without one, Cinemeta's best titles of the same genres), RAWG's same-series and same-genre games (with a key;
-// without one, Wikidata's), Open Library's
+// a key; without one, Cinemeta's best titles of the same genres), the store's own
+// tag-based list for games from Steam (no key needed), then RAWG's same-series and
+// same-genre games (with a key; without one, Wikidata's), Open Library's
 // most read works of the book's subject. Comics and music have no such data.
 
 export interface Recommendation {
@@ -30,6 +31,7 @@ const ANILIST = 'https://graphql.anilist.co'
 const TMDB = 'https://api.themoviedb.org/3'
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w342'
 const RAWG = 'https://api.rawg.io/api'
+const STEAM_MORE = 'https://store.steampowered.com/recommended/morelike/app'
 const OPENLIB = 'https://openlibrary.org'
 
 async function getJson<T>(url: string, body?: unknown): Promise<T | null> {
@@ -42,6 +44,16 @@ async function getJson<T>(url: string, body?: unknown): Promise<T | null> {
 			throw: false
 		})
 		return resp.status === 200 ? resp.json as T : null
+	} catch (e) {
+		console.error('Library: recommendations request error', e)
+		return null
+	}
+}
+
+async function getText(url: string): Promise<string | null> {
+	try {
+		const resp = await requestUrl({ url, throw: false })
+		return resp.status === 200 ? resp.text : null
 	} catch (e) {
 		console.error('Library: recommendations request error', e)
 		return null
@@ -71,7 +83,12 @@ async function pick(source: string, sourceId: string, name: string, genres: stri
 		}
 		case 'games': case 'rawg': case 'steam': {
 			const fromRawg = keys.rawg && !/^Q\d+$/.test(sourceId) ? await rawg(sourceId, name, genres[0] ?? '', keys.rawg) : []
-			return fromRawg.length > 0 ? fromRawg : wikidataGames(sourceId, name)
+			if (fromRawg.length > 0) return fromRawg
+			if (sourceId.startsWith(SteamProvider.PREFIX)) {
+				const fromSteam = await steamSimilar(sourceId.slice(SteamProvider.PREFIX.length), name)
+				if (fromSteam.length > 0) return fromSteam
+			}
+			return wikidataGames(sourceId, name)
 		}
 		case 'books': case 'openlibrary': case 'googlebooks': return openLibrary(sourceId, name, genres)
 		default: return []
@@ -189,6 +206,36 @@ async function rawg(sourceId: string, name: string, genre: string, key: string):
 		type: 'game',
 		sourceId: String(g.id)
 	}))
+}
+
+// The store's own "more like this": the titles whose player tags overlap the
+// note's, in the store's order, with the store's capsules as covers.
+async function steamSimilar(appId: string, ownName: string): Promise<Recommendation[]> {
+	const html = await getText(`${STEAM_MORE}/${encodeURIComponent(appId)}/?l=english`)
+	if (!html) return []
+	const start = html.indexOf('id="released"')
+	if (start < 0) return []
+	const rest = html.slice(start)
+	const stop = rest.indexOf('id="comingsoon"')
+	const chunk = stop < 0 ? rest : rest.slice(0, stop)
+	const item = /class="similar_grid_capsule"\s+data-ds-appid="(\d+)"[\s\S]{0,600}?href="[^"]*\/app\/\d+\/([^/?"]+)[\s\S]{0,600}?<img src="([^"]+)"/g
+	const own = ownName.trim().toLowerCase()
+	const out: Recommendation[] = []
+	let match = item.exec(chunk)
+	while (match && out.length < LIMIT) {
+		const title = (match[2] ?? '').replace(/_/g, ' ')
+		if (match[1] !== appId && title !== '' && title.trim().toLowerCase() !== own) {
+			out.push({
+				title,
+				year: null,
+				cover: match[3] ?? null,
+				type: 'game',
+				sourceId: SteamProvider.PREFIX + match[1]
+			})
+		}
+		match = item.exec(chunk)
+	}
+	return out
 }
 
 const VIDEO_GAME = 'haswbstatement:P31=Q7889'

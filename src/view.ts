@@ -61,9 +61,9 @@ const TIME_COLORS: Record<string, string> = {
 	game: 'color-mix(in srgb, var(--interactive-accent) 80%, var(--text-normal))'
 }
 
-type SortKey = 'name' | 'year' | 'rating' | 'date' | 'played'
+type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played'
 
-const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'played']
+const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played']
 
 interface SortChoice {
 	key: SortKey
@@ -234,7 +234,7 @@ export class LibraryView extends ItemView {
 		for (const top of tops) {
 			if (top.kind === 'platform') {
 				// One item when the platform has totals to show, none otherwise.
-				columns.push({ top, kind: 'platform', items: top.key === 'playstation' && this.plugin.settings.psnStats ? [true] : [] })
+				columns.push({ top, kind: 'platform', items: top.key === 'playstation' && this.plugin.settings.psnStats ? [true] : top.key === 'myanimelist' && this.plugin.settings.malStats ? [true] : [] })
 				continue
 			}
 			if (top.kind === 'property') {
@@ -335,6 +335,7 @@ export class LibraryView extends ItemView {
 		const showTime = this.plugin.settings.stats.watchTime
 			&& this.plugin.settings.categories.some(c => TIME_COLORS[c.contentType])
 		const psn = this.plugin.settings.psnStats
+		const mal = this.plugin.settings.malStats
 		if (!showTime && columns.length === 0) return null
 
 		const section = root.createDiv({ cls: 'library-stats' })
@@ -374,8 +375,24 @@ export class LibraryView extends ItemView {
 			renderTrophies(col, { Platinum: psn.earned.platinum, Gold: psn.earned.gold, Silver: psn.earned.silver, Bronze: psn.earned.bronze }, 'library-stats-trophies')
 		}
 
+		const renderMal = (): void => {
+			if (!mal) return
+			const col = box.createDiv({ cls: 'library-stats-col library-stats-psn' })
+			col.createEl('h3', { text: tr('stats.mal') })
+			const line = (label: string, value: string): void => {
+				const row = col.createDiv({ cls: 'library-stats-psn-row' })
+				row.createSpan({ cls: 'library-stats-psn-label', text: label })
+				row.createSpan({ cls: 'library-stats-psn-value', text: value })
+			}
+			line(tr('stats.mal.anime'), formatNumber(mal.anime))
+			line(tr('stats.mal.manga'), formatNumber(mal.manga))
+		}
+
 		for (const column of columns) {
-			if (column.kind === 'platform') { renderPsn(); continue }
+			if (column.kind === 'platform') {
+				if (column.top.key === 'myanimelist') renderMal(); else renderPsn()
+				continue
+			}
 			const col = box.createDiv({ cls: 'library-stats-col' })
 			col.createEl('h3', { text: topLabel(column.top, this.plugin.settings.categories) })
 			if (column.kind === 'property') {
@@ -452,6 +469,15 @@ export class LibraryView extends ItemView {
 		setIcon(searchBtn, 'search')
 		searchBtn.addEventListener('click', () => this.plugin.openLibrarySearch())
 
+		// One press, every connected platform: the forced update that would
+		// otherwise wait for the daily timers.
+		const updateBtn = actions.createEl('button', {
+			cls: 'library-icon-btn',
+			attr: { 'aria-label': tr('cmd.updateAll') }
+		})
+		setIcon(updateBtn, 'refresh-cw')
+		updateBtn.addEventListener('click', () => void this.plugin.updateAll())
+
 		const pageHeader = (): void => {
 			root.createDiv({ cls: 'library-page-header' }).appendChild(actions)
 		}
@@ -469,8 +495,12 @@ export class LibraryView extends ItemView {
 		// that block is on: switching both off must not hide them anywhere.
 		const settings = this.plugin.settings
 		const upNextOnly = settings.showUpNext && !settings.upNextInCategories
+		let rendered = 0
 		for (const { category, cards } of sections) {
 			const shown = upNextOnly ? cards.filter(card => !notStarted(card.fm, card.kind)) : cards
+			// A category with nothing to show is not worth a heading.
+			if (shown.length === 0) continue
+			rendered++
 			this.renderSection(root, {
 				title: category.name,
 				sortId: category.name,
@@ -499,7 +529,9 @@ export class LibraryView extends ItemView {
 				setCollapsed: (collapsed) => { settings.upNextCollapsed = collapsed }
 			}, upNext)
 			upNextEl.addClass('library-up-next')
+			rendered++
 		}
+		if (rendered === 0) root.createEl('p', { text: tr('view.empty') })
 		root.scrollTop = scrollTop
 	}
 
@@ -554,6 +586,8 @@ export class LibraryView extends ItemView {
 			{ label: tr('sort.year'), key: 'year' },
 			{ label: tr('sort.rating'), key: 'rating' },
 			{ label: tr('sort.date'), key: 'date' },
+			// Any category: when the note file was last edited on disk.
+			{ label: tr('sort.modified'), key: 'modified' },
 			// Games only: when it was last played, newest first.
 			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : [])
 		]
@@ -576,6 +610,7 @@ export class LibraryView extends ItemView {
 					case 'year': cmp = a.year - b.year || parseDate(a.fm.Released) - parseDate(b.fm.Released); break
 					case 'rating': cmp = a.rating - b.rating; break
 					case 'date': cmp = a.date - b.date; break
+					case 'modified': cmp = a.file.stat.mtime - b.file.stat.mtime; break
 					case 'played': cmp = parseDate(a.fm['Last Played']) - parseDate(b.fm['Last Played']); break
 				}
 				return sortAsc ? cmp : -cmp
@@ -705,7 +740,8 @@ export class LibraryView extends ItemView {
 		renderTrophies(info, fm, 'card-trophies')
 
 		const percent = shownProgress(fm, card.kind)
-		if (percent !== null) {
+		// A full title is done: the line has nothing left to show.
+		if (percent !== null && percent < 100) {
 			const pc = info.createDiv({ cls: 'card-progress' })
 			pc.createDiv({ cls: 'card-progress-label', text: String(percent) + '%' })
 			const bar = pc.createDiv({ cls: 'card-progress-bar' })
