@@ -266,7 +266,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 			{
 				heading: tr("settings.section.games"),
 				rows: [
-					note(tr("settings.games.desc")),
 					{ name: "PlayStation", desc: tr("settings.psn.desc"), render: (row) => this.psnAccount(row) },
 					{ name: "Steam", desc: tr("settings.steam.desc"), render: (row) => this.steamAccount(row) },
 				],
