@@ -325,6 +325,15 @@ export interface NintendoPlayedGame {
 	firstPlayedAt: number
 }
 
+// The play log lists video and music apps beside the games and marks them in
+// no way, so they are told apart by name.
+// ponytail: fixed list of the apps the eShop carries, extend when one slips through.
+const MEDIA_APP = /^(youtube|netflix|hulu|twitch|crunchyroll|funimation|disney\+|prime video|amazon prime video|spotify|pluto tv|plex|dazn|abema|niconico|u-next|tubi|vevo)$/i
+
+export function isMediaApp(name: string): boolean {
+	return MEDIA_APP.test(name.replace(/[™®©]/g, '').replace(/\s+/g, ' ').trim())
+}
+
 // The play activity of the connected account; null when any step fails.
 export async function nintendoPlayLog(tokens: NintendoTokens): Promise<NintendoPlayedGame[] | null> {
 	try {
@@ -337,7 +346,7 @@ export async function nintendoPlayLog(tokens: NintendoTokens): Promise<NintendoP
 		if (!login) return null
 		const games = await coralCall<Array<Partial<NintendoPlayedGame>>>(session, login, '/v4/User/PlayLog/Show', { nsaId: login.nsaId })
 		if (!games) return null
-		return games.filter(game => !!game.name).map(game => ({
+		return games.filter(game => !!game.name && !isMediaApp(game.name)).map(game => ({
 			name: game.name as string,
 			imageUri: game.imageUri ?? null,
 			shopUri: game.shopUri ?? null,
