@@ -291,7 +291,7 @@ export async function psnOwnedGames(token: string): Promise<PsnOwnedGame[] | nul
 			try {
 				const resp = await requestUrl({
 					url,
-					// Sony's GraphQL refuses a request without these as possible CSRF.
+					// Sony's GraphQL refuses a request without these: a guard against possible CSRF.
 					headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'apollo-require-preflight': 'true' },
 					throw: false,
 				})

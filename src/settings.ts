@@ -738,8 +738,14 @@ export class LibrarySettingTab extends PluginSettingTab {
 	private renameCategory(cat: ICategory, name: string): void {
 		const settings = this.plugin.settings;
 		const from = cat.name;
+		if (!name) return;
+		// A name another category already takes gets a number, as a new one does.
+		const taken = new Set(settings.categories.filter((c) => c !== cat).map((c) => c.name));
+		const base = name;
+		for (let n = 2; taken.has(name); n++) name = `${base} ${String(n)}`;
+		if (name === from) return;
 		cat.name = name;
-		if (!from || from === name || settings.categories.some((c) => c !== cat && c.name === from)) return;
+		if (!from || settings.categories.some((c) => c !== cat && c.name === from)) return;
 		for (const state of [settings.sortState, settings.filterState] as Array<Record<string, unknown>>) {
 			if (from in state && !(name in state)) state[name] = state[from];
 			delete state[from];

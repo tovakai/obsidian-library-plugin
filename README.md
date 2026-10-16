@@ -36,7 +36,7 @@
 2. Open the Library tab from the ribbon, press +, pick what you are adding, and search. The first title of each kind creates its category and folder.
 3. For movies and series, add a year after the title to pick between films that share a name: `dune 1984`.
 
-Categories in the Library settings tab rename and move folders, taking the notes inside.
+Categories in the Library settings tab reorder by dragging, rename and move folders, taking the notes inside.
 
 ## Sources
 
