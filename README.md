@@ -24,7 +24,7 @@
 
 - Movies, series, anime, games, books, comics, and music, with ratings, stills, cast, and trailers where the source has them; movies, series, games, and comics also match a title in any language.
 - Tick episodes or chapters and score them; `Progress` and `My Rating` follow. A movie is watched or not.
-- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Unstarted titles show an eye icon and gather in Up next.
+- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Each category filters by year, genre, country, or platform (only values your notes have) and sorts by title, year, rating, date, or unstarted first. Unstarted titles show an eye icon and gather in Up next, one category at a time if you like.
 - Similar titles under movie, series, anime, game, and book notes.
 - Connect AniList, MyAnimeList, PlayStation, and Steam in settings: lists, played games, playtime, trophies, and achievements import as notes; anime and PlayStation lists re-import once a day on desktop.
 - Categories count their titles and time spent; statistics compare those hours with "In the same time" facts like trips to the Moon or marathons run.
@@ -69,6 +69,7 @@ Type: Series
 Name: Stranger Things
 Year: 2016
 Genre: ["[[Drama]]", "[[Horror]]"]
+Country: ["United States"]
 Creator: ["[[The Duffer Brothers]]"]
 Cast: ["[[Winona Ryder]]"]
 Rating IMDB: 8.7
@@ -94,7 +95,7 @@ Your library is plain notes that open offline; covers load from the web. The plu
 | `www.omdbapi.com`, `m.media-amazon.com` | Movie search with a key, its posters | Title or IMDb id, key |
 | `v3-cinemeta.strem.io`, `images.metahub.space`, `episodes.metahub.space` | Movies, series, stills | Title or IMDb id, genre |
 | `api.themoviedb.org`, `image.tmdb.org` | Movie and series details, with a key | IMDb id, key |
-| `www.wikidata.org`, `en.wikipedia.org`, `upload.wikimedia.org` | Search, Rotten Tomatoes, trailers, covers | Search text, ids |
+| `www.wikidata.org`, `en.wikipedia.org`, `upload.wikimedia.org` | Search, Rotten Tomatoes, trailers, covers, game countries | Search text, ids, game titles |
 | `openlibrary.org`, `covers.openlibrary.org` | Books, chapters, covers | Title, author, ISBN, genres |
 | `www.googleapis.com`, `books.google.com` | Book search with a key, its covers | Title, key |
 | `api.rawg.io`, `media.rawg.io` | Games, with a key | Title or id, genre, key |

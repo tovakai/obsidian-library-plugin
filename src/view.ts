@@ -61,13 +61,41 @@ const TIME_COLORS: Record<string, string> = {
 	game: 'color-mix(in srgb, var(--interactive-accent) 80%, var(--text-normal))'
 }
 
-type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played'
+type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played' | 'unstarted'
 
-const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played']
+const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played', 'unstarted']
 
 interface SortChoice {
 	key: SortKey
 	asc: boolean
+}
+
+// What a category can be narrowed by, in toolbar order.
+type Facet = 'year' | 'genre' | 'country' | 'platform'
+
+const FACETS: { facet: Facet, label: string, games?: boolean }[] = [
+	{ facet: 'year', label: 'sort.year' },
+	{ facet: 'genre', label: 'header.genre' },
+	{ facet: 'country', label: 'filter.country' },
+	{ facet: 'platform', label: 'settings.stats.groupPlatforms', games: true },
+]
+
+// The values a card has for a filter: its year, its genres (as written, links
+// read by their name), its countries, its platforms.
+function facetValues(card: CardData, facet: Facet): string[] {
+	switch (facet) {
+		case 'year': return card.year > 0 ? [String(card.year)] : []
+		case 'genre': return toStrArray(card.fm.Genre).map(linkLabel).filter(Boolean)
+		case 'country': return toStrArray(card.fm.Country)
+		case 'platform': return toStrArray(card.fm.Platforms)
+	}
+}
+
+// Cards that match every chosen filter.
+function filterCards(cards: CardData[], chosen: Record<string, string>): CardData[] {
+	const active = FACETS.filter(f => chosen[f.facet])
+	if (active.length === 0) return cards
+	return cards.filter(card => active.every(f => facetValues(card, f.facet).indexOf(chosen[f.facet] as string) >= 0))
 }
 
 // A heading over a grid of cards: a category's, or the "Up next" block's.
@@ -80,6 +108,9 @@ interface SectionSpec {
 	setCollapsed(collapsed: boolean): void
 	// The section's medium: movies, series, anime and music add the time spent.
 	kind?: ContentType
+	// A category's filters: every card it has, before filtering, to offer
+	// the values from, and the values chosen.
+	filters?: { all: CardData[], chosen: Record<string, string>, choose(facet: Facet, value: string): void }
 }
 
 // A key no category name takes: the categories' sort choices share the map.
@@ -501,6 +532,7 @@ export class LibraryView extends ItemView {
 			// A category with nothing to show is not worth a heading.
 			if (shown.length === 0) continue
 			rendered++
+			const chosen = settings.filterState[category.name] ?? {}
 			this.renderSection(root, {
 				title: category.name,
 				sortId: category.name,
@@ -510,29 +542,116 @@ export class LibraryView extends ItemView {
 				setCollapsed: (collapsed) => {
 					if (collapsed) category.collapsed = true
 					else delete category.collapsed
+				},
+				filters: {
+					all: shown,
+					chosen,
+					choose: (facet, value) => {
+						const next = { ...(settings.filterState[category.name] ?? {}) }
+						if (value) next[facet] = value
+						else delete next[facet]
+						if (Object.keys(next).length > 0) settings.filterState[category.name] = next
+						else delete settings.filterState[category.name]
+						void this.plugin.persistSettings()
+						this.render()
+					}
 				}
-			}, shown)
+			}, filterCards(shown, chosen))
 		}
 
 		// At the end of the page: everything not started yet, from every
-		// category, newest first.
-		const upNext: CardData[] = []
-		for (const { cards } of sections) {
-			for (const card of cards) if (notStarted(card.fm, card.kind)) upNext.push(card)
+		// category, newest first; a row of category buttons narrows it to one.
+		const upNext: { category: string, card: CardData }[] = []
+		for (const { category, cards } of sections) {
+			for (const card of cards) if (notStarted(card.fm, card.kind)) upNext.push({ category: category.name, card })
 		}
 		if (settings.showUpNext && upNext.length > 0) {
+			const names: string[] = []
+			for (const item of upNext) if (names.indexOf(item.category) < 0) names.push(item.category)
+			// A category that has nothing left to start falls back to all of them.
+			const chosen = names.indexOf(settings.upNextCategory) >= 0 ? settings.upNextCategory : ''
+			const shown = upNext.filter(item => !chosen || item.category === chosen).map(item => item.card)
 			const upNextEl = this.renderSection(root, {
 				title: tr('upNext.title'),
 				sortId: UP_NEXT_SORT,
 				defaultSort: { key: 'date', asc: false },
 				collapsed: settings.upNextCollapsed,
 				setCollapsed: (collapsed) => { settings.upNextCollapsed = collapsed }
-			}, upNext)
+			}, shown)
 			upNextEl.addClass('library-up-next')
+			// One category alone needs no choosing.
+			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen)
 			rendered++
 		}
 		if (rendered === 0) root.createEl('p', { text: tr('view.empty') })
 		root.scrollTop = scrollTop
+	}
+
+	// Up next's category buttons in its toolbar, between the count and the
+	// sort: All, then each category that has something not started, in the
+	// library's order.
+	private upNextFilter(section: HTMLElement, names: string[], chosen: string): void {
+		const row = createDiv({ cls: 'library-filter', attr: { role: 'group', 'aria-label': tr('upNext.title') } })
+		for (const name of ['', ...names]) {
+			const button = row.createEl('button', {
+				cls: 'library-filter-item',
+				text: name || tr('filter.all'),
+				attr: { 'aria-pressed': name === chosen ? 'true' : 'false' }
+			})
+			if (name === chosen) button.addClass('is-active')
+			button.addEventListener('click', () => {
+				if (name === this.plugin.settings.upNextCategory) return
+				this.plugin.settings.upNextCategory = name
+				void this.plugin.persistSettings()
+				this.render()
+			})
+		}
+		const toolbar = section.querySelector('.library-toolbar')
+		toolbar?.insertBefore(row, toolbar.querySelector('.library-toolbar-spacer'))
+	}
+
+	// A dropdown per filter, after the count: only values some card of the
+	// category has, and only filters with a choice to make (two values or
+	// more), unless one is already chosen and has to stay clearable.
+	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>, kind?: ContentType): void {
+		for (const { facet, label, games } of FACETS) {
+			if (games && kind !== 'game') continue
+			const counts = new Map<string, number>()
+			for (const card of filters.all) {
+				for (const value of facetValues(card, facet)) counts.set(value, (counts.get(value) ?? 0) + 1)
+			}
+			const chosen = filters.chosen[facet] ?? ''
+			if (counts.size < 2 && !chosen) continue
+			// Years newest first, the rest alphabetically.
+			const values = [...counts.keys()].sort((a, b) => facet === 'year' ? Number(b) - Number(a) : a.localeCompare(b))
+			const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
+			const trigger = dropdown.createEl('button', {
+				cls: 'library-sort-trigger',
+				text: (chosen || tr(label)) + ' ▾',
+				attr: { 'aria-label': tr(label), 'aria-haspopup': 'true', 'aria-expanded': 'false' }
+			})
+			if (chosen) trigger.addClass('is-active')
+			const menu = dropdown.createDiv({ cls: 'library-sort-menu library-filter-menu' })
+			for (const value of ['', ...values]) {
+				const item = menu.createEl('button', {
+					cls: 'library-sort-menu-item',
+					text: value ? `${value} · ${formatNumber(counts.get(value) ?? 0)}` : tr('filter.all')
+				})
+				if (value === chosen) item.addClass('active')
+				item.addEventListener('click', e => {
+					e.stopPropagation()
+					menu.removeClass('open')
+					if (value !== chosen) filters.choose(facet, value)
+				})
+			}
+			trigger.addEventListener('click', e => {
+				e.stopPropagation()
+				const open = !menu.hasClass('open')
+				this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
+				menu.toggleClass('open', open)
+				trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
+			})
+		}
 	}
 
 	// Beside the fold button: the number of titles, and for movies, series,
@@ -565,6 +684,7 @@ export class LibraryView extends ItemView {
 			attr: { 'aria-label': spec.title, 'aria-expanded': 'true' }
 		})
 		this.sectionMeta(toolbar, cards, spec.kind)
+		if (spec.filters) this.sectionFilters(toolbar, spec.filters, spec.kind)
 		toolbar.createDiv({ cls: 'library-toolbar-spacer' })
 
 		const sortDropdown = toolbar.createDiv({ cls: 'library-sort-dropdown' })
@@ -589,10 +709,16 @@ export class LibraryView extends ItemView {
 			// Any category: when the note file was last edited on disk.
 			{ label: tr('sort.modified'), key: 'modified' },
 			// Games only: when it was last played, newest first.
-			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : [])
+			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : []),
+			// Titles not started yet first, by name within each half; only where
+			// the section holds some, as Up next can take them all away.
+			...(spec.sortId !== UP_NEXT_SORT && cards.some(card => notStarted(card.fm, card.kind))
+				? [{ label: tr('sort.unstarted'), key: 'unstarted' as SortKey }] : [])
 		]
 
-		const savedSort = this.readSort(spec.sortId, spec.defaultSort)
+		// A saved choice the section no longer offers falls back to the default.
+		const restored = this.readSort(spec.sortId, spec.defaultSort)
+		const savedSort = sortOptions.some(o => o.key === restored.key) ? restored : spec.defaultSort
 		let currentSort: SortKey = savedSort.key
 		let sortAsc = savedSort.asc
 
@@ -612,6 +738,11 @@ export class LibraryView extends ItemView {
 					case 'date': cmp = a.date - b.date; break
 					case 'modified': cmp = a.file.stat.mtime - b.file.stat.mtime; break
 					case 'played': cmp = parseDate(a.fm['Last Played']) - parseDate(b.fm['Last Played']); break
+					case 'unstarted':
+						cmp = Number(notStarted(b.fm, b.kind)) - Number(notStarted(a.fm, a.kind))
+						// Within each half the names stay in order whichever way the halves go.
+						if (cmp === 0) return a.name.localeCompare(b.name)
+						break
 				}
 				return sortAsc ? cmp : -cmp
 			})
@@ -628,7 +759,7 @@ export class LibraryView extends ItemView {
 					sortAsc = !sortAsc
 				} else {
 					currentSort = opt.key
-					sortAsc = opt.key === 'name'
+					sortAsc = opt.key === 'name' || opt.key === 'unstarted'
 				}
 				sortMenu.querySelectorAll('.library-sort-menu-item').forEach(b => b.removeClass('active'))
 				item.addClass('active')

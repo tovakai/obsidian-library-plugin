@@ -34,6 +34,8 @@ interface OmdbDetails {
 	Title: string
 	Year?: string
 	Genre?: string
+	// Comma-separated: "Japan, United States".
+	Country?: string
 	Director?: string
 	Writer?: string
 	Actors?: string
@@ -57,6 +59,8 @@ interface CinemetaMeta {
 	releaseInfo?: string
 	year?: string
 	genre?: string[]
+	// Comma-separated, like OMDb's.
+	country?: string
 	director?: string[] | null
 	writer?: string[] | null
 	cast?: string[]
@@ -64,6 +68,12 @@ interface CinemetaMeta {
 	runtime?: string
 	poster?: string
 	videos?: { season?: number }[]
+}
+
+// "Japan, United States" as a list; empty for none or OMDb's "N/A".
+function countries(value: string | undefined): string[] {
+	if (!value || value === 'N/A') return []
+	return value.split(',').map(s => s.trim()).filter(Boolean)
 }
 
 // The body of a failed request may not be JSON (an HTML error page).
@@ -308,6 +318,7 @@ export class OmdbProvider implements ContentProvider {
 				Name: meta.name,
 				Year: this.year(years),
 				Genre: meta.genre ?? [],
+				Country: countries(meta.country),
 				Creator: meta.director?.length ? meta.director : meta.writer ?? [],
 				Cast: meta.cast ?? [],
 				Cover: meta.poster ?? null,
@@ -367,6 +378,7 @@ export class OmdbProvider implements ContentProvider {
 				Name: details.Title,
 				Year: this.year(rawYear),
 				Genre: genres,
+				Country: countries(details.Country),
 				Creator: creators,
 				Cast: cast,
 				Cover: this.cover(details.Poster),

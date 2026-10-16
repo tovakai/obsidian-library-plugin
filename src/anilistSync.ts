@@ -21,6 +21,15 @@ export interface AniListEntry {
 
 export type MediaListStatus = 'CURRENT' | 'COMPLETED' | 'PLANNING'
 
+// The host of an address, or null for text that is not one.
+function hostOf(url: string): string | null {
+	try {
+		return new URL(url).hostname
+	} catch {
+		return null
+	}
+}
+
 // Build the authorize URL (implicit grant). The client must be registered with the PIN redirect.
 export function anilistAuthUrl(clientId: string): string {
 	return `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=token`
@@ -28,8 +37,10 @@ export function anilistAuthUrl(clientId: string): string {
 
 // The implicit grant answers in the redirect's fragment:
 // https://anilist.co/api/v2/oauth/pin#access_token=…&token_type=Bearer.
+// Only AniList's own host counts: a longer host that merely starts with it
+// would hand the plugin someone else's token.
 export function tokenFromRedirect(url: string): string | null {
-	if (!url.startsWith('https://anilist.co')) return null
+	if (hostOf(url) !== 'anilist.co' || !url.startsWith('https:')) return null
 	const match = /[#&]access_token=([^&\s]+)/.exec(url)
 	const token = match?.[1]
 	if (!token) return null

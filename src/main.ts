@@ -2274,6 +2274,8 @@ export default class LibraryPlugin extends Plugin {
 
 		const genres = toStrArray(fm.Genre).map(linkLabel)
 		if (genres.length > 0) addRow(tr('header.genre'), genres.join(', '))
+		const countries = toStrArray(fm.Country)
+		if (countries.length > 0) addRow(tr('filter.country'), countries.join(', '))
 
 		const runtime = runtimeMinutes(fm.Runtime)
 		if (runtime !== null) addRow(tr('header.runtime'), formatRuntime(totalRuntimeMinutes(fm, runtime, kind)))
@@ -2642,9 +2644,11 @@ export default class LibraryPlugin extends Plugin {
 		if (!Array.isArray(this.settings.categories)) this.settings.categories = []
 		this.settings.categories = this.settings.categories.filter(cat => !!cat && typeof cat === 'object')
 		if (!this.settings.sortState || typeof this.settings.sortState !== 'object') this.settings.sortState = {}
+		if (!this.settings.filterState || typeof this.settings.filterState !== 'object') this.settings.filterState = {}
 		if (typeof this.settings.statsCollapsed !== 'boolean') this.settings.statsCollapsed = false
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
+		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
 		if (typeof this.settings.upNextInCategories !== 'boolean') this.settings.upNextInCategories = true
 		if (typeof this.settings.skipFields !== 'string') this.settings.skipFields = ''
 		if (!this.settings.psnTokens || typeof this.settings.psnTokens !== 'object') this.settings.psnTokens = null
