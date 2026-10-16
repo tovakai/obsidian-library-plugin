@@ -15,6 +15,7 @@ interface CinemetaVideo {
 }
 
 interface CinemetaMeta {
+	poster?: string
 	background?: string
 	runtime?: string
 	trailerStreams?: CinemetaTrailer[]
@@ -44,6 +45,9 @@ export class CinemetaEnricher implements MetadataEnricher {
 			const meta = (resp.json as CinemetaResponse).meta
 			if (!meta || typeof meta !== 'object') return fields
 
+			// The cover for a title OMDb has no poster for yet, as with a series
+			// that just started: enrichers only fill fields still empty.
+			if (meta.poster) fields.Cover = meta.poster.replace('/poster/small/', '/poster/medium/')
 			const trailer = this.trailerOf(meta)
 			if (trailer) fields.Trailer = trailer
 			const runtime = runtimeMinutes(meta.runtime)
