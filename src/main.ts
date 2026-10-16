@@ -7,7 +7,6 @@ import {
 	setIcon,
 	setTooltip,
 	Platform,
-	type TFolder
 } from 'obsidian'
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
@@ -51,6 +50,7 @@ import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal } from './ui/psnLoginModal'
 import { AuthModal } from './ui/authModal'
+import { SIGNER_PROJECT, codeFromRedirect as nintendoCode, exchangeNintendoCode, nintendoAuth, nintendoPlayLog, type NintendoPlayedGame } from './nintendo'
 import { renderTrophies } from './ui/trophyIcons'
 import { renderPlatformLabels } from './ui/platformIcons'
 import { createEmbedPlayer, toEmbed } from './trailer'
@@ -92,24 +92,24 @@ import {
 	toLinks
 } from './util'
 
-// Properties stored as links: every genre's, creator's and actor's note lists
-// the title among its backlinks, and the graph draws them.
+// Genre, Creator and Cast hold [[links]]: each linked note lists the title as a
+// backlink and the graph draws them.
 const LINK_FIELDS = ['Genre', 'Creator', 'Cast']
 
-// The background metadata pass waits for the vault to settle, then walks the
-// library one note at a time so the sources are never hit in a burst.
+// let the vault settle before the walk starts
 const ENRICH_START_DELAY = 10 * 1000
+// iPhone Safari UA: some sign-in pages only fit as a phone-width window.
+const PHONE_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+
 const SOURCE_SCORES = ['Rating IMDB', 'Rating RT', 'Rating MC', 'Rating RAWG', 'Rating AniList', 'Rating MAL']
 
-// Where a new note goes: a category, or a medium whose category is created
-// with the first note added to it.
+// a category, or a medium whose category is created with its first note
 type Target = ICategory | ContentType
 
 function typeOf(target: Target): ContentType {
 	return typeof target === 'string' ? target : target.contentType
 }
 
-// A category's notes leave one folder for another, subfolders kept.
 interface FolderMove {
 	typeValue: string
 	from: string
@@ -117,16 +117,13 @@ interface FolderMove {
 }
 const ENRICH_STEP_DELAY = 700
 
-// An anime note and the id it was added under; a sync looks up the other
-// site's id through AniList when it needs it.
+// an anime note: its id on each site, one resolved through AniList
 interface AnimeNote {
 	file: TFile
 	anilist: number | null
 	mal: number | null
 }
 
-// One row of a fetched list, whichever service it came from: everything the
-// import needs to find the note (or create it) without caring about the source.
 interface ImportRow {
 	sourceId: string | null
 	altId: string | null
@@ -144,20 +141,21 @@ export default class LibraryPlugin extends Plugin {
 	private bannerTimer: number | null = null
 	private bannerRetries = 0
 	private isRefreshing = false
-	// One MyAnimeList token refresh at a time; concurrent callers share it.
 	private settingTab: LibrarySettingTab | null = null
 	private malRefreshing: Promise<string | null> | null = null
 	private psnRefreshing: Promise<string | null> | null = null
 	private steamImporting = false
+	private nintendoImporting = false
+	private lookingUp = false
 	private psnImporting = false
 	private malImporting = false
 	private anilistImporting = false
-	// A note we pushed to MyAnimeList is being written back: no echo push.
+	// our own MAL write coming back: no echo push
 	private malPushing = false
 	private psnTimer: number | null = null
 	// The sign-in ran out: said once a session, not on every attempt.
 	private psnExpiredSaid = false
-	// Recommendations per Source:Source ID, fetched once a session.
+	// keyed Source:Source ID, fetched once a session
 	private recommendations = new Map<string, Promise<Recommendation[]>>()
 	private steamTimer: number | null = null
 	private refreshCooldowns = new Map<string, number>()
@@ -172,9 +170,8 @@ export default class LibraryPlugin extends Plugin {
 	private unloaded = false
 	private keySignatures: Record<string, string> = {}
 	private lightbox: Lightbox | null = null
-	// Seasons unfolded into their episodes, per note; screen state only.
+	// unfolded seasons per note; screen state only
 	private openSeasons = new Map<string, Set<number>>()
-	// Books whose table of contents was looked up this session.
 	private chapterLookups = new Set<string>()
 
 	async onload(): Promise<void> {
@@ -182,8 +179,7 @@ export default class LibraryPlugin extends Plugin {
 		const googleBooks = new GoogleBooksProvider(() => this.settings.googleBooksApiKey)
 		const openLibrary = new OpenLibraryProvider()
 		const tmdb = new TmdbEnricher(() => this.settings.tmdbApiKey)
-		// Cinemeta is keyless, so trailer/stills/seasons work without any setup;
-		// TMDB comes first and wins where both have data (richer season ratings).
+		// Cinemeta is keyless; TMDB runs first and wins where both have data
 		this.registry.register(
 			new OmdbProvider(() => this.settings.omdbApiKey, [tmdb, new CinemetaEnricher(), new RottenTomatoesEnricher()])
 		)
@@ -226,9 +222,7 @@ export default class LibraryPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on('layout-change', () => { banner() }))
 		this.app.workspace.onLayoutReady(() => {
 			if (this.unloaded) return
-			// Registered only now: at startup the cache re-indexes every note
-			// changed while the app was closed (or by sync), and none of them
-			// needs its links rewritten before the app is usable.
+			// registered on layout-ready: startup re-indexes every note changed while the app was closed
 			this.registerEvent(
 				this.app.metadataCache.on('changed', (file) => {
 					if (this.app.workspace.getActiveFile()?.path === file.path) banner()
@@ -240,7 +234,6 @@ export default class LibraryPlugin extends Plugin {
 						this.linkTimers.delete(file.path)
 						void this.syncNote(file)
 					}, 800))
-					// MyAnimeList keeps its side current too, on the same debounce.
 					const existingPush = this.malPushTimers.get(file.path)
 					if (existingPush) window.clearTimeout(existingPush)
 					this.malPushTimers.set(file.path, window.setTimeout(() => {
@@ -251,15 +244,12 @@ export default class LibraryPlugin extends Plugin {
 			)
 			this.refreshBanner()
 			this.scheduleEnrich(ENRICH_START_DELAY)
-			// PlayStation keeps itself current: checked a minute after start and
-			// then every hour, imported once a day.
-			this.registerInterval(window.setTimeout(() => this.psnSyncIfDue(), 60000))
-			this.registerInterval(window.setInterval(() => this.psnSyncIfDue(), 3600000))
-			// MyAnimeList and AniList likewise: re-imported once a day on
-			// desktop, one after the other — two imports running at once
-			// could create the same note twice.
+			// MAL then AniList: two imports at once could create the same note twice
 			this.registerInterval(window.setTimeout(() => this.syncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.syncTick(), 3600000))
+			// PSN, Steam, Nintendo in turn: each finds the notes the others wrote
+			this.registerInterval(window.setTimeout(() => this.gameSyncTick(), 60000))
+			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
 
@@ -391,6 +381,11 @@ export default class LibraryPlugin extends Plugin {
 			name: tr('cmd.psnImport'),
 			callback: () => { void this.psnImport(true) }
 		})
+		this.addCommand({
+			id: 'nintendo-import',
+			name: tr('cmd.nintendoImport'),
+			callback: () => { void this.nintendoImport(true) }
+		})
 	}
 
 	onunload(): void {
@@ -416,8 +411,7 @@ export default class LibraryPlugin extends Plugin {
 		const resume = this.enrichWait
 		this.enrichWait = null
 		if (resume) resume()
-		// The headers and the lightbox live in Obsidian's own DOM; a disabled
-		// plugin must not leave them behind in the open notes.
+		// headers and lightbox live in Obsidian's own DOM: clear them on unload
 		this.lightbox?.close()
 		this.lightbox = null
 		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
@@ -426,9 +420,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async saveSettings(): Promise<void> {
-		// A freshly added key unlocks metadata the earlier pass could not fetch,
-		// so the version marks of the notes it serves are dropped and the walk
-		// starts over — once the typing has stopped, not with every half-entered key.
+		// a changed key unlocks data the earlier pass could not fetch: drop its marks and re-walk
 		const signatures = this.apiKeySignatures()
 		const changed = Object.keys(signatures).filter(type => signatures[type] !== this.keySignatures[type])
 		if (changed.length > 0) {
@@ -440,8 +432,7 @@ export default class LibraryPlugin extends Plugin {
 		this.refreshViews()
 	}
 
-	// data.json changed on disk — usually another device through sync. Reload,
-	// or the next save here would overwrite what was changed there.
+	// data.json changed on disk (another device via sync): reload or this session overwrites it
 	async onExternalSettingsChange(): Promise<void> {
 		try {
 			await this.loadSettings()
@@ -451,10 +442,11 @@ export default class LibraryPlugin extends Plugin {
 		}
 		this.keySignatures = this.apiKeySignatures()
 		this.refreshViews()
+		// The open tab holds the replaced settings object: an edit there would be lost.
+		this.settingTab?.refresh()
 	}
 
-	// Writes the settings file without re-rendering the open library views:
-	// the view calls this for state it already applied to its own DOM.
+	// saves without re-rendering views: for state the view already applied to its own DOM
 	async persistSettings(): Promise<void> {
 		await this.saveData(this.settings)
 	}
@@ -489,8 +481,7 @@ export default class LibraryPlugin extends Plugin {
 		}).open()
 	}
 
-	// The categories, then every medium that has none yet: picking one of
-	// those creates its category with the first title added.
+	// categories first, then media with none yet
 	addChoices(): AddChoice[] {
 		const categories = this.settings.categories
 		const choices: AddChoice[] = categories.map(category => ({ category }))
@@ -516,8 +507,6 @@ export default class LibraryPlugin extends Plugin {
 		}).open()
 	}
 
-	// The category a note of this medium goes to: the first one of it, or a
-	// new one made now, with its folder inside the library folder.
 	private async categoryFor(target: Target): Promise<ICategory> {
 		if (typeof target !== 'string') return target
 		const existing = this.settings.categories.find(c => c.contentType === target)
@@ -530,7 +519,6 @@ export default class LibraryPlugin extends Plugin {
 		return category
 	}
 
-	// The active note, when it belongs to a category that has a source.
 	private activeLibraryFile(): TFile | null {
 		const file = this.app.workspace.getActiveFile()
 		const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined
@@ -583,7 +571,7 @@ export default class LibraryPlugin extends Plugin {
 				}
 			}
 
-			// A new medium gets its category only now, when a note is sure to follow.
+			// the category is made only now, once a note is sure to follow
 			const category = await this.categoryFor(target)
 			const file = await this.newNote(category, provider.id, result.sourceId, result.title, meta)
 			await this.app.workspace.getLeaf(false).openFile(file)
@@ -597,8 +585,7 @@ export default class LibraryPlugin extends Plugin {
 	private async newNote(category: ICategory, source: string, sourceId: string, title: string, meta: NormalizedMetadata, extra: Record<string, unknown> = {}): Promise<TFile> {
 		const path = await this.uniqueNotePath(title, category.folder)
 		const file = await this.app.vault.create(path, await this.templateText(category))
-		// Series, anime and books track progress, movies a watched switch
-		// (Complete), every other medium both.
+		// series/anime/books track progress, movies a watched switch (Complete), others both
 		const tracking = trackingOf(category.contentType)
 		await this.app.fileManager.processFrontMatter(file, (fm) => {
 			Object.assign(fm, {
@@ -615,16 +602,9 @@ export default class LibraryPlugin extends Plugin {
 		return file
 	}
 
-	// Imports the user's Steam library into the first Games category, made with
-	// the first new game when there is none: a note per owned game, Playtime in
-	// hours, and for the games that moved since the last run their achievements
-	// as a ratio, Progress as that share, and Last Played. The library is read
-	// as the user, through the session the sign-in window leaves behind, so no
-	// key is involved. Safe to run again: known games (matched by store URL)
-	// only get their fields written when something changed. Store lookups are
-	// spaced out, since the store API limits requests per minute.
+	// Steam library into Games: Playtime in hours per owned game; the store API limits requests per minute, so lookups are spaced
 	async steamImport(loud = false): Promise<void> {
-		if (this.steamImporting) {
+		if (this.gameImporting()) {
 			if (loud) new Notice(tr('notice.steam.importing'))
 			return
 		}
@@ -634,17 +614,17 @@ export default class LibraryPlugin extends Plugin {
 		let category = this.settings.categories.find(c => c.contentType === 'game')
 		const provider = this.registry.forType('game')
 		if (!provider) return
-		// Without a Games category yet, notes of the Type it gets still count as known games.
+		// with no Games category yet, notes of its default Type still count as known
 		const typeValue = category?.typeValue ?? TYPE_DEFAULTS.game ?? 'Game'
 		this.steamImporting = true
 		let session: SteamSession | null = null
 		try {
-			new Notice(tr('notice.steam.importing'))
+			if (loud) new Notice(tr('notice.steam.importing'))
 			const steam = await steamSession(profile)
-			if (!steam) { new Notice(tr('notice.steam.failed')); return }
+			if (!steam) { if (loud) new Notice(tr('notice.steam.failed')); return }
 			session = steam
 			const games = await ownedGames(steam.token, profile)
-			if (!games) { new Notice(tr('notice.steam.failed')); return }
+			if (!games) { if (loud) new Notice(tr('notice.steam.failed')); return }
 			const byUrl = new Map<string, TFile>()
 			const gameNotes: TFile[] = []
 			for (const file of this.app.vault.getMarkdownFiles()) {
@@ -653,7 +633,7 @@ export default class LibraryPlugin extends Plugin {
 				gameNotes.push(file)
 				if (toStr(fm.URL)) byUrl.set(toStr(fm.URL), file)
 			}
-			// The same game from another platform is one note: found by name.
+			// one note per game across platforms: matched by name
 			const byName = (name: string): TFile | undefined => gameNotes.find((file) => {
 				const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
 				return sameTitle(toStr(fm?.Name) || file.basename, name)
@@ -670,10 +650,7 @@ export default class LibraryPlugin extends Plugin {
 				try {
 					const fm = existing ? this.app.metadataCache.getFileCache(existing)?.frontmatter : undefined
 					const listed = existing ? toStrArray(fm?.Platforms).some(value => value.toLowerCase() === 'steam') : false
-					// A stats call only for the games that moved: new playtime, a new
-					// last-played day, or a session today still in progress. A
-					// session under six minutes can leave every stored number as it
-					// was, so its achievements wait for the next real change.
+					// stats only when the game moved: a session under six minutes can leave every number unchanged
 					const moved = !existing || !listed || Number(fm?.['Playtime Steam']) !== hours
 						|| (lastPlayed !== '' && toStr(fm?.['Last Played']) !== lastPlayed)
 						|| lastPlayed === today
@@ -685,9 +662,7 @@ export default class LibraryPlugin extends Plugin {
 						pairs.push(['Progress', `${String(Math.round((stats.achieved / stats.total) * 100))}/100`])
 						if (stats.achieved === stats.total) pairs.push(['Complete', true])
 					}
-					// On a note PlayStation owns, Progress and Last Played come from
-					// its trophies: Steam's copy of the same game writes only its own
-					// fields, so the two imports never push each other's numbers around.
+					// a PSN-owned note keeps Progress/Last Played/Complete: the two imports never fight
 					const psnOwned = !!fm && 'PSN ID' in fm
 					const wanted = pairs.filter(([field]) => !(psnOwned && (field === 'Progress' || field === 'Last Played' || field === 'Complete')))
 					if (existing) {
@@ -723,7 +698,9 @@ export default class LibraryPlugin extends Plugin {
 					console.error('Library: Steam import error', game.appId, e)
 				}
 			}
-			new Notice(tr('notice.steam.imported', { created, updated }))
+			this.settings.steamLastImport = Date.now()
+			await this.persistSettings()
+			if (loud || created > 0 || updated > 0) new Notice(tr('notice.steam.imported', { created, updated }))
 		} finally {
 			session?.close()
 			this.steamImporting = false
@@ -731,9 +708,7 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// Genre, Creator and Cast are links in their own properties: plain names —
-	// typed by hand or left by an earlier version — become links here, and the
-	// Related property earlier versions kept is dropped. One write covers all.
+	// hand-typed names become links; the legacy Related property is dropped
 	private async syncLinkFields(file: TFile, fields: Record<string, unknown>): Promise<void> {
 		const marker = '%%library-links%%'
 
@@ -782,21 +757,15 @@ export default class LibraryPlugin extends Plugin {
 			await this.syncTracking(file, fm)
 			await this.syncLinkFields(file, fm)
 		} catch (e) {
-			// A note whose YAML does not parse must not stop the ones after it.
 			console.error('Library: note sync error', file.path, e)
 		}
 	}
 
-	// The medium of a note: the content type of its category.
 	private kindOf(fm: Record<string, unknown>): ContentType | undefined {
 		return this.settings.categories.find(c => c.typeValue === toStr(fm.Type))?.contentType
 	}
 
-	// Keeps a note in its medium's shape. Series, anime and books follow their
-	// progress: a Complete from before 2.4.1 fills the progress and goes, unless
-	// there is no total to hold it. Movies follow Complete: a Progress from
-	// before turns watched into Complete and goes. Every other medium keeps both,
-	// and Complete switched on fills the progress.
+	// legacy shapes: a Complete from before 2.4.1 fills the progress and goes; a movie's Progress becomes Complete
 	private async syncTracking(file: TFile, fm: Record<string, unknown>): Promise<void> {
 		const tracking = trackingOf(this.kindOf(fm))
 		const match = toStr(fm.Progress).match(progressPattern)
@@ -908,8 +877,7 @@ export default class LibraryPlugin extends Plugin {
 		new Notice(tr('notice.anilist.pulled', { count: updated }))
 	}
 
-	// Anime notes (`Source: anilist`), each with the id it was added under:
-	// AniList's, or MyAnimeList's for a note found there.
+	// anime notes (Source: anilist) with the id each was added under
 	private animeNotes(): AnimeNote[] {
 		const out: AnimeNote[] = []
 		for (const file of this.app.vault.getMarkdownFiles()) {
@@ -922,8 +890,7 @@ export default class LibraryPlugin extends Plugin {
 		return out
 	}
 
-	// Each note's id on one site: its own when it was added from there, else
-	// looked up through AniList. Null when AniList cannot answer.
+	// each note's id on one site, else resolved through AniList; null when it cannot answer
 	private async idsOn(site: 'anilist' | 'mal', notes: AnimeNote[]): Promise<Map<TFile, number> | null> {
 		const other = site === 'mal' ? 'anilist' : 'mal'
 		const lookup = notes.filter(note => note[site] === null).map(note => note[other] ?? 0)
@@ -938,25 +905,20 @@ export default class LibraryPlugin extends Plugin {
 		return out
 	}
 
-	// Writes a pulled list into the anime notes; returns how many changed.
 	private async applyPulled(ids: Map<TFile, number>, entryFor: (id: number) => { progress: number; complete: boolean } | undefined): Promise<number> {
 		let updated = 0
 		for (const [file, id] of ids) {
 			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
 			const entry = entryFor(id)
 			if (!fm || !entry) continue
-			// Only advance forward — never regress a note that is locally further along. This
-			// makes pull safe to run over hand-edited notes (no silent data loss). An anime
-			// follows its episodes: an entry marked completed fills the note's progress.
+			// forward only: never regress a note that is locally further along
 			const match = toStr(fm.Progress).match(progressPattern)
 			const noteTotal = match ? Number(match[2]) : 0
 			const localWatched = parseWatched(fm.Progress)
 			const pulled = Math.max(localWatched, entry.progress)
 			const newWatched = entry.complete ? Math.max(pulled, noteTotal) : pulled
 			if (newWatched === localWatched && !('Complete' in fm)) continue
-			// Keep the note's episode total so Progress stays in the "watched/total" shape the
-			// rest of the plugin parses; never let total fall below watched (a stale note total
-			// smaller than AniList progress would otherwise write nonsense like "15/12").
+			// keep the note's own total: Progress stays watched/total, never "15/12"
 			const total = String(Math.max(noteTotal, newWatched, 1))
 			try {
 				await this.app.fileManager.processFrontMatter(file, (current: Record<string, unknown>) => {
@@ -972,8 +934,6 @@ export default class LibraryPlugin extends Plugin {
 		return updated
 	}
 
-	// A valid MyAnimeList access token, refreshed when it is about to expire.
-	// Opens Sony's sign-in window; true once the account is connected.
 	connectPsn(): Promise<boolean> {
 		if (!Platform.isDesktopApp) {
 			new Notice(tr('notice.psn.desktopOnly'))
@@ -995,7 +955,6 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
-	// Opens MyAnimeList's sign-in window; true once the account is connected.
 	connectMal(): Promise<boolean> {
 		if (!Platform.isDesktopApp) {
 			new Notice(tr('notice.mal.desktopOnly'))
@@ -1019,9 +978,7 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
-	// Opens AniList's sign-in window; true once the account is connected. The
-	// implicit grant hands the token over in the redirect's fragment — no
-	// exchange, the token itself is stored.
+	// AniList: the implicit grant hands the token over in the redirect fragment, no exchange
 	connectAnilist(): Promise<boolean> {
 		if (!Platform.isDesktopApp) {
 			new Notice(tr('notice.anilist.desktopOnly'))
@@ -1044,9 +1001,7 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
-	// Opens Steam's sign-in window; true once the account is connected. Steam
-	// hands the account back in the address the window lands on, and the window
-	// keeps the session the import later reads the library with.
+	// Steam: the window keeps the session the later import reads the library with
 	connectSteam(): Promise<boolean> {
 		if (!Platform.isDesktopApp) {
 			new Notice(tr('notice.steam.desktopOnly'))
@@ -1067,8 +1022,130 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
-	// Everything PlayStation tells about the user: played games, trophy lists,
-	// trophy level. Null when not connected or Sony does not answer.
+	// Nintendo: consent first — a third-party signing service carries the requests
+	async connectNintendo(): Promise<boolean> {
+		if (!Platform.isDesktopApp) {
+			new Notice(tr('notice.nintendo.desktopOnly'))
+			return false
+		}
+		const agreed = await new Promise<boolean>((resolve) => {
+			new ConfirmModal(this.app, {
+				title: tr('nintendo.consent.title'),
+				text: tr('nintendo.consent.text', { url: SIGNER_PROJECT }),
+				confirm: tr('nintendo.consent.confirm'),
+				cancel: tr('nintendo.consent.cancel'),
+			}, resolve).open()
+		})
+		if (!agreed) return false
+		const auth = await nintendoAuth()
+		return new Promise<boolean>((resolve) => {
+			new AuthModal(this.app, auth.url, (code) => {
+				void (async () => {
+					const tokens = code ? await exchangeNintendoCode(code, auth.verifier) : null
+					if (tokens) {
+						this.settings.nintendoTokens = tokens
+						await this.saveSettings()
+					} else if (code) {
+						new Notice(tr('notice.nintendo.failed'))
+					}
+					resolve(tokens !== null)
+					if (tokens) void this.nintendoImport(true)
+				})()
+			}, { title: tr('nintendo.loginTitle'), extract: nintendoCode, userAgent: PHONE_AGENT }).open()
+		})
+	}
+
+	async nintendoGames(): Promise<NintendoPlayedGame[] | null> {
+		const tokens = this.settings.nintendoTokens
+		return tokens ? nintendoPlayLog(tokens) : null
+	}
+
+	// One game import at a time: each looks for the notes the others write, and
+	// two at once would each create the note for a game on both platforms.
+	private gameImporting(): boolean {
+		return this.psnImporting || this.steamImporting || this.nintendoImporting
+	}
+
+	// Switch play activity into Games: one note per game (shared with PSN/Steam); Nintendo reports minutes and only played games
+	async nintendoImport(loud: boolean): Promise<void> {
+		if (this.gameImporting()) return
+		if (!this.settings.nintendoTokens) return
+		const provider = this.registry.forType('game')
+		if (!provider) return
+		this.nintendoImporting = true
+		try {
+			if (loud) new Notice(tr('notice.nintendo.importing'))
+			const games = await this.nintendoGames()
+			if (!games) { if (loud) new Notice(tr('notice.nintendo.importFailed')); return }
+			let category = this.settings.categories.find(c => c.contentType === 'game')
+			const typeValue = category?.typeValue ?? TYPE_DEFAULTS.game ?? 'Game'
+			const notes = this.app.vault.getMarkdownFiles().filter(file => !isTemplateFile(file.path)
+				&& toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.Type) === typeValue)
+			let created = 0
+			let updated = 0
+			const isSwitch = (value: string): boolean => /switch|nintendo/i.test(value)
+			for (const game of games) {
+				if (this.unloaded) return
+				// the app id in the eShop URI is the stable key
+				const titleId = (/apps\/([0-9a-f]{16})/i.exec(game.shopUri ?? '')?.[1] ?? '').toUpperCase()
+				const name = game.name.replace(/[™®©]/g, '').replace(/\s+/g, ' ').trim()
+				const hours = playtimeHours(game.totalPlayTime)
+				const since = game.firstPlayedAt > 0 ? dmyOf(new Date(game.firstPlayedAt * 1000).toISOString()) : ''
+				try {
+					const existing = notes.find(file => {
+						const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+						return (titleId && toStr(fm?.['Nintendo ID']) === titleId) || sameTitle(toStr(fm?.Name) || file.basename, name)
+					})
+					if (existing) {
+						const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
+						const listed = toStrArray(fm?.Platforms).some(value => value === 'Switch')
+						if (listed && Number(fm?.['Playtime Switch']) === hours && (!titleId || toStr(fm?.['Nintendo ID']) === titleId)) continue
+						await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
+							if (titleId) current['Nintendo ID'] = titleId
+							const cover = this.fieldTarget('Cover')
+							if (game.imageUri && !coverValue(current, this.coverProperty())) current[cover] = game.imageUri
+							dropPlatforms(current, isSwitch)
+							addPlatform(current, 'Switch', hours)
+							if (since && parseDate(since) < parseDate(current.Date)) current.Date = since
+						})
+						updated++
+						continue
+					}
+					if (!category) category = await this.categoryFor('game')
+					const fields: Record<string, unknown> = {}
+					if (titleId) fields['Nintendo ID'] = titleId
+					if (game.imageUri) fields[this.fieldTarget('Cover')] = game.imageUri
+					if (since) fields.Date = since
+					addPlatform(fields, 'Switch', hours)
+					const note = { fields: { Name: name }, progressTotal: null, imdbId: null }
+					const file = await this.newNote(category, provider.id, `nintendo:${titleId || name}`, name, note, fields)
+					notes.push(file)
+					created++
+				} catch (e) {
+					console.error('Library: Nintendo import error', name, e)
+				}
+			}
+			this.settings.nintendoStats = {
+				games: games.length,
+				minutes: games.reduce((sum, game) => sum + game.totalPlayTime, 0),
+				updated: Date.now(),
+			}
+			this.settings.nintendoLastImport = Date.now()
+			// saveSettings redraws the view: the statistics column shows the new totals
+			await this.saveSettings()
+			if (loud || created > 0 || updated > 0) new Notice(tr('notice.nintendo.imported', { created, updated }))
+		} finally {
+			this.nintendoImporting = false
+		}
+		await this.psnLookUp(new Map())
+	}
+
+	private async nintendoSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.nintendoTokens || this.gameImporting()) return
+		if (Date.now() - this.settings.nintendoLastImport < 24 * 3600000) return
+		await this.nintendoImport(false)
+	}
+
 	async psnData(): Promise<{ owned: PsnOwnedGame[]; played: PsnPlayedGame[]; trophies: PsnTrophyTitle[]; summary: PsnTrophySummary | null } | null> {
 		const token = await this.psnToken()
 		if (!token) return null
@@ -1077,19 +1154,16 @@ export default class LibraryPlugin extends Plugin {
 		return { owned: owned ?? [], played: played ?? [], trophies: trophies ?? [], summary }
 	}
 
-	// Brings the PlayStation games into the Games category: every game played,
-	// and every game in the library that has trophies (apps have none). A game
-	// already in the library, by its PSN ID or by name, gets the PlayStation
-	// fields; a new one is looked up in the game sources first. Running it
-	// again updates playtime, trophies and progress.
+	// PSN games into Games: those played, and library games with trophies (apps have none)
 	async psnImport(loud: boolean): Promise<void> {
-		if (this.psnImporting) return
-		const token = await this.psnToken()
-		if (!token) { if (loud) new Notice(tr('notice.psn.noToken')); return }
-		const provider = this.registry.forType('game')
-		if (!provider) return
+		if (this.gameImporting()) return
 		this.psnImporting = true
+		let token: string | null = null
 		try {
+			token = await this.psnToken()
+			if (!token) { if (loud) new Notice(tr('notice.psn.noToken')); return }
+			const provider = this.registry.forType('game')
+			if (!provider) return
 			if (loud) new Notice(tr('notice.psn.importing'))
 			const data = await this.psnData()
 			if (!data) { if (loud) new Notice(tr('notice.psn.failed')); return }
@@ -1099,8 +1173,7 @@ export default class LibraryPlugin extends Plugin {
 			const trophies = new Map(data.trophies.map(title => [title.npCommunicationId, title]))
 			type Entry = { titleId: string; name: string; platform: string; image: string | null; minutes: number | null; lastPlayed: string | null; firstPlayed: string | null }
 			const entries: Entry[] = []
-			// The console of a game Sony gives no category for: from its title id
-			// (PS5 ids start PPSA, PS4 ids CUSA), else from its trophy list.
+			// console when Sony gives none: title id (PS5 = PPSA, PS4 = CUSA), else the trophy list
 			const trophyPlatform = (titleId: string): string => {
 				if (/^PPSA/i.test(titleId)) return 'PS5'
 				if (/^CUSA/i.test(titleId)) return 'PS4'
@@ -1108,8 +1181,6 @@ export default class LibraryPlugin extends Plugin {
 				return (platform.split(',').pop() ?? '').trim().toUpperCase()
 			}
 			for (const game of data.played) {
-				// The portrait cover where Sony has one, as the cards are tall; its
-				// main square art otherwise.
 				const image = game.images.PORTRAIT_BANNER ?? game.images.MASTER ?? game.imageUrl
 				entries.push({ titleId: game.titleId, name: cleanPsnName(game.name), platform: game.category.startsWith('ps5') ? 'PS5' : game.category.startsWith('ps4') ? 'PS4' : trophyPlatform(game.titleId), image, minutes: game.minutes, lastPlayed: game.lastPlayed, firstPlayed: game.firstPlayed })
 			}
@@ -1123,21 +1194,17 @@ export default class LibraryPlugin extends Plugin {
 				&& toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.Type) === typeValue)
 			let created = 0
 			let updated = 0
-			// A note two PlayStation versions share (PS4 and PS5) loses its old
-			// PlayStation hours once, then gets each version's.
+			// a shared PS4/PS5 note drops its old PlayStation hours once, then takes each version's
 			const isPlayStation = (value: string): boolean => /^ps\d|^playstation$/i.test(value)
 			const touched = new Set<string>()
 			for (const entry of entries) {
 				if (this.unloaded) return
 				const trophy = trophies.get(trophyIds.get(entry.titleId) ?? '')
 				const fields: Record<string, unknown> = { 'PSN ID': entry.titleId }
-				// PlayStation's own picture of the game is the cover.
 				if (entry.image) fields[this.fieldTarget('Cover')] = entry.image
 				if (entry.lastPlayed) fields['Last Played'] = dmyOf(entry.lastPlayed)
-				// A game is in the library since it was first played, when that is earlier.
 				const since = entry.firstPlayed ? dmyOf(entry.firstPlayed) : ''
 				if (trophy) {
-					// The share PlayStation shows as the game's progress.
 					fields.Progress = `${String(trophy.progress)}/100`
 					fields.Platinum = trophy.earned.platinum
 					fields.Gold = trophy.earned.gold
@@ -1160,7 +1227,7 @@ export default class LibraryPlugin extends Plugin {
 							touched.add(existing.path)
 							addPlatform(current, entry.platform || 'PlayStation', entry.minutes === null ? null : playtimeHours(entry.minutes))
 							if (since && parseDate(since) < parseDate(current.Date)) current.Date = since
-							// Fields an earlier test build wrote.
+							// legacy fields of an earlier test build
 							delete current.Trophies
 							delete current['Trophy Progress']
 							delete current.Platform
@@ -1168,9 +1235,7 @@ export default class LibraryPlugin extends Plugin {
 						updated++
 						continue
 					}
-					// The note is made from what PlayStation gave, at once; genres,
-					// creators and the trailer are looked up afterwards, one game at
-					// a time (psnLookUp), so a big library shows up in seconds.
+					// the note is made at once from what PSN gave; genres/creators/trailer come later (psnLookUp)
 					if (!category) category = await this.categoryFor('game')
 					const note = { fields: { Name: entry.name }, progressTotal: null, imdbId: null }
 					if (since) fields.Date = since
@@ -1195,23 +1260,29 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			this.psnImporting = false
 		}
-		// The sources know games by their English titles; Sony names them in
-		// the account's language. The note keeps that name.
+		if (!token) return
+		// sources know games by English title, Sony in the account language: the note keeps Sony's
 		const english = new Map<string, string>()
 		for (const game of await psnPlayedGames(token, 'en-US') ?? []) english.set(game.titleId, cleanPsnName(game.name))
 		await this.psnLookUp(english)
 	}
 
-	// Games imported from PlayStation that no source matched yet get their
-	// genres, creators, year and trailer: one at a time, spaced out, in the
-	// background. A game no source knows keeps what PlayStation gave and is
-	// tried again on the next import.
+	// unmatched imported games get genres/creators/year/trailer one at a time in the background; a miss retries next import
 	private async psnLookUp(english: Map<string, string>): Promise<void> {
 		const provider = this.registry.forType('game')
-		if (!provider) return
+		if (!provider || this.lookingUp) return
+		this.lookingUp = true
+		try {
+			await this.lookUpImported(provider, english)
+		} finally {
+			this.lookingUp = false
+		}
+	}
+
+	private async lookUpImported(provider: ContentProvider, english: Map<string, string>): Promise<void> {
 		const pending = this.app.vault.getMarkdownFiles().filter((file) => {
 			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
-			return fm && toStr(fm['Source ID']).startsWith('psn:') && !isTemplateFile(file.path)
+			return fm && /^(psn|nintendo):/.test(toStr(fm['Source ID'])) && !isTemplateFile(file.path)
 		})
 		for (const file of pending) {
 			if (this.unloaded) return
@@ -1235,44 +1306,49 @@ export default class LibraryPlugin extends Plugin {
 					})
 				}
 			} catch (e) {
-				console.error('Library: PlayStation look-up error', file.path, e)
+				console.error('Library: game look-up error', file.path, e)
 			}
 			await new Promise<void>(resolve => { this.psnTimer = window.setTimeout(resolve, 1500) })
 		}
 	}
 
-	// Desktop only, so two devices sharing a vault never import at the same
-	// time and make the same game twice; the notes reach the phone by sync.
-	private psnSyncIfDue(): void {
-		if (!Platform.isDesktopApp || !this.settings.psnTokens || this.psnImporting) return
+	// desktop only: two devices sharing a vault would import at once and make the same game twice
+	private async psnSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.psnTokens || this.gameImporting()) return
 		const stats = this.settings.psnStats
 		if (stats && Date.now() - stats.updated < 24 * 3600000) return
-		void this.psnImport(false)
+		await this.psnImport(false)
 	}
 
-	// MyAnimeList re-import, once a day and only on desktop: a shared vault
-	// would have both devices create the same missing notes.
+	private async steamSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.steamId.trim() || this.gameImporting()) return
+		if (Date.now() - this.settings.steamLastImport < 24 * 3600000) return
+		await this.steamImport(false)
+	}
+
 	private malSyncIfDue(): Promise<void> {
 		if (!Platform.isDesktopApp || !this.settings.malTokens || this.malImporting || this.anilistImporting) return Promise.resolve()
 		if (Date.now() - this.settings.malLastImport < 24 * 3600000) return Promise.resolve()
 		return this.malImport(false)
 	}
 
-	// AniList re-import on the same daily desktop schedule.
 	private anilistSyncIfDue(): Promise<void> {
 		if (!Platform.isDesktopApp || !this.settings.anilistToken.trim() || this.anilistImporting || this.malImporting) return Promise.resolve()
 		if (Date.now() - this.settings.anilistLastImport < 24 * 3600000) return Promise.resolve()
 		return this.anilistImport(false)
 	}
 
-	// The daily tick: MyAnimeList first, AniList after it — the imports share
-	// the same notes, and interleaved runs could create one twice.
+	// MAL first, AniList after: interleaved runs could create the same note twice
 	private syncTick(): void {
 		void this.malSyncIfDue().then(() => this.anilistSyncIfDue())
 	}
 
-	// A valid PlayStation access token, refreshed when it is about to expire;
-	// null when not connected or the sign-in has run out.
+	private gameSyncTick(): void {
+		// a failed import must not cancel the next one
+		const run = (sync: () => Promise<void>) => (): Promise<void> => sync().catch((e: unknown) => console.error('Library: game sync error', e))
+		void run(() => this.psnSyncIfDue())().then(run(() => this.steamSyncIfDue())).then(run(() => this.nintendoSyncIfDue()))
+	}
+
 	async psnToken(): Promise<string | null> {
 		const tokens = this.settings.psnTokens
 		if (!tokens) return null
@@ -1360,12 +1436,9 @@ export default class LibraryPlugin extends Plugin {
 		new Notice(tr('notice.mal.pulled', { count: updated }))
 	}
 
-	// A note changed: send its progress and rating to MyAnimeList. Nothing is
-	// sent when it matches what we last pushed, so a vault re-indexed by the
-	// enrich pass or a sync conflict does not storm the API.
+	// send progress and rating to MAL unless they match what we last pushed (the echo)
 	private async malPush(file: TFile): Promise<void> {
-		// A push or import in flight would drop this edit — the timer entry is
-		// already gone — so arm the same debounce again and try once more.
+		// a push or import in flight would drop this edit: re-arm the debounce
 		if (this.malImporting || this.malPushing) {
 			this.malPushTimers.set(file.path, window.setTimeout(() => {
 				this.malPushTimers.delete(file.path)
@@ -1395,8 +1468,7 @@ export default class LibraryPlugin extends Plugin {
 			malId = (map && map.get(ids.anilist)) ?? null
 		}
 		if (malId === null) return
-		// Only a finished note says so: an in-progress one leaves the MAL status
-		// alone, so it never overwrites an on-hold or dropped entry.
+		// only a finished note sets status: never overwrite an on-hold or dropped entry
 		const status = isFinished(fm, this.kindOf(fm) ?? (isAnime ? 'anime' : 'comic')) ? 'completed' : null
 		this.malPushing = true
 		try {
@@ -1413,11 +1485,6 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// Brings the MyAnimeList anime and manga lists into the library: every
-	// started title becomes a note carrying its progress and score. A title
-	// already in the library, by its source id or by name, is updated in
-	// place — unless their own mark says otherwise. Running it again keeps
-	// the list current; it runs once a day on its own.
 	async malImport(loud: boolean): Promise<void> {
 		if (this.malImporting || this.anilistImporting) {
 			if (loud) new Notice(tr('notice.mal.importing'))
@@ -1436,8 +1503,7 @@ export default class LibraryPlugin extends Plugin {
 			this.settings.malLastImport = Date.now()
 			this.pruneEcho()
 			await this.saveSettings()
-			// New categories, tops and notes may have appeared; the settings
-			// tab may be open, and the fresh notes still need their covers.
+			// new categories/notes may exist: refresh the open tab and walk for covers
 			this.settingTab?.refresh()
 			this.scheduleEnrich(ENRICH_STEP_DELAY)
 			if (loud || a.created + m.created > 0) new Notice(tr('notice.mal.imported', { created: a.created + m.created, updated: a.updated + m.updated }))
@@ -1446,11 +1512,6 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// Brings the AniList anime and manga lists into the library, like the
-	// MyAnimeList import: a title already in the library is updated in place,
-	// a new one becomes a note carrying its progress and score. Runs right
-	// after the account is connected and once a day after that; the commands
-	// and the library's Update button force it right away.
 	async anilistImport(loud: boolean): Promise<void> {
 		if (this.anilistImporting || this.malImporting) {
 			if (loud) new Notice(tr('notice.mal.importing'))
@@ -1471,8 +1532,7 @@ export default class LibraryPlugin extends Plugin {
 			const rows = (entries: AniListEntry[], kind: 'anime' | 'manga'): ImportRow[] => entries
 				.filter(entry => entry.status !== 'PLANNING')
 				.map(entry => ({
-					// The AniList id is the anime note's own; manga notes live
-					// under "manga:<id>", exactly what a MyAnimeList import wrote.
+					// manga notes live under "manga:<id>", what a MAL import writes
 					sourceId: kind === 'anime' ? String(entry.mediaId) : `${MangaProvider.PREFIX}${String(entry.mediaId)}`,
 					altId: kind === 'anime' && entry.idMal !== null ? `${MalProvider.PREFIX}${String(entry.idMal)}` : null,
 					title: entry.title,
@@ -1486,8 +1546,7 @@ export default class LibraryPlugin extends Plugin {
 			this.settings.anilistLastImport = Date.now()
 			this.pruneEcho()
 			await this.saveSettings()
-			// New categories, tops and notes may have appeared; the settings
-			// tab may be open, and the fresh notes still need their covers.
+			// new categories/notes may exist: refresh the open tab and walk for covers
 			this.settingTab?.refresh()
 			this.scheduleEnrich(ENRICH_STEP_DELAY)
 			if (loud || a.created + m.created > 0) new Notice(tr('notice.mal.imported', { created: a.created + m.created, updated: a.updated + m.updated }))
@@ -1496,17 +1555,15 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// The library's Update button: every connected platform re-imports, the
-	// anime sites first and one after the other (they write the same notes),
-	// the game platforms after. A platform that is not connected stays quiet.
+	// Update: anime sites first, one after the other (they write the same notes), then games
 	async updateAll(): Promise<void> {
 		if (this.settings.malTokens) await this.malImport(true)
 		if (this.settings.anilistToken.trim()) await this.anilistImport(true)
 		if (this.settings.psnTokens) await this.psnImport(true)
 		if (this.settings.steamId.trim()) await this.steamImport(true)
+		if (this.settings.nintendoTokens) await this.nintendoImport(true)
 	}
 
-	// Entries for notes that no longer exist only grow the settings file.
 	private pruneEcho(): void {
 		const paths = new Set(this.app.vault.getMarkdownFiles().map((file) => file.path))
 		for (const path of Object.keys(this.settings.malEcho)) {
@@ -1514,15 +1571,13 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// One MyAnimeList list (anime or manga) into the notes of its medium.
 	private async importMalEntries(entries: MalEntry[], kind: 'anime' | 'manga'): Promise<{ created: number; updated: number }> {
 		const anilistOf = entries.length === 0 ? new Map<number, number>()
 			: kind === 'anime' ? await anilistIdsFor(entries.map(e => e.malId)) : await anilistMangaIdsFor(entries.map(e => e.malId))
 		const anilist = anilistOf ?? new Map<number, number>()
 		const rows: ImportRow[] = entries.map((entry) => {
 			const alId = anilist.get(entry.malId) ?? null
-			// A manga note keeps AniList's id, so a manga MyAnimeList cannot
-			// name yet has nowhere to go: the next import catches it.
+			// a manga note keeps AniList's id; one MAL cannot name waits for the next import
 			const sourceId = kind === 'anime'
 				? `${MalProvider.PREFIX}${String(entry.malId)}`
 				: alId === null ? null : `${MangaProvider.PREFIX}${String(alId)}`
@@ -1539,11 +1594,6 @@ export default class LibraryPlugin extends Plugin {
 		return this.importRows(rows, kind)
 	}
 
-	// One fetched list (anime or manga) into the notes of its medium: every row
-	// becomes a note carrying its progress and score. A title already in the
-	// library, by its source id or by name, is updated in place — a note
-	// edited by hand since the last sync keeps its marks. Shared by the
-	// MyAnimeList and AniList imports.
 	private async importRows(rows: ImportRow[], kind: 'anime' | 'manga'): Promise<{ created: number; updated: number }> {
 		const source = kind === 'anime' ? 'anilist' : 'comics'
 		let category = kind === 'anime'
@@ -1553,8 +1603,7 @@ export default class LibraryPlugin extends Plugin {
 			if (kind === 'anime') {
 				category = await this.categoryFor('anime')
 			} else {
-				// Manga gets its own category: a comic by content type, named
-				// for the medium so it reads as manga in the library.
+				// manga gets its own category: content type comic, named for the medium
 				category = newCategory('comic', this.settings)
 				category.name = tr('settings.mal.mangaCategory')
 				category.folder = joinFolder(this.settings.libraryFolder, category.name)
@@ -1583,8 +1632,7 @@ export default class LibraryPlugin extends Plugin {
 			const existingFm = existing ? this.app.metadataCache.getFileCache(existing)?.frontmatter : undefined
 			const progressStr = toStr(existingFm?.Progress)
 			const match = progressStr.match(progressPattern)
-			// Keep the note's own episode total: a source leaves the total empty
-			// for titles it does not know, and "12/1" would be nonsense.
+			// keep the note's own total: a source leaves it empty and "12/1" is nonsense
 			const total = Math.max(row.total, match ? Number(match[2]) : 0, 1)
 			const watched = Math.max(parseWatched(existingFm?.Progress), row.progress)
 			const rating = Number(toStr(existingFm?.['My Rating']))
@@ -1592,18 +1640,14 @@ export default class LibraryPlugin extends Plugin {
 			const progress = `${String(watched)}/${String(total)}`
 			try {
 				if (existing) {
-					// Their own mark wins: a note edited since the last sync
-					// keeps its progress and rating; the list only fills what
-					// the note leaves empty and never moves progress back.
+					// a note edited since the last sync keeps its progress and rating; the list fills gaps
 					if (editedSince(this.settings.malEcho[existing.path], progressStr, score)) continue
 					await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
 						current.Progress = progress
 						if (row.complete) current.Complete = true
-						// A rating once present — theirs or any list's — stays.
 						if (row.score > 0 && score === 0) current['My Rating'] = row.score
 					})
-					// Remember what the note says now: the next import can tell
-					// their edit from its own write (the echo push compares to).
+					// record it so the next import can tell their edit from this write
 					this.settings.malEcho[existing.path] = { p: progress, r: score || row.score }
 					updated++
 					continue
@@ -1615,8 +1659,6 @@ export default class LibraryPlugin extends Plugin {
 				if (row.complete) extra.Complete = true
 				const file = await this.newNote(category, source, sourceId, row.title, { fields: { Name: row.title }, progressTotal: null, imdbId: null }, extra)
 				bySourceId.set(sourceId, file)
-				// A fresh note says what the list said; their first edit after
-				// it is recognisable as theirs.
 				this.settings.malEcho[file.path] = { p: progress, r: row.score }
 				created++
 			} catch (e) {
@@ -1670,16 +1712,12 @@ export default class LibraryPlugin extends Plugin {
 		return key === 'Cover' ? this.coverProperty() : key
 	}
 
-	// A field from the sources the user chose to leave out of notes, by its
-	// name or by the property it is written to (the cover's).
 	private skipped(key: string): boolean {
 		const names = this.settings.skipFields.split(',').map(name => name.trim().toLowerCase()).filter(Boolean)
 		return names.indexOf(key.toLowerCase()) >= 0 || names.indexOf(this.fieldTarget(key).toLowerCase()) >= 0
 	}
 
-	// The text of the category's template note: a new note starts as a copy of
-	// it, properties and body. Empty when the category has none; a template
-	// that is gone is reported and left out.
+	// the category template's text: a new note starts as a copy of it
 	private async templateText(category: ICategory): Promise<string> {
 		const path = category.template?.trim()
 		if (!path) return ''
@@ -1696,14 +1734,11 @@ export default class LibraryPlugin extends Plugin {
 		for (const [key, value] of Object.entries(fields)) {
 			if (isEmptyValue(value) || this.skipped(key)) continue
 			const target = this.fieldTarget(key)
-			// A value the category's template filled in stays.
 			if (!isEmptyValue(fm[target])) continue
 			fm[target] = LINK_FIELDS.indexOf(key) >= 0 ? toLinks(value) : value
 		}
 	}
 
-	// Creates a folder and each missing folder above it: a new category's
-	// Library/Movies may be the first thing inside Library.
 	private async ensureFolder(dir: string): Promise<void> {
 		let path = ''
 		for (const part of dir.split('/').filter(Boolean)) {
@@ -1717,9 +1752,6 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// The library folder changed: categories filed inside the old one follow
-	// it, and once the user agrees their notes move along. Returns how many
-	// categories followed.
 	async moveLibraryFolder(from: string, to: string): Promise<number> {
 		const oldRoot = cleanFolder(from)
 		const newRoot = cleanFolder(to)
@@ -1738,8 +1770,6 @@ export default class LibraryPlugin extends Plugin {
 		return moves.length
 	}
 
-	// A category's folder changed: its notes in the old folder can move along.
-	// Notes of a category kept at the vault root stay where they are.
 	async moveCategoryFolder(category: ICategory, from: string, to: string): Promise<void> {
 		const oldFolder = cleanFolder(from)
 		category.folder = cleanFolder(to)
@@ -1749,7 +1779,6 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// Counts the notes first and moves them only when the user agrees.
 	private async offerMove(moves: FolderMove[]): Promise<void> {
 		const plan = this.movePlan(moves)
 		if (plan.length === 0) return
@@ -1764,8 +1793,6 @@ export default class LibraryPlugin extends Plugin {
 		if (agreed) await this.runMoves(plan, moves)
 	}
 
-	// The notes of each moved category that sit in its old folder, with the
-	// path each gets in the new one.
 	private movePlan(moves: FolderMove[]): Array<{ file: TFile; target: string }> {
 		const plan: Array<{ file: TFile; target: string }> = []
 		if (moves.length === 0) return plan
@@ -1781,9 +1808,7 @@ export default class LibraryPlugin extends Plugin {
 		return plan
 	}
 
-	// Moves through the file manager, so links follow the user's link settings.
-	// A note whose new place is taken stays put; the old folders go to the
-	// trash once nothing is left in them.
+	// moves via the file manager, so links follow the user's link settings
 	private async runMoves(plan: Array<{ file: TFile; target: string }>, moves: FolderMove[]): Promise<void> {
 		let moved = 0
 		let kept = 0
@@ -1803,12 +1828,11 @@ export default class LibraryPlugin extends Plugin {
 		if (kept > 0) new Notice(tr('notice.notesNotMoved', { count: formatNumber(kept) }))
 	}
 
-	// A folder without files goes to the trash, then each parent it leaves empty.
 	private async trashIfEmpty(path: string): Promise<void> {
 		let current = path
 		while (current) {
 			const folder = this.app.vault.getFolderByPath(current)
-			if (!folder || this.holdsFiles(folder)) return
+			if (!folder || await this.holdsFiles(current)) return
 			try {
 				await this.app.fileManager.trashFile(folder)
 			} catch (e) {
@@ -1819,15 +1843,17 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	private holdsFiles(folder: TFolder): boolean {
-		return folder.children.some((child) => {
-			const sub = this.app.vault.getFolderByPath(child.path)
-			return sub ? this.holdsFiles(sub) : true
-		})
+	// Asks the disk, not the vault index: the index leaves out hidden files,
+	// and those would go to the trash with the folder.
+	private async holdsFiles(path: string): Promise<boolean> {
+		const listed = await this.app.vault.adapter.list(path)
+		if (listed.files.some(file => !file.endsWith('/.DS_Store'))) return true
+		for (const sub of listed.folders) if (await this.holdsFiles(sub)) return true
+		return false
 	}
 
 	private async uniqueNotePath(title: string, categoryFolder: string): Promise<string> {
-		const folder = categoryFolder.trim()
+		const folder = cleanFolder(categoryFolder)
 		const base = sanitizeFilename(title)
 		const dir = folder ? normalizePath(folder) : ''
 		await this.ensureFolder(dir)
@@ -1841,15 +1867,10 @@ export default class LibraryPlugin extends Plugin {
 		return candidate
 	}
 
-	// New fields (trailer, stills, seasons, runtime, the extra ratings) reach
-	// notes that already exist only by fetching them again. The walk runs once
-	// per plugin version in the background: one note at a time, marks in the
-	// settings file, so a release adds its metadata to the whole library on its
-	// own and later launches stay quiet.
+	// new metadata reaches existing notes only by re-fetching: one walk per plugin version, one note at a time
 	private scheduleEnrich(delay: number): void {
 		if (this.unloaded) return
-		// A walk already under way finishes first and then starts over, so a
-		// key entered mid-walk still reaches the notes it has passed.
+		// a running walk finishes, then starts over: a key entered mid-walk reaches passed notes
 		if (this.enrichRunning) {
 			this.enrichAgain = true
 			return
@@ -1862,7 +1883,10 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private async enrichPass(force: boolean): Promise<void> {
-		if (this.enrichRunning) return
+		if (this.enrichRunning) {
+			if (force) new Notice(tr('notice.searching'))
+			return
+		}
 		this.enrichRunning = true
 		let updated = 0
 		let marked = 0
@@ -1880,24 +1904,19 @@ export default class LibraryPlugin extends Plugin {
 				if (!force && this.settings.enrichMarks[file.path] === this.manifest.version) continue
 				const provider = this.registry.forType(category.contentType)
 				const sourceId = toStr(fm['Source ID'])
-				// A hand-made note (no source id), a category without a source and
-				// Open Library (nothing to fetch by id) take no request.
+				// no Source ID, no provider, or Open Library (nothing to fetch by id): no request
 				const fetches = !!provider && !!sourceId && provider.refreshable?.(sourceId) !== false
-				// Offline every fetch would fail: the rest stays unmarked for the
-				// next launch instead of being walked for nothing.
+				// offline every fetch would fail: leave the rest unmarked for the next launch
 				if (fetches && !navigator.onLine) {
 					complete = false
 					break
 				}
-				// Every note the walk reaches is also brought to the current link
-				// format (Genre, Creator and Cast as links, no Related) — all an
-				// update needs from a hand-made note.
+				// the walk also brings each note to the current link format (Genre/Creator/Cast links, no Related)
 				await this.syncNote(file)
 				if (this.unloaded) return
 
-				// Only a note that really got its metadata is marked: a failed
-				// request (quota, outage) is retried by the next pass. The mark goes
-				// in before the pause, so a key entered during it clears it too.
+				// only a fetched note is marked: a failed request (quota, outage) retries next pass.
+				// The mark goes in before the pause, so a key entered during it clears it too.
 				let ok = true
 				if (fetches && provider) {
 					for (let i = 0; i < 10 && this.isRefreshing && !this.unloaded; i++) {
@@ -1931,8 +1950,6 @@ export default class LibraryPlugin extends Plugin {
 		if (force) new Notice(tr('notice.refreshedAll', { count: String(updated) }))
 	}
 
-	// Marks are keyed by path, so a renamed or deleted note leaves its mark
-	// behind; a finished walk drops those instead of growing data.json forever.
 	private pruneEnrichMarks(files: TFile[]): boolean {
 		const present = new Set(files.map(file => file.path))
 		let pruned = false
@@ -1958,14 +1975,12 @@ export default class LibraryPlugin extends Plugin {
 			})
 			return true
 		} catch (e) {
-			// A single unreachable source must not stop the walk.
 			console.error('Library: metadata pass error', e)
 			return false
 		}
 	}
 
-	// Its own timer: sharing the scheduling one let a key change cancel this
-	// sleep, and the walk then waited forever with `enrichRunning` still set.
+	// its own timer: sharing the walk's would let a key change cancel this sleep and hang the walk
 	private enrichSleep(ms: number): Promise<void> {
 		return new Promise<void>(resolve => {
 			this.enrichWait = resolve
@@ -1977,9 +1992,7 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
-	// The keys each kind of note is fetched with. A changed key re-walks only
-	// those notes: a Twitch key does not cost a movie library its OMDb quota,
-	// and the AniList and MAL sign-ins, which fetch no metadata, re-walk nothing.
+	// key signature per content type: only the types a changed key serves re-walk
 	private apiKeySignatures(): Record<string, string> {
 		const s = this.settings
 		const video = `${s.omdbApiKey}|${s.tmdbApiKey}`
@@ -2018,8 +2031,7 @@ export default class LibraryPlugin extends Plugin {
 		const sourceId = toStr(fm['Source ID'])
 
 		if (!force) {
-			// Opening a note refreshes it at most every five minutes, and never
-			// one its source cannot look up (a RAWG game once the key is gone).
+			// at most every five minutes, and never a note its source cannot look up
 			const last = this.refreshCooldowns.get(file.path)
 			if (last && Date.now() - last < 5 * 60 * 1000) return
 			if (sourceId && provider.refreshable?.(sourceId) === false) return
@@ -2054,10 +2066,7 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// A note written by hand has no Source ID, so there is nothing to look up by
-	// id. Search the category's source by the note's own name: a confident match
-	// is adopted silently, anything else waits for the explicit command, which
-	// opens the picker with the name already in the search field.
+	// no Source ID to look up by: search the source by the note's name and adopt a confident match
 	private async adoptNote(
 		file: TFile,
 		fm: Record<string, unknown>,
@@ -2068,9 +2077,7 @@ export default class LibraryPlugin extends Plugin {
 		const name = toStr(fm.Name) || file.basename
 		const year = Number(fm.Year) || 0
 		const results = await provider.search(name, category.contentType)
-		// Silent adoption needs one unambiguous hit: a remake shares the title
-		// ("Dune" 1984 and 2021), and the wrong one would fill the note with
-		// another work's metadata.
+		// one unambiguous hit only: a remake shares the title ("Dune" 1984/2021)
 		const matches = results.filter(result =>
 			sameTitle(result.title, name) && (!year || result.year === null || result.year === year)
 		)
@@ -2110,25 +2117,21 @@ export default class LibraryPlugin extends Plugin {
 		new Notice(tr('notice.refreshed', { name: toStr(meta.fields.Name) || file.basename }))
 	}
 
-	// Refresh never overwrites a value that is already in the note: whatever the
-	// user typed by hand (or edited after a fetch) wins.
+	// refresh never overwrites a value already in the note: hand edits win
 	private applyMetaPatch(current: Record<string, unknown>, meta: NormalizedMetadata): void {
 		const fields: Record<string, unknown> = meta.fields
 		for (const [key, value] of Object.entries(fields)) {
 			if (isEmptyValue(value) || this.skipped(key)) continue
 			const target = this.fieldTarget(key)
-			// For the cover, any known cover property counts as present so a renamed
-			// property does not duplicate the value into a second field.
+			// any known cover property counts as present, so a rename does not duplicate it
 			const present = key === 'Cover' ? coverValue(current, this.coverProperty()) : current[target]
 			if (key === 'Seasons' && !isEmptyValue(present)) current[target] = mergeSeasons(present, value)
 			// A Steam trailer stream gives way once a YouTube one is found.
 			else if (key === 'Trailer' && /steamstatic\.com\//.test(toStr(present)) && /youtube\.com\//.test(toStr(value))) current[target] = value
 			else if (isEmptyValue(present)) current[target] = LINK_FIELDS.indexOf(key) >= 0 ? toLinks(value) : value
-			// A junk runtime stored by an earlier pass must not shadow the
-			// trustworthy value that arrives behind it.
+			// a junk runtime from an earlier pass must not shadow a plausible one
 			else if (key === 'Runtime' && plausibleRuntime(present) === null && plausibleRuntime(value) !== null) current[target] = value
-			// A source's own score moves over time and is never typed by hand:
-			// a refresh brings the current one instead of keeping the first.
+			// a source's own score moves: refresh brings the current one, not the first
 			else if (SOURCE_SCORES.indexOf(key) >= 0) current[target] = value
 		}
 		if (typeof meta.fields.Season === 'number' && meta.fields.Season > Number(current.Season || 0) && !this.skipped('Season')) {
@@ -2152,9 +2155,7 @@ export default class LibraryPlugin extends Plugin {
 		if (!fm) return
 		if (!this.settings.categories.some(c => c.typeValue === toStr(fm.Type))) return
 
-		// On a freshly opened note the properties panel can appear a beat after
-		// the first render; a fallback insert would sit above it, so retry a few
-		// times until the header can anchor inside the header section.
+		// the properties panel can appear a beat late: retry until the header anchors in mod-header
 		if (!this.insertNoteHeader(view.file, sizer, fm) && this.bannerRetries < 5) {
 			this.bannerRetries += 1
 			if (this.bannerTimer) window.clearTimeout(this.bannerTimer)
@@ -2162,10 +2163,7 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// The header hangs off the properties panel (or the inline title when
-	// properties are hidden) inside `mod-header` — the one part of the reading
-	// view that survives its section re-renders. Returns false when it had to
-	// fall back to a direct sizer child (pre-1.13 renderers, or too early).
+	// anchors in `mod-header` (survives section re-renders); false when it fell back to a sizer child
 	private insertNoteHeader(file: TFile, root: HTMLElement, fm: Record<string, unknown>): boolean {
 		root.querySelectorAll('.note-header-wrap').forEach(h => h.remove())
 		const header = this.buildNoteHeader(file, fm)
@@ -2179,8 +2177,7 @@ export default class LibraryPlugin extends Plugin {
 		} else if (modHeader) {
 			modHeader.appendChild(header)
 		} else if (root.childElementCount > 0) {
-			// Pre-1.13 renderers accept a plain child of the sizer; a sizer that
-			// is still empty has not rendered at all, so wait for the retry.
+			// pre-1.13 renderers take a plain sizer child; an empty sizer has not rendered yet
 			root.insertBefore(header, root.firstChild)
 		} else {
 			return false
@@ -2202,8 +2199,6 @@ export default class LibraryPlugin extends Plugin {
 		const ratingMc = fm['Rating MC'] ? toStr(fm['Rating MC']) : ''
 		const myRating = fm['My Rating'] ? toStr(fm['My Rating']) : ''
 		const kind = this.kindOf(fm)
-		// Series, anime and books show progress and no Complete line; movies
-		// only the Complete line; every other medium either, as before.
 		const progressPercent = shownProgress(fm, kind)
 		const complete = trackingOf(kind) !== 'progress' && fm.Complete === true
 		const url = safeUrl(fm.URL)
@@ -2248,7 +2243,6 @@ export default class LibraryPlugin extends Plugin {
 		})
 		titleEl.appendChild(shareBtn)
 		infoSide.appendChild(titleEl)
-		// A game's platforms and trophies share one row right under its title.
 		const badges = createDiv({ cls: 'note-header-badges' })
 		renderPlatformLabels(badges, fm)
 		renderTrophies(badges, fm, 'note-header-trophies')
@@ -2279,7 +2273,6 @@ export default class LibraryPlugin extends Plugin {
 
 		const runtime = runtimeMinutes(fm.Runtime)
 		if (runtime !== null) addRow(tr('header.runtime'), formatRuntime(totalRuntimeMinutes(fm, runtime, kind)))
-		// PlayStation: platform, time, trophies by grade, last played.
 		if (typeof fm.Playtime === 'number' && fm.Playtime > 0) addRow(tr('stats.psn.time'), spentTime(fm.Playtime * 60), ': ', exactHours(fm.Playtime * 60))
 		if (fm['Last Played']) addRow(tr('header.lastPlayed'), toStr(fm['Last Played']))
 
@@ -2296,8 +2289,7 @@ export default class LibraryPlugin extends Plugin {
 			b.setText(tr('header.progress') + ': ')
 			progRow.appendChild(b)
 			progRow.appendText(String(progressPercent) + '%')
-			// How much of that progress is on the clock — the part a viewer
-			// actually wants when a season is still half unwatched.
+			// how much of the progress is already on the clock
 			const watchedMinutes = watchedRuntimeMinutes(fm, kind)
 			if (watchedMinutes > 0) progRow.appendText(' · ' + formatRuntime(watchedMinutes))
 			const bar = createDiv()
@@ -2328,8 +2320,6 @@ export default class LibraryPlugin extends Plugin {
 		return wrap
 	}
 
-	// A row of similar titles under the header. It appears once the source
-	// answers and stays away when it has nothing.
 	private buildRecommendations(wrap: HTMLElement, fm: Record<string, unknown>): void {
 		if (!this.settings.showRecommendations) return
 		const source = toStr(fm.Source)
@@ -2369,8 +2359,7 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
-	// Adding goes through the normal path, which opens the note instead when
-	// the title is already in the library.
+	// the normal path opens the existing note instead when the title is already there
 	private async addRecommendation(rec: Recommendation): Promise<void> {
 		const sourceId = typeof rec.sourceId === 'string' ? rec.sourceId : await rec.sourceId()
 		if (!sourceId) { new Notice(tr('notice.notFound')); return }
@@ -2423,8 +2412,7 @@ export default class LibraryPlugin extends Plugin {
 				img.alt = ''
 				img.setAttribute('loading', 'lazy')
 				link.appendChild(img)
-				// Plain clicks enlarge the still in place; modifier clicks keep
-				// the browser as the escape hatch for saving the full image.
+				// plain clicks enlarge in place; modifier clicks keep the browser's save
 				link.addEventListener('click', (event) => {
 					if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 					event.preventDefault()
@@ -2440,9 +2428,7 @@ export default class LibraryPlugin extends Plugin {
 		wrap.appendChild(media)
 	}
 
-	// The season list of a series or anime note: each season ticks off and
-	// rates as a whole, and unfolds into its episodes to tick and rate one by one.
-	// Which list a note tracks: seasons of episodes, or a book's chapters.
+	// which list a note tracks: seasons of episodes, or a book's chapters
 	private trackKind(fm: Record<string, unknown>): TrackKind | null {
 		const contentType = this.settings.categories.find(c => c.typeValue === toStr(fm.Type))?.contentType
 		if (contentType === 'series' || contentType === 'anime' || contentType === 'book') return contentType
@@ -2457,15 +2443,13 @@ export default class LibraryPlugin extends Plugin {
 		const book = kind === 'book'
 		const seasons = seasonsOf(fm, kind ?? 'series')
 		if (book && seasons.length === 0) {
-			// Open Library notes are never refetched, so an opened book looks
-			// its table of contents up by itself, once per session.
+			// Open Library notes are never refetched: a book looks its TOC up on open, once a session
 			if (!this.chapterLookups.has(file.path)) {
 				this.chapterLookups.add(file.path)
 				void this.lookUpChapters(file, fm).then((titles) => {
 					if (titles.length > 0) void this.addChapters(file, titles)
 				})
 			}
-			// Found nothing: the chapters are typed in.
 			const add = createEl('button')
 			add.classList.add('note-header-add-chapters')
 			add.setText(tr('header.addChapters'))
@@ -2523,8 +2507,7 @@ export default class LibraryPlugin extends Plugin {
 			}
 
 			if (trackable) {
-				// Rated through its episodes, the season shows their average and
-				// takes no hand-typed rating. A book's own rating is My Rating.
+				// a season rated through its episodes shows their average, no hand-typed rating
 				if (!book) row.appendChild(this.ratingInput(season.rating, season.ratedByEpisodes, (rating) => change({ season: index, rating })))
 				const toggle = createEl('button')
 				toggle.classList.add('note-header-season-toggle', 'clickable-icon')
@@ -2572,7 +2555,6 @@ export default class LibraryPlugin extends Plugin {
 		return box
 	}
 
-	// A 1–10 score; blank clears it.
 	private ratingInput(value: number | null, computed: boolean, onChange: (rating: number | null) => void): HTMLElement {
 		const input = createEl('input')
 		input.type = 'number'
@@ -2601,8 +2583,6 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	// Looks the table of contents up first; the chapters are typed in when
-	// no edition lists them.
 	private lookUpChapters(file: TFile, fm: Record<string, unknown>): Promise<string[]> {
 		const sourceId = toStr(fm['Source ID'])
 		return findChapters({
@@ -2637,8 +2617,7 @@ export default class LibraryPlugin extends Plugin {
 	private async loadSettings(): Promise<void> {
 		const saved: unknown = await this.loadData()
 		const data = saved && typeof saved === 'object' ? (saved as Partial<ILibrarySettings>) : null
-		// A copy: the defaults' own arrays and maps must never become the
-		// live settings that the tab and the walks mutate.
+		// a copy: the defaults' arrays and maps must not become the live settings
 		const defaults = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as ILibrarySettings
 		this.settings = Object.assign({}, defaults, data)
 		if (!Array.isArray(this.settings.categories)) this.settings.categories = []
@@ -2649,12 +2628,14 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
+		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
+		if (!this.settings.nintendoTokens || typeof this.settings.nintendoTokens !== 'object') this.settings.nintendoTokens = null
+		if (typeof this.settings.nintendoLastImport !== 'number') this.settings.nintendoLastImport = 0
 		if (typeof this.settings.upNextInCategories !== 'boolean') this.settings.upNextInCategories = true
 		if (typeof this.settings.skipFields !== 'string') this.settings.skipFields = ''
 		if (!this.settings.psnTokens || typeof this.settings.psnTokens !== 'object') this.settings.psnTokens = null
 		if (!this.settings.enrichMarks || typeof this.settings.enrichMarks !== 'object') this.settings.enrichMarks = {}
-		// Categories an earlier build kept out of the statistics, through the
-		// switches that came before the top list: `showTop`, `stats.rating`, `showRated`.
+		// categories earlier builds kept out of statistics: showTop, stats.rating, showRated
 		const unrated = new Set<string>()
 		for (const cat of this.settings.categories) {
 			if (!cat.contentType) cat.contentType = inferContentType(cat.typeValue)
@@ -2662,7 +2643,9 @@ export default class LibraryPlugin extends Plugin {
 			if (cat.contentType === 'googlebook') cat.contentType = 'book'
 			if ((cat.contentType as string) === 'steam') cat.contentType = 'game'
 			if (!isContentType(cat.contentType)) cat.contentType = inferContentType(cat.typeValue)
-			if (typeof cat.folder !== 'string') cat.folder = ''
+			cat.folder = typeof cat.folder === 'string' ? cleanFolder(cat.folder) : ''
+			// An empty Type would claim every note that has none.
+			if (typeof cat.typeValue !== 'string' || !cat.typeValue.trim()) cat.typeValue = TYPE_DEFAULTS[cat.contentType] ?? 'Manual'
 			const legacy = cat as ICategory & { showTop?: unknown; showRated?: unknown; stats?: { rating?: unknown } }
 			if (legacy.showTop === false || legacy.showRated === false || legacy.stats?.rating === false) unrated.add(cat.typeValue)
 			delete legacy.showTop
@@ -2676,8 +2659,7 @@ export default class LibraryPlugin extends Plugin {
 		this.settings.libraryFolder = cleanFolder(this.settings.libraryFolder)
 	}
 
-	// Key by key: a settings file from an older version has no `stats` block
-	// or an older shape of it, and a hand-edited one may carry anything.
+	// key by key: an older settings file has no stats block or an older shape
 	private loadStats(saved: unknown, defaults: IStatsSettings, unrated: Set<string>): IStatsSettings {
 		const raw = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>
 		const stats: IStatsSettings = {
@@ -2697,8 +2679,7 @@ export default class LibraryPlugin extends Plugin {
 			}
 			return stats
 		}
-		// Builds before the list: the chosen properties, then every category
-		// whose best-rated switch was on — the same columns as before.
+		// builds before the list: the chosen properties, then every category whose best-rated switch was on
 		const properties: unknown[] = Array.isArray(raw.properties) ? raw.properties : defaults.tops.map(top => top.key)
 		for (const property of properties) add('property', property)
 		for (const cat of this.settings.categories) {

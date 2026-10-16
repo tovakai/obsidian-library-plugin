@@ -1,9 +1,7 @@
 import { requestUrl } from 'obsidian'
 
-// A YouTube trailer for a game. RAWG and Steam carry none, so it comes from
-// IGDB when the user set Twitch API keys (nearly every game has one there),
-// else from Wikidata's "YouTube video ID" (about a quarter of games). The
-// caller falls back to Steam's own trailer stream.
+// YouTube trailer for a game: IGDB when Twitch keys are set, else Wikidata's
+// P1651; the caller falls back to Steam's own stream.
 
 export interface TwitchKeys {
 	id: string
@@ -28,7 +26,6 @@ export class GameTrailerFinder {
 		return id ? `https://www.youtube.com/watch?v=${id}` : null
 	}
 
-	// App access token (client credentials), kept until shortly before it expires.
 	private async accessToken(keys: TwitchKeys): Promise<string | null> {
 		const signature = `${keys.id}|${keys.secret}`
 		if (this.token && this.token.keys === signature && Date.now() < this.token.expiresAt) return this.token.value
@@ -91,8 +88,7 @@ export class GameTrailerFinder {
 	}
 }
 
-// The launch or official trailer when there is one, otherwise any trailer,
-// otherwise the first video.
+// Launch/official trailer, else any trailer, else the first video.
 export function pickTrailer(videos: { video_id?: string; name?: string }[]): string | null {
 	const valid = videos.filter(v => v.video_id && YOUTUBE_ID.test(v.video_id))
 	const named = (pattern: RegExp): { video_id?: string } | undefined => valid.find(v => pattern.test(v.name ?? ''))

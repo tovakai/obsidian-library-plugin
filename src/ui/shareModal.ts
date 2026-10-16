@@ -31,7 +31,6 @@ const NETWORKS: Network[] = [
 	{ id: 'pinterest', label: 'Pinterest' }
 ]
 
-// The network's own mark, in the button's text color.
 function drawMark(parent: HTMLElement, id: string): void {
 	const paths = NETWORK_MARKS[id]
 	if (!paths) return
@@ -71,13 +70,11 @@ export class ShareModal extends Modal {
 
 		const hasNative = canNativeShare()
 
-		// Native share (mobile) attaches the image directly — the primary path where available.
 		if (hasNative) {
 			const nativeBtn = contentEl.createEl('button', { cls: 'mod-cta library-share-native', text: tr('share.native') })
 			nativeBtn.addEventListener('click', () => { void this.doNativeShare() })
 		}
 
-		// On desktop the image can't be auto-attached to intent links, so explain the paste step.
 		const hint = contentEl.createDiv({ cls: 'library-share-hint', text: tr('share.hint') })
 		hint.toggle(!hasNative && !Platform.isMobile)
 
@@ -109,8 +106,7 @@ export class ShareModal extends Modal {
 			console.error('Library: failed to render share card', e)
 			this.blob = null
 		}
-		// Closed while the card was still rendering: an object URL made now
-		// would never be revoked.
+		// Closed mid-render: an object URL made now would never be revoked.
 		if (this.closed) return
 		this.previewEl.empty()
 		if (this.blob) {
@@ -123,8 +119,7 @@ export class ShareModal extends Modal {
 	}
 
 	private async openNetwork(net: Network): Promise<void> {
-		// Intent links can't attach a local image, so put the card on the clipboard
-		// first — the user pastes it into the compose window that opens.
+		// Intent links can't carry a local image: clipboard first, then paste into the compose window.
 		if (!this.blob) {
 			new Notice(tr('share.renderFailed'))
 			return
@@ -176,7 +171,6 @@ export class ShareModal extends Modal {
 	}
 }
 
-// Resolve the shareable frontmatter + display name for a note, or null if not a library note.
 export function shareTargetFromFile(app: App, file: TFile | null): { fm: Record<string, unknown>; name: string } | null {
 	if (!file) return null
 	const fm = app.metadataCache.getFileCache(file)?.frontmatter

@@ -31,7 +31,6 @@ export const LIBRARY_VIEW_TYPE = 'library-view'
 interface CardData {
 	file: TFile
 	fm: Record<string, unknown>
-	// The medium of the card's category: it decides what progress shows.
 	kind: ContentType
 	name: string
 	year: number
@@ -39,8 +38,6 @@ interface CardData {
 	date: number
 }
 
-// One statistics column, in the order the settings list them: a property's
-// most frequent values across the library, or a category's best-rated titles.
 type StatsColumn =
 	| { top: IStatsTop; kind: 'platform'; items: true[] }
 	| { top: IStatsTop; kind: 'property'; items: [string, number][] }
@@ -52,8 +49,7 @@ interface TimeSlice {
 	color: string
 }
 
-// Only the watched-time media types get a slice, each a shade of the theme's
-// accent: the chart takes the theme's colour like the progress bars do.
+// Present = counted in the watch-time donut; value = that medium's shade of the accent.
 const TIME_COLORS: Record<string, string> = {
 	movie: 'var(--interactive-accent)',
 	series: 'color-mix(in srgb, var(--interactive-accent) 60%, var(--background-primary))',
@@ -70,7 +66,6 @@ interface SortChoice {
 	asc: boolean
 }
 
-// What a category can be narrowed by, in toolbar order.
 type Facet = 'year' | 'genre' | 'country' | 'platform'
 
 const FACETS: { facet: Facet, label: string, games?: boolean }[] = [
@@ -80,8 +75,6 @@ const FACETS: { facet: Facet, label: string, games?: boolean }[] = [
 	{ facet: 'platform', label: 'settings.stats.groupPlatforms', games: true },
 ]
 
-// The values a card has for a filter: its year, its genres (as written, links
-// read by their name), its countries, its platforms.
 function facetValues(card: CardData, facet: Facet): string[] {
 	switch (facet) {
 		case 'year': return card.year > 0 ? [String(card.year)] : []
@@ -91,36 +84,29 @@ function facetValues(card: CardData, facet: Facet): string[] {
 	}
 }
 
-// Cards that match every chosen filter.
 function filterCards(cards: CardData[], chosen: Record<string, string>): CardData[] {
 	const active = FACETS.filter(f => chosen[f.facet])
 	if (active.length === 0) return cards
 	return cards.filter(card => active.every(f => facetValues(card, f.facet).indexOf(chosen[f.facet] as string) >= 0))
 }
 
-// A heading over a grid of cards: a category's, or the "Up next" block's.
 interface SectionSpec {
 	title: string
-	// Where the sort choice is kept, and the order the section starts in.
 	sortId: string
 	defaultSort: SortChoice
 	collapsed: boolean
 	setCollapsed(collapsed: boolean): void
-	// The section's medium: movies, series, anime and music add the time spent.
 	kind?: ContentType
-	// A category's filters: every card it has, before filtering, to offer
-	// the values from, and the values chosen.
 	filters?: { all: CardData[], chosen: Record<string, string>, choose(facet: Facet, value: string): void }
 }
 
-// A key no category name takes: the categories' sort choices share the map.
+// A key no category name takes.
 const UP_NEXT_SORT = '@upNext'
 
 export class LibraryView extends ItemView {
 	private plugin: LibraryPlugin
 	private renderTimer: number | null = null
-	// Notes on screen after the last render: one that stops being a library
-	// note still has to trigger the render that drops it.
+	// Paths shown last render: a note ceasing to be one must still trigger the render that drops it.
 	private shown = new Set<string>()
 
 	constructor(leaf: WorkspaceLeaf, plugin: LibraryPlugin) {
@@ -141,9 +127,7 @@ export class LibraryView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		// Only library notes redraw the page: typing in any other note fires
-		// `changed` every few seconds. A new note arrives through `changed` too,
-		// once it has been indexed.
+		// Only library notes redraw: any other note fires `changed` every few seconds.
 		this.registerEvent(this.app.metadataCache.on('changed', (file) => {
 			if (this.shown.has(file.path) || this.isLibraryNote(this.app.metadataCache.getFileCache(file)?.frontmatter)) {
 				this.scheduleRender()
@@ -171,8 +155,6 @@ export class LibraryView extends ItemView {
 		return typeof type === 'string' && this.plugin.settings.categories.some(c => c.typeValue === type)
 	}
 
-	// The dropdown choice is page state: it lives in the settings file, per
-	// section, so a re-render or a restart does not throw it away.
 	private readSort(section: string, fallback: SortChoice): SortChoice {
 		const saved = this.plugin.settings.sortState[section]
 		if (!saved || SORT_KEYS.indexOf(saved.key as SortKey) < 0) return fallback
@@ -206,8 +188,6 @@ export class LibraryView extends ItemView {
 	private collectStats(): { columns: StatsColumn[]; time: TimeSlice[]; undated: number } {
 		const tops = this.plugin.settings.stats.tops
 		const properties = tops.filter(top => top.kind === 'property').map(top => top.key)
-		// Per chosen property, its values counted across the whole library;
-		// "Sci-Fi", "sci-fi" and "[[Sci-Fi]]" are one value.
 		const counts = properties.map(() => new Map<string, { label: string; count: number }>())
 		const rated = new Map<ICategory, CardData[]>()
 		const timeMinutes = new Map<string, number>()
@@ -217,8 +197,7 @@ export class LibraryView extends ItemView {
 			if (isTemplateFile(file.path)) continue
 			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
 			if (!fm) continue
-			// Statistics describe the library: a genre on some unrelated note
-			// must not rank among its top genres.
+			// Library notes only: an unrelated note's genre must not become a top one.
 			const cat = this.plugin.settings.categories.find(c => c.typeValue === fm.Type)
 			if (!cat) continue
 
@@ -253,9 +232,7 @@ export class LibraryView extends ItemView {
 				if (minutes > 0) {
 					timeMinutes.set(cat.name, (timeMinutes.get(cat.name) || 0) + minutes)
 				} else if (cat.contentType !== 'game' && runtimeMinutes(fm.Runtime) === null) {
-					// Counted out loud: a chart that silently drops every note
-					// whose source never reported a length would look like a
-					// smaller library than it is.
+					// Counted out loud: silently dropping unknown lengths would understate the library.
 					undated++
 				}
 			}
@@ -264,8 +241,7 @@ export class LibraryView extends ItemView {
 		const columns: StatsColumn[] = []
 		for (const top of tops) {
 			if (top.kind === 'platform') {
-				// One item when the platform has totals to show, none otherwise.
-				columns.push({ top, kind: 'platform', items: top.key === 'playstation' && this.plugin.settings.psnStats ? [true] : top.key === 'myanimelist' && this.plugin.settings.malStats ? [true] : [] })
+				columns.push({ top, kind: 'platform', items: top.key === 'playstation' && this.plugin.settings.psnStats ? [true] : top.key === 'myanimelist' && this.plugin.settings.malStats ? [true] : top.key === 'nintendo' && this.plugin.settings.nintendoStats ? [true] : [] })
 				continue
 			}
 			if (top.kind === 'property') {
@@ -300,8 +276,6 @@ export class LibraryView extends ItemView {
 		return { columns, time, undated }
 	}
 
-	// A square holding a donut: one slice per medium, sized by the time spent,
-	// with the total in the hole and the per-medium figures beside it.
 	private renderTimeChart(body: HTMLElement, slices: TimeSlice[], undated: number): void {
 		const col = body.createDiv({ cls: 'library-stats-col library-time-col' })
 		col.createEl('h3', { text: tr('stats.watchTime') })
@@ -321,7 +295,7 @@ export class LibraryView extends ItemView {
 			stops.push(`${slice.color} ${from}% ${(consumed / total) * 100}%`)
 		}
 		chart.setCssStyles({ background: `conic-gradient(${stops.join(', ')})` })
-		// Hours and minutes stay whole; a long total breaks between them only.
+		// Split: a long total breaks only between hours and minutes.
 		const totalEl = chart.createDiv({ cls: 'library-time-hole' }).createDiv({ cls: 'library-time-total' })
 		runtimeParts(total).forEach((part, i) => {
 			if (i > 0) totalEl.appendText(' ')
@@ -347,7 +321,6 @@ export class LibraryView extends ItemView {
 			})
 		}
 
-		// The same total in other terms, one comparison a day, laid out like the legend.
 		const comparison = comparisonOfTheDay(total)
 		if (!comparison) return
 		const facts = col.createDiv({ cls: 'library-time-facts' })
@@ -357,16 +330,14 @@ export class LibraryView extends ItemView {
 		row.createSpan({ cls: 'library-time-name', text: comparisonText(comparison) })
 	}
 
-	// Returns the statistics header, or null when there is nothing to show.
 	private renderStats(root: HTMLElement): HTMLElement | null {
 		const stats = this.collectStats()
-		// Only columns with something in them are drawn; with none of them (and
-		// the chart switched off) the section is left out entirely.
 		const columns = stats.columns.filter(column => column.items.length > 0)
 		const showTime = this.plugin.settings.stats.watchTime
 			&& this.plugin.settings.categories.some(c => TIME_COLORS[c.contentType])
 		const psn = this.plugin.settings.psnStats
 		const mal = this.plugin.settings.malStats
+		const nintendo = this.plugin.settings.nintendoStats
 		if (!showTime && columns.length === 0) return null
 
 		const section = root.createDiv({ cls: 'library-stats' })
@@ -382,8 +353,7 @@ export class LibraryView extends ItemView {
 		})
 		const body = section.createDiv({ cls: 'library-stats-body' })
 		if (collapsed) body.classList.add('collapsed')
-		// Without a single top column the chart stands alone instead of beside
-		// an empty box that would push it to the far side.
+		// No columns: the chart gets the body bare, not an empty box pushing it aside.
 		const box = columns.length > 0 ? body.createDiv({ cls: 'library-stats-tops' }) : createDiv()
 
 		if (showTime) this.renderTimeChart(body, stats.time, stats.undated)
@@ -419,9 +389,23 @@ export class LibraryView extends ItemView {
 			line(tr('stats.mal.manga'), formatNumber(mal.manga))
 		}
 
+		const renderNintendo = (): void => {
+			if (!nintendo) return
+			const col = box.createDiv({ cls: 'library-stats-col library-stats-psn' })
+			col.createEl('h3', { text: tr('stats.nintendo') })
+			const line = (label: string, value: string, title = ''): void => {
+				const row = col.createDiv({ cls: 'library-stats-psn-row' })
+				if (title) setTooltip(row, title, { placement: 'top' })
+				row.createSpan({ cls: 'library-stats-psn-label', text: label })
+				row.createSpan({ cls: 'library-stats-psn-value', text: value })
+			}
+			line(tr('stats.nintendo.games'), formatNumber(nintendo.games))
+			if (nintendo.minutes > 0) line(tr('stats.nintendo.time'), spentTime(nintendo.minutes), exactHours(nintendo.minutes))
+		}
+
 		for (const column of columns) {
 			if (column.kind === 'platform') {
-				if (column.top.key === 'myanimelist') renderMal(); else renderPsn()
+				if (column.top.key === 'myanimelist') renderMal(); else if (column.top.key === 'nintendo') renderNintendo(); else renderPsn()
 				continue
 			}
 			const col = box.createDiv({ cls: 'library-stats-col' })
@@ -458,7 +442,6 @@ export class LibraryView extends ItemView {
 			const nowCollapsed = body.classList.toggle('collapsed')
 			collapseBtn.setText(nowCollapsed ? '▶' : '▼')
 			collapseBtn.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true')
-			// Lives in the settings file so the section opens the way it was left.
 			this.plugin.settings.statsCollapsed = nowCollapsed
 			void this.plugin.persistSettings()
 		})
@@ -467,8 +450,6 @@ export class LibraryView extends ItemView {
 
 	render(): void {
 		const root = this.contentEl
-		// Re-renders follow metadata changes (a background refresh, an edit in
-		// another pane): the reader stays where they were in the grid.
 		const scrollTop = root.scrollTop
 		root.empty()
 		root.addClass('library-view')
@@ -482,8 +463,6 @@ export class LibraryView extends ItemView {
 			for (const card of cards) this.shown.add(card.file.path)
 		}
 
-		// + and search sit at the right end of the statistics header; without
-		// statistics (or with no categories yet) they get a row of their own.
 		const actions = createDiv({ cls: 'library-actions' })
 
 		const addBtn = actions.createEl('button', {
@@ -500,8 +479,7 @@ export class LibraryView extends ItemView {
 		setIcon(searchBtn, 'search')
 		searchBtn.addEventListener('click', () => this.plugin.openLibrarySearch())
 
-		// One press, every connected platform: the forced update that would
-		// otherwise wait for the daily timers.
+		// One press, every platform: forces what would otherwise wait for the daily timers.
 		const updateBtn = actions.createEl('button', {
 			cls: 'library-icon-btn',
 			attr: { 'aria-label': tr('cmd.updateAll') }
@@ -522,14 +500,12 @@ export class LibraryView extends ItemView {
 		if (statsHeader) statsHeader.appendChild(actions)
 		else pageHeader()
 
-		// Titles not started yet may live in Up next alone, and only while
-		// that block is on: switching both off must not hide them anywhere.
+		// Not-started may live in Up next alone only while that block is on.
 		const settings = this.plugin.settings
 		const upNextOnly = settings.showUpNext && !settings.upNextInCategories
 		let rendered = 0
 		for (const { category, cards } of sections) {
 			const shown = upNextOnly ? cards.filter(card => !notStarted(card.fm, card.kind)) : cards
-			// A category with nothing to show is not worth a heading.
 			if (shown.length === 0) continue
 			rendered++
 			const chosen = settings.filterState[category.name] ?? {}
@@ -559,8 +535,6 @@ export class LibraryView extends ItemView {
 			}, filterCards(shown, chosen))
 		}
 
-		// At the end of the page: everything not started yet, from every
-		// category, newest first; a row of category buttons narrows it to one.
 		const upNext: { category: string, card: CardData }[] = []
 		for (const { category, cards } of sections) {
 			for (const card of cards) if (notStarted(card.fm, card.kind)) upNext.push({ category: category.name, card })
@@ -568,7 +542,6 @@ export class LibraryView extends ItemView {
 		if (settings.showUpNext && upNext.length > 0) {
 			const names: string[] = []
 			for (const item of upNext) if (names.indexOf(item.category) < 0) names.push(item.category)
-			// A category that has nothing left to start falls back to all of them.
 			const chosen = names.indexOf(settings.upNextCategory) >= 0 ? settings.upNextCategory : ''
 			const shown = upNext.filter(item => !chosen || item.category === chosen).map(item => item.card)
 			const upNextEl = this.renderSection(root, {
@@ -579,7 +552,6 @@ export class LibraryView extends ItemView {
 				setCollapsed: (collapsed) => { settings.upNextCollapsed = collapsed }
 			}, shown)
 			upNextEl.addClass('library-up-next')
-			// One category alone needs no choosing.
 			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen)
 			rendered++
 		}
@@ -587,9 +559,6 @@ export class LibraryView extends ItemView {
 		root.scrollTop = scrollTop
 	}
 
-	// Up next's category buttons in its toolbar, between the count and the
-	// sort: All, then each category that has something not started, in the
-	// library's order.
 	private upNextFilter(section: HTMLElement, names: string[], chosen: string): void {
 		const row = createDiv({ cls: 'library-filter', attr: { role: 'group', 'aria-label': tr('upNext.title') } })
 		for (const name of ['', ...names]) {
@@ -610,9 +579,7 @@ export class LibraryView extends ItemView {
 		toolbar?.insertBefore(row, toolbar.querySelector('.library-toolbar-spacer'))
 	}
 
-	// A dropdown per filter, after the count: only values some card of the
-	// category has, and only filters with a choice to make (two values or
-	// more), unless one is already chosen and has to stay clearable.
+	// Only values some card has; a filter shows with 2+ values or a chosen one.
 	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>, kind?: ContentType): void {
 		for (const { facet, label, games } of FACETS) {
 			if (games && kind !== 'game') continue
@@ -622,7 +589,6 @@ export class LibraryView extends ItemView {
 			}
 			const chosen = filters.chosen[facet] ?? ''
 			if (counts.size < 2 && !chosen) continue
-			// Years newest first, the rest alphabetically.
 			const values = [...counts.keys()].sort((a, b) => facet === 'year' ? Number(b) - Number(a) : a.localeCompare(b))
 			const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
 			const trigger = dropdown.createEl('button', {
@@ -654,8 +620,6 @@ export class LibraryView extends ItemView {
 		}
 	}
 
-	// Beside the fold button: the number of titles, and for movies, series,
-	// anime and music the time spent on them.
 	private sectionMeta(toolbar: HTMLElement, cards: CardData[], kind?: ContentType): void {
 		const count = formatNumber(cards.length)
 		toolbar.createSpan({
@@ -706,17 +670,13 @@ export class LibraryView extends ItemView {
 			{ label: tr('sort.year'), key: 'year' },
 			{ label: tr('sort.rating'), key: 'rating' },
 			{ label: tr('sort.date'), key: 'date' },
-			// Any category: when the note file was last edited on disk.
 			{ label: tr('sort.modified'), key: 'modified' },
-			// Games only: when it was last played, newest first.
 			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : []),
-			// Titles not started yet first, by name within each half; only where
-			// the section holds some, as Up next can take them all away.
+			// Only where some exist: Up next can take them all away.
 			...(spec.sortId !== UP_NEXT_SORT && cards.some(card => notStarted(card.fm, card.kind))
 				? [{ label: tr('sort.unstarted'), key: 'unstarted' as SortKey }] : [])
 		]
 
-		// A saved choice the section no longer offers falls back to the default.
 		const restored = this.readSort(spec.sortId, spec.defaultSort)
 		const savedSort = sortOptions.some(o => o.key === restored.key) ? restored : spec.defaultSort
 		let currentSort: SortKey = savedSort.key
@@ -732,7 +692,6 @@ export class LibraryView extends ItemView {
 				let cmp = 0
 				switch (currentSort) {
 					case 'name': cmp = a.name.localeCompare(b.name); break
-					// Same year: the release day decides, where the source gave one.
 					case 'year': cmp = a.year - b.year || parseDate(a.fm.Released) - parseDate(b.fm.Released); break
 					case 'rating': cmp = a.rating - b.rating; break
 					case 'date': cmp = a.date - b.date; break
@@ -740,7 +699,7 @@ export class LibraryView extends ItemView {
 					case 'played': cmp = parseDate(a.fm['Last Played']) - parseDate(b.fm['Last Played']); break
 					case 'unstarted':
 						cmp = Number(notStarted(b.fm, b.kind)) - Number(notStarted(a.fm, a.kind))
-						// Within each half the names stay in order whichever way the halves go.
+						// Named order within each half, whichever way the halves go.
 						if (cmp === 0) return a.name.localeCompare(b.name)
 						break
 				}
@@ -777,15 +736,12 @@ export class LibraryView extends ItemView {
 			sortTrigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
 		})
 
-		// The first row stays visible through CSS alone, so a fold also holds
-		// in a render that happens while the tab is hidden and has no layout.
+		// Fold stays a CSS class: a hidden tab has no layout to hide rows in.
 		const applyCollapsed = (collapsed: boolean): void => {
 			grid.toggleClass('collapsed', collapsed)
 			collapseBtn.setText(collapsed ? '▶' : '▼')
 			collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
 		}
-		// The fold is kept in the settings file, so a re-render, a second tab
-		// or a restart opens the section as it was left.
 		collapseBtn.addEventListener('click', () => {
 			const collapsed = !grid.hasClass('collapsed')
 			spec.setCollapsed(collapsed)
@@ -793,8 +749,7 @@ export class LibraryView extends ItemView {
 			void this.plugin.persistSettings()
 		})
 
-		// A restored choice must show up, but an untouched section keeps its
-		// original label and caret.
+		// Show a restored choice; an untouched section keeps its default label.
 		if (currentSort !== 'name' || !sortAsc) updateTrigger()
 		renderGrid()
 		if (spec.collapsed) applyCollapsed(true)
@@ -871,7 +826,6 @@ export class LibraryView extends ItemView {
 		renderTrophies(info, fm, 'card-trophies')
 
 		const percent = shownProgress(fm, card.kind)
-		// A full title is done: the line has nothing left to show.
 		if (percent !== null && percent < 100) {
 			const pc = info.createDiv({ cls: 'card-progress' })
 			pc.createDiv({ cls: 'card-progress-label', text: String(percent) + '%' })

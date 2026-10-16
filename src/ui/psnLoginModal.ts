@@ -2,10 +2,7 @@ import { App, Modal } from 'obsidian'
 import { tr } from '../i18n'
 import { codeFromRedirect, psnAuthUrl } from '../psn'
 
-// Sony's own sign-in page in a window inside Obsidian (desktop only). After the
-// user signs in, Sony sends the window to the PlayStation App's redirect with a
-// code; the window catches that address, hands the code over and closes. The
-// session lives in its own partition, so the next connect may skip the form.
+// Sony's sign-in webview (desktop only), own session partition: the next connect may skip the form.
 export class PsnLoginModal extends Modal {
 	private onCode: (code: string | null) => void
 	private done = false
@@ -18,14 +15,9 @@ export class PsnLoginModal extends Modal {
 	onOpen(): void {
 		this.setTitle(tr('psn.loginTitle'))
 		this.modalEl.addClass('library-psn-modal')
-		// Passkeys are switched off: Sony's page asks for one, and Electron on
-		// macOS brings the whole app down on a Touch ID passkey prompt inside a
-		// webview. Sony then signs in with the password. The attributes are set
-		// before the element joins the page, since a webview fixes them then.
-		// The window is made by the window the modal opens in: settings have a
-		// window of their own since Obsidian 1.13, and a webview made by the main
-		// window draws in settings yet sends every click and scroll to the main
-		// window, so the form takes no input.
+		// Passkeys off: a Touch ID prompt inside a webview crashes Electron on macOS.
+		// The attributes go in as the element is made: a webview fixes them at creation.
+		// The modal's own window: a webview from the main window takes no input in settings.
 		const win = this.contentEl.ownerDocument.win as Window & { createEl: typeof createEl }
 		const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
 			cls: 'library-psn-webview',

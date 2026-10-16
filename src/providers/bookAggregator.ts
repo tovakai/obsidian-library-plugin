@@ -7,7 +7,6 @@ interface WrappedRaw {
 	__raw: unknown
 }
 
-// Books search merges Google Books (priority) and Open Library; fetch routes back to the origin.
 export class BookAggregatorProvider implements ContentProvider {
 	readonly id = 'books'
 	readonly contentTypes: ContentType[] = ['book']
@@ -23,8 +22,7 @@ export class BookAggregatorProvider implements ContentProvider {
 	async search(query: string): Promise<SearchResult[]> {
 		const [fromGoogle, fromOpenlib] = await Promise.all([
 			within(this.google.search(query, 'googlebook'), SEARCH_BUDGET_MS, [] as SearchResult[]),
-			// Open Library often takes several seconds, and it is the book source
-			// that needs no key: it gets a longer wait than the others.
+			// Open Library is slow and keyless: a longer wait than the others.
 			within(this.openlib.search(query, 'book'), SEARCH_BUDGET_MS * 4, [] as SearchResult[])
 		])
 		const wrap = (results: SearchResult[], pid: string): SearchResult[] =>
@@ -32,15 +30,14 @@ export class BookAggregatorProvider implements ContentProvider {
 		return [...wrap(fromGoogle, 'googlebooks'), ...wrap(fromOpenlib, 'openlibrary')]
 	}
 
-	// Open Library keys start with '/' and have nothing to refetch by id;
-	// Google ids are refetched only with a key.
+	// Open Library keys start with '/' and have nothing to refetch by id
+	// (see openlibrary.ts); a Google id refetches only with a key.
 	refreshable(sourceId: string): boolean {
 		return !sourceId.startsWith('/') && (this.google.refreshable?.(sourceId) ?? true)
 	}
 
 	async fetch(sourceId: string, type: ContentType, raw?: unknown): Promise<NormalizedMetadata | null> {
 		const meta = await this.fetchBook(sourceId, type, raw)
-		// Chapters for the reading list, when an edition lists its contents.
 		if (meta) {
 			const text = (value: unknown): string => (typeof value === 'string' || typeof value === 'number' ? String(value) : '')
 			const creator = meta.fields.Creator
@@ -62,8 +59,6 @@ export class BookAggregatorProvider implements ContentProvider {
 			if (wrapped.__pid === 'openlibrary') return this.openlib.fetch(sourceId, 'book', wrapped.__raw)
 			return null
 		}
-		// Refresh path (no raw): Open Library keys start with '/', Google ids don't.
-		// Google refetches by id; Open Library has no id endpoint wired, so it stays a no-op.
 		return sourceId.startsWith('/')
 			? this.openlib.fetch(sourceId, 'book')
 			: this.google.fetch(sourceId, 'googlebook')

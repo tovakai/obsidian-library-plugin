@@ -28,7 +28,6 @@ const MARKS: Record<string, { label: string; path: string }> = {
 	},
 }
 
-// A platform's brand mark as an icon, drawn in the current colour.
 export function platformMark(family: string): SVGSVGElement {
 	const svg = createSvg('svg', { attr: { viewBox: '0 0 24 24', 'aria-hidden': 'true' } })
 	const mark = MARKS[family]
@@ -36,8 +35,6 @@ export function platformMark(family: string): SVGSVGElement {
 	return svg
 }
 
-// The family a Platforms value belongs to: PS4 and PS5 are PlayStation, Xbox
-// Series X is Xbox, Switch is Nintendo. Null for one without a mark.
 export function platformFamily(value: string): string | null {
 	const v = value.toLowerCase()
 	if (/^ps\d|playstation|^psn/.test(v)) return 'playstation'
@@ -47,7 +44,6 @@ export function platformFamily(value: string): string | null {
 	return null
 }
 
-// A mark per platform the game is on, once per family, in the order listed.
 export function renderPlatforms(parent: HTMLElement, fm: Record<string, unknown>, cls: string): void {
 	const families: string[] = []
 	for (const value of toStrArray(fm.Platforms)) {
@@ -64,11 +60,8 @@ export function renderPlatforms(parent: HTMLElement, fm: Record<string, unknown>
 	}
 }
 
-// The platforms written out the way stores label a game's versions: a small
-// plate per platform, "PS5", "PS4", "Steam". Under a note's title.
 export function renderPlatformLabels(parent: HTMLElement, fm: Record<string, unknown>): void {
-	// The console is what the plate names; a bare "PlayStation" says nothing more
-	// than the mark on the card.
+	// A bare "PlayStation" plate says no more than the mark already on the card.
 	const platforms = toStrArray(fm.Platforms)
 		.filter((value, i, all) => all.indexOf(value) === i && value.toLowerCase() !== 'playstation')
 	if (platforms.length === 0) return

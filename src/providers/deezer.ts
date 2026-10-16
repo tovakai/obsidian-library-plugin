@@ -75,8 +75,7 @@ export class DeezerProvider implements ContentProvider {
 			const resp = await requestUrl({ url: `${DeezerProvider.ALBUM}${encodeURIComponent(sourceId)}`, throw: false })
 			if (resp.status !== 200) return null
 			const album = resp.json as DeezerAlbumFull | null
-			// A removed album answers 200 with `{ error }` instead of the album;
-			// taking it as metadata would reset the note's track count to 1.
+			// A removed album answers 200 with `{ error }`; reading it resets the track count.
 			if (!album || typeof album.id !== 'number') return null
 
 			const genres = (album.genres?.data ?? []).map((g) => g.name).filter((n): n is string => Boolean(n))
@@ -88,7 +87,7 @@ export class DeezerProvider implements ContentProvider {
 				Cover: this.cover(album)
 			}
 			if (album.link) fields['URL'] = album.link
-			// The whole album in minutes; listening time counts the share of tracks played.
+			// Whole album, minutes.
 			if (typeof album.duration === 'number' && album.duration > 0) fields['Runtime'] = Math.max(1, Math.round(album.duration / 60))
 
 			return { fields, progressTotal: album.nb_tracks && album.nb_tracks > 0 ? album.nb_tracks : 1, imdbId: null }

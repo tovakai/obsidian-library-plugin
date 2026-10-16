@@ -1,6 +1,7 @@
 import { App, SuggestModal } from 'obsidian'
 import type { ContentProvider, ContentType, SearchResult } from '../providers/types'
 import { tr } from '../i18n'
+import { safeUrl } from '../util'
 
 export class AddContentModal extends SuggestModal<SearchResult> {
 	private provider: ContentProvider
@@ -55,11 +56,11 @@ export class AddContentModal extends SuggestModal<SearchResult> {
 
 	renderSuggestion(result: SearchResult, el: HTMLElement): void {
 		el.addClass('library-suggest')
-		if (result.cover) {
+		const cover = safeUrl(result.cover)
+		if (cover) {
 			const img = el.createEl('img', { cls: 'library-suggest-cover' })
-			// A poster the source does not have leaves no broken-image icon.
 			img.addEventListener('error', () => img.remove())
-			img.src = result.cover
+			img.src = cover
 		}
 		const info = el.createDiv({ cls: 'library-suggest-info' })
 		info.createDiv({ cls: 'library-suggest-title', text: result.title })

@@ -8,9 +8,7 @@ import {
 
 const VIDEO_GAME = 'haswbstatement:P31=Q7889'
 
-// Games found on Wikidata by their title in any language. One with a Steam
-// app id becomes a Steam result, since the store page has more to give; the
-// rest (console games, older titles) are filled from Wikidata itself.
+// Games by any-language title; one with a Steam app id becomes a Steam result.
 export class WikidataGameProvider implements ContentProvider {
 	readonly id = 'wikidata'
 	readonly contentTypes: ContentType[] = ['game']
@@ -24,7 +22,6 @@ export class WikidataGameProvider implements ContentProvider {
 				Promise.all(ids.map(id => claim(id, 'P1733')))
 			])
 			const appIds = steamIds.map(steam => (typeof steam === 'string' && /^\d+$/.test(steam) ? steam : null))
-			// Box art from Wikipedia for the games Steam has no page for.
 			const articles = ids.map((id, i) => (appIds[i] ? null : found[id]?.sitelinks?.enwiki?.title ?? null))
 			const covers = await wikipediaImages(articles.filter((title): title is string => !!title))
 			return ids.map((id, i): SearchResult => {
@@ -85,12 +82,10 @@ export class WikidataGameProvider implements ContentProvider {
 		}
 	}
 
-	// Where a game from RAWG or Steam was made, which neither of them says:
-	// Wikidata's country of origin, found by the Steam app id when there is
-	// one, else by the title, which then has to match an English label.
+	// Where a RAWG or Steam game was made: Wikidata's country of origin, by
+	// Steam app id when there is one, else by a matching title.
 	async countryOf(name: string, steamAppId: string | null): Promise<string[]> {
-		// The id comes from a note's Source ID, which anyone can edit: only
-		// digits go into the search, anything else falls back to the title.
+		// Source ID is user-editable: only digits go into the search, else the title.
 		if (steamAppId !== null && !/^\d+$/.test(steamAppId)) steamAppId = null
 		try {
 			const ids = steamAppId

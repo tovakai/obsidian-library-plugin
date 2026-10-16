@@ -15,51 +15,52 @@
 </p>
 
 <p align="center">
-  Your watchlist, reading list, and game backlog become a gallery of covers in plain Markdown notes. Search a title, pick a result, and Library writes the note: cover, year, genres, creators, and a trailer where the source has one.
+  Your watchlist, reading list, and game backlog become a gallery of covers in plain Markdown notes. Search a title, pick a result, and Library writes the note.
   <br />
   <a href="https://community.obsidian.md/plugins/library">Community Plugins directory</a> · <a href="https://github.com/venvk/obsidian-library-plugin/wiki">Wiki</a>
 </p>
 
 ## Features
 
-- Movies, series, anime, games, books, comics, and music, with ratings, stills, cast, and trailers where the source has them; movies, series, games, and comics also match a title in any language.
-- Tick episodes or chapters and score them; `Progress` and `My Rating` follow. A movie is watched or not.
-- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Each category filters by year, genre, country, or platform (only values your notes have) and sorts by title, year, rating, date, or unstarted first. Unstarted titles show an eye icon and gather in Up next, one category at a time if you like.
-- Similar titles under movie, series, anime, game, and book notes.
-- Connect AniList, MyAnimeList, PlayStation, and Steam in settings: lists, played games, playtime, trophies, and achievements import as notes; anime and PlayStation lists re-import once a day on desktop.
-- Categories count their titles and time spent; statistics compare those hours with "In the same time" facts like trips to the Moon or marathons run.
-- Genres, creators, and actors are links; each linked note collects the titles it appears in.
-- All fields sit in frontmatter, so Bases and Dataview can read them. Your own template, and source fields you choose to skip. Desktop and mobile, interface in every language Obsidian supports.
+- Movies, series, anime, games, books, comics, and music as notes with cover, year, genres, country, creators, ratings, cast, and trailers where the source has them.
+- Open a note and tick episodes or chapters, scoring each; `Progress` counts the ticks and `My Rating` averages your scores.
+- Categories filter by year, genre, or country (games also by platform) and sort their titles; what you have not started gathers in Up next.
+- Connect AniList, MyAnimeList, PlayStation, Steam, and Nintendo Switch: lists, playtime, trophies, and achievements import as notes and re-import daily on desktop.
+- Genres, creators, and actors are links; each linked note collects its titles. Similar titles appear when the source has them.
+- Statistics count titles and hours, compare them with "In the same time" equivalents, and add a column for PlayStation, Nintendo, and MyAnimeList.
+- Fields sit in frontmatter for Bases and Dataview, with your own template and skipped fields. Works on desktop and mobile in every Obsidian language.
 
 ## Quick start
 
-1. Install Library from Settings → Community plugins or [GitHub Releases](https://github.com/venvk/obsidian-library-plugin/releases).
+1. Install Library from Community plugins in Settings, or from [GitHub Releases](https://github.com/venvk/obsidian-library-plugin/releases).
 2. Open the Library tab from the ribbon, press +, pick what you are adding, and search. The first title of each kind creates its category and folder.
 3. For movies and series, add a year after the title to pick between films that share a name: `dune 1984`.
 
-Settings → Library → Categories renames categories and moves their folders, taking the notes with them. Details on the [wiki](https://github.com/venvk/obsidian-library-plugin/wiki): [API keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync), [Steam import](https://github.com/venvk/obsidian-library-plugin/wiki/Steam-library-import).
+Categories in the Library settings tab reorder by dragging, rename and move folders, taking the notes inside.
 
 ## Sources
 
 | Category | Sources | Preferred source, when set up |
 | --- | --- | --- |
-| Movies, series | Cinemeta, Wikidata | [OMDb](https://www.omdbapi.com/apikey.aspx) |
+| Movies, series | Cinemeta | [OMDb](https://www.omdbapi.com/apikey.aspx) |
 | Books | Open Library | [Google Books](https://console.cloud.google.com/apis/library/books.googleapis.com) |
 | Games | Steam, Wikidata | [RAWG](https://rawg.io/apidocs) |
 | Music | Deezer | |
-| Anime | AniList sign-in | MyAnimeList sign-in |
+| Anime | AniList, MyAnimeList (search without an account) | AniList or MyAnimeList sign-in for list import and sync |
 | Comics | Wikidata, AniList for manga | [Comic Vine](https://comicvine.gamespot.com/api/) |
 | Anything else | Manual: you fill the fields | |
 
-Keys go in Settings → Library → API keys. A [TMDB key](https://www.themoviedb.org/settings/api) adds season ratings and more stills; a [Twitch application](https://dev.twitch.tv/console/apps) adds game trailers from IGDB. Steam and PlayStation connect in Settings → Library → Games; on desktop, Connect opens the service's own sign-in page. Steam imports owned games with playtime and achievements, PlayStation played games and trophies. Turn off Settings → Library → Show recommendations to hide similar titles.
+Keys go in the Library settings tab, under API keys: a [TMDB key](https://www.themoviedb.org/settings/api) adds season ratings and stills, a [Twitch application](https://dev.twitch.tv/console/apps) game trailers from IGDB. Steam, PlayStation, and Nintendo Switch connect there too, on desktop; each opens the service's own sign-in page, and Nintendo first asks for consent to use a third-party signing service, as listed below. The Update button in the library header refreshes them all. Details: [API keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [Steam import](https://github.com/venvk/obsidian-library-plugin/wiki/Steam-library-import).
 
 ## Progress and statistics
 
-Open a season in a series note to tick episodes and score them from 1 to 10; `Progress` counts the ticks and `My Rating` averages the scores. Anime is one season. Books get chapters from Open Library or from Add chapters in the note header. A series, anime, or book is done when its progress is full; a movie has `Complete`. Settings → Library can hide Up next or keep its titles out of categories; the statistics panel shows the top lists you pick and your hours on movies, series, and anime.
+Books get chapters from Open Library or `Add chapters` in the note header, and anime is one season. A series, anime, or book is done at full progress; a movie needs `Complete` set by hand.
+
+Statistics show the top lists you pick, your hours on movies, series, anime, and games, and a column per platform you add: PlayStation trophies, Nintendo playtime, MyAnimeList counts.
 
 ## Anime sync
 
-Connect AniList or MyAnimeList in settings: the authorization window opens, lists arrive as notes with progress and ratings, and both sites re-import once a day on desktop. The Update button in the library header, or the Import from AniList / MyAnimeList commands, syncs right away. Changes push back: progress and score go to MyAnimeList on save and to AniList with the Push command. Your edits win: the import never moves progress backwards and fills `My Rating` only while it is empty.
+Connect AniList or MyAnimeList: your started titles arrive as notes with progress and ratings and re-import daily on desktop. Changes push back: progress and score go to MyAnimeList on save and to AniList with the Push command. An import never moves progress backwards and only fills an empty `My Rating`. [Wiki: anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
 ## Frontmatter
 
@@ -88,7 +89,7 @@ A refresh fills empty fields and updates the source ratings but never your own. 
 
 ## Privacy and network use
 
-Your library is plain notes that open offline; covers load from the web. The plugin goes online to search, refresh, sync, or share, at most once every 5 minutes per note and once after an update or key change. No telemetry, no self-update; each key goes only to its own service.
+Your library is plain notes that open offline; covers load from the web. The plugin goes online to search, refresh, sync, or share, at most once every 5 minutes per note, plus one refresh pass after an update or a key change. No telemetry, no self-update; each key goes only to its own service.
 
 | Hosts | Use | Data sent |
 | --- | --- | --- |
@@ -105,6 +106,8 @@ Your library is plain notes that open offline; covers load from the web. The plu
 | `graphql.anilist.co`, `anilist.co`, `s4.anilist.co`, streaming services' image hosts | Anime, manga, sync | Title or ids; your token, progress, status, score |
 | `myanimelist.net`, `api.myanimelist.net`, `api-cdn.myanimelist.net` | Anime and manga search, covers, sign-in, list import, sync | Search text, your sign-in on MyAnimeList's page (the plugin keeps only the token); your token, progress, status, score |
 | `ca.account.sony.com`, `my.account.sony.com`, `m.np.playstation.com`, `web.np.playstation.com`, `image.api.playstation.com`, `psnobj.prod.dl.playstation.net` | PlayStation sign-in, played games, trophies, covers | Your sign-in on Sony's page (the plugin keeps only the token); the token |
+| `accounts.nintendo.com`, `api.accounts.nintendo.com`, `api-lp1.znc.srv.nintendo.net`, `atum-img-lp1.cdn.nintendo.net` | Nintendo sign-in, play activity, covers | Your sign-in on Nintendo's page (the plugin keeps only the session token); the tokens |
+| `nxapi-auth.fancy.org.uk`, `nxapi-znca-api.fancy.org.uk` | A third-party signing service: signs and encrypts the Nintendo Switch app requests, which Nintendo accepts only from its app; asked before you sign in | Your Nintendo Account id token, account id, and the Nintendo Switch app requests and answers |
 | `comicvine.gamespot.com` | Comic search, with a key | Title, key |
 | `www.youtube.com`, `www.youtube-nocookie.com`, `i.ytimg.com`, `player.vimeo.com`, `www.dailymotion.com` | Trailers | Video id |
 | `twitter.com`, `t.me`, `wa.me`, `www.reddit.com`, `www.facebook.com`, `www.linkedin.com`, `vk.com`, `bsky.app`, `www.pinterest.com` | Share buttons | Caption with title, score, and link; the image stays local |
@@ -125,6 +128,7 @@ Your library is plain notes that open offline; covers load from the web. The plu
 - `Import from AniList`, `Import from MyAnimeList`
 - `Import Steam library`
 - `Import PlayStation games and trophies`
+- `Import Nintendo games`
 
 ## Support
 

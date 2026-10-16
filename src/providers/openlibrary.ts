@@ -29,7 +29,6 @@ export interface BookLookup {
 	author?: string
 }
 
-// Answers already found this session: a note refresh repeats the same lookup.
 const contentsCache = new Map<string, string[]>()
 
 async function getJson<T>(url: string): Promise<T | null> {
@@ -53,8 +52,7 @@ function chapterTitles(edition: OpenLibraryEdition | null): string[] {
 	return titles
 }
 
-// The writing system of a text, by its first letter: an edition whose contents
-// share the script of the note's title is in the language the user reads.
+// Writing system by first letter; matching the title's script picks the edition.
 function scriptOf(text: string): string {
 	const letter = text.match(/\p{L}/u)?.[0] ?? ''
 	if (/\p{Script=Latin}/u.test(letter)) return 'Latin'
@@ -63,10 +61,7 @@ function scriptOf(text: string): string {
 	return letter ? 'other' : ''
 }
 
-// A book's chapter titles from Open Library: the edition with its ISBN first,
-// then the fullest table of contents among the work's other editions, finding
-// the work by title and author when neither id is known. [] when no edition
-// lists its contents.
+// Chapter titles: the ISBNed edition first, else the fullest table of contents.
 export async function findChapters(book: BookLookup): Promise<string[]> {
 	const isbn = (book.isbn ?? '').replace(/[^0-9Xx]/g, '')
 	const cacheKey = isbn || book.work || `${book.title ?? ''}|${book.author ?? ''}`
@@ -93,8 +88,7 @@ export async function findChapters(book: BookLookup): Promise<string[]> {
 	}
 	if (!work.startsWith('/works/')) return done([])
 	const editions = await getJson<{ entries?: OpenLibraryEdition[] }>(`https://openlibrary.org${work}/editions.json?limit=100`)
-	// The fullest contents, among the editions in the title's script when any
-	// of them has contents — a translation's chapters read wrong in the note.
+	// Fullest contents, preferring editions in the title's script.
 	const script = scriptOf(book.title ?? '')
 	let best: string[] = []
 	let bestMatches = false
@@ -149,8 +143,7 @@ export class OpenLibraryProvider implements ContentProvider {
 		return false
 	}
 
-	// Open Library search already carries the full doc; a refresh without raw has
-	// no document to refetch from, so it is a no-op.
+	// A refresh without raw has nothing to refetch here.
 	async fetch(_sourceId: string, _type: ContentType, raw?: unknown): Promise<NormalizedMetadata | null> {
 		if (!raw || typeof raw !== 'object') return null
 		const doc = raw as OpenLibraryDoc

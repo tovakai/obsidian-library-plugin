@@ -15,6 +15,7 @@ interface CinemetaVideo {
 }
 
 interface CinemetaMeta {
+	poster?: string
 	background?: string
 	runtime?: string
 	trailerStreams?: CinemetaTrailer[]
@@ -25,9 +26,7 @@ interface CinemetaResponse {
 	meta?: CinemetaMeta
 }
 
-// Keyed by IMDb id, so it slots in exactly where TMDB does. Keyless: gives
-// movie/series notes a trailer, stills and — for series — the per-season
-// breakdown without any account.
+// Keyless enricher keyed by IMDb id: trailer, stills, per-season breakdown.
 export class CinemetaEnricher implements MetadataEnricher {
 	private static readonly BASE = 'https://v3-cinemeta.strem.io/meta'
 	private static readonly MAX_STILLS = 8
@@ -44,6 +43,7 @@ export class CinemetaEnricher implements MetadataEnricher {
 			const meta = (resp.json as CinemetaResponse).meta
 			if (!meta || typeof meta !== 'object') return fields
 
+			if (meta.poster) fields.Cover = meta.poster.replace('/poster/small/', '/poster/medium/')
 			const trailer = this.trailerOf(meta)
 			if (trailer) fields.Trailer = trailer
 			const runtime = runtimeMinutes(meta.runtime)
@@ -81,7 +81,7 @@ export class CinemetaEnricher implements MetadataEnricher {
 		const bySeason: Record<number, CinemetaVideo[]> = {}
 		const order: number[] = []
 		for (const video of meta.videos ?? []) {
-			// season 0 is Cinemeta's bucket for specials.
+			// season 0 is Cinemeta's specials bucket.
 			const number = video.season
 			if (typeof number !== 'number' || number <= 0 || !video.thumbnail) continue
 			if (!bySeason[number]) {
@@ -102,8 +102,6 @@ export class CinemetaEnricher implements MetadataEnricher {
 		const stills: string[] = []
 		for (const group of groups) {
 			if (stills.length >= limit) break
-			// Slot index across the season: even spacing, never two picks of the
-			// same episode.
 			const take = Math.min(perSeason, limit - stills.length, group.length)
 			for (let slot = 0; slot < take; slot++) {
 				const index = Math.floor((slot * group.length) / take)
@@ -134,7 +132,7 @@ export class CinemetaEnricher implements MetadataEnricher {
 		const bySeason: Record<number, CinemetaVideo[]> = {}
 		const order: number[] = []
 		for (const video of meta.videos ?? []) {
-			// season 0 is Cinemeta's bucket for specials.
+			// season 0 is Cinemeta's specials bucket.
 			const number = video.season
 			if (typeof number !== 'number' || number <= 0) continue
 			if (bySeason[number] === undefined) {
@@ -152,7 +150,6 @@ export class CinemetaEnricher implements MetadataEnricher {
 				episodes: episodes.length,
 				rating: null,
 				trailer: null,
-				// Titles only when the source has them: blank rows add nothing to the note.
 				...(titles.some((t) => t.title) ? { episode_list: titles } : {})
 			}
 		})

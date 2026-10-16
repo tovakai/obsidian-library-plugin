@@ -5,6 +5,7 @@ import {
 	PluginSettingTab,
 	requireApiVersion,
 	Setting,
+	setIcon,
 	type DropdownComponent,
 	type SettingDefinition,
 	type SettingDefinitionItem,
@@ -20,7 +21,7 @@ import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malClientPair } 
 import { PromptModal } from "./ui/promptModal";
 import { platformMark } from "./ui/platformIcons";
 
-// A YAML sample, not UI text: it stays verbatim in every language.
+// YAML sample, not UI text: verbatim in every language.
 const FRONTMATTER_EXAMPLE = [
 	"---",
 	"Type: Movie",
@@ -39,9 +40,7 @@ type TextKey =
 	| "twitchClientId"
 	| "twitchClientSecret";
 
-// One row of the tab. Both renderers draw from the same rows —
-// getSettingDefinitions() on Obsidian 1.13+, display() before it — so users on
-// either side see the same settings.
+// One row; getSettingDefinitions() (1.13+) and display() render the same rows.
 interface Row {
 	name: string;
 	desc?: string;
@@ -50,16 +49,14 @@ interface Row {
 	searchable?: boolean;
 }
 
-// A group of rows. A group scopes row names, so each category is its own
-// group: every one has a "Type value" row.
+// A group of rows; a group scopes row names — each category is its own (each has "Type value").
 interface Section {
 	heading?: string;
 	group?: boolean;
 	rows: Row[];
 }
 
-// A paragraph of explanation. It renders through a callback because Obsidian
-// skips a declarative row that has neither a name nor a control.
+// Rendered via a callback: a declarative row with neither name nor control is skipped.
 function note(text: string): Row {
 	return {
 		name: "",
@@ -72,10 +69,9 @@ function note(text: string): Row {
 
 export class LibrarySettingTab extends PluginSettingTab {
 	private plugin: LibraryPlugin;
-	// Categories whose Type value and folder rows are unfolded; screen state only.
 	private expanded = new Set<ICategory>();
-	// Folder edits in progress, by the value they started from: moving notes
-	// is offered once the field is left or the tab closes, not per keystroke.
+	private dragging: ICategory | null = null;
+	// Edits in progress, by starting value: notes move on blur/tab close, not per keystroke.
 	private libraryFrom: string | null = null;
 	private folderFrom = new Map<ICategory, string>();
 
@@ -84,8 +80,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	// Obsidian 1.13+: renders these and indexes them for the settings search.
-	// Called on every refresh, so it stays cheap: no vault scans here.
+	// 1.13+: renders these and indexes them for the settings search; no vault scans (called per refresh).
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		const items: SettingDefinitionItem[] = [];
 		for (const section of this.sections()) {
@@ -96,7 +91,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		return items;
 	}
 
-	// Obsidian before 1.13 draws the same rows by hand.
+	// Before 1.13: the same rows, drawn by hand.
 	display(): void {
 		this.draw();
 	}
@@ -106,8 +101,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		super.hide();
 	}
 
-	// A folder edit is done: a changed library folder takes the categories
-	// inside it along, and either change offers to move their notes.
+	// A folder edit is done: changed folders offer to move their notes along.
 	private commitFolders(redraw: boolean): void {
 		const settings = this.plugin.settings;
 		if (this.libraryFrom !== null) {
@@ -142,14 +136,12 @@ export class LibrarySettingTab extends PluginSettingTab {
 		}
 	}
 
-	// Rows were added or removed. The version stays a literal: the Obsidian
-	// lint recognises requireApiVersion("1.13.0") as the guard for 1.13 APIs.
+	// Rows added/removed. "1.13.0" stays a literal: the lint recognizes only that form.
 	refresh(): void {
 		if (requireApiVersion("1.13.0")) this.update();
 		else this.draw();
 	}
 
-	// Only a row's visibility changed.
 	private refreshVisibility(): void {
 		if (requireApiVersion("1.13.0")) this.refreshDomState();
 		else this.draw();
@@ -179,7 +171,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 				},
 			},
 		];
-		// The columns in the order they show, each with its own remove button.
 		for (const top of settings.stats.tops) {
 			statsRows.push({
 				name: topLabel(top, settings.categories),
@@ -268,6 +259,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				rows: [
 					{ name: "PlayStation", desc: tr("settings.psn.desc"), render: (row) => this.psnAccount(row) },
 					{ name: "Steam", desc: tr("settings.steam.desc"), render: (row) => this.steamAccount(row) },
+					{ name: "Nintendo Switch", desc: tr("settings.nintendo.desc"), render: (row) => this.nintendoAccount(row) },
 				],
 			},
 			...categories,
@@ -329,9 +321,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 	}
 
-	// Connected or not, and the one button that changes it. Desktop signs in
-	// inside a modal window; on mobile the browser opens and the token the
-	// redirect page shows is pasted back.
+	// Desktop signs in in a modal window; mobile pastes back the token the redirect page shows.
 	private anilistAccount(row: Setting): void {
 		const connected = this.plugin.settings.anilistToken.trim() !== "";
 		row.settingEl.addClass("library-platform-row");
@@ -378,9 +368,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 		void this.plugin.anilistImport(true);
 	}
 
-	// Connected or not, and the one button that changes it. Desktop signs in
-	// inside a modal window; on mobile the browser opens and the address it
-	// lands on is pasted back.
 	private malAccount(row: Setting): void {
 		const connected = this.plugin.settings.malTokens !== null;
 		row.settingEl.addClass("library-platform-row");
@@ -429,7 +416,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 		void this.plugin.malImport(true);
 	}
 
-	// Connected or not, and the one button that changes it.
 	private psnAccount(row: Setting): void {
 		const connected = this.plugin.settings.psnTokens !== null;
 		row.settingEl.addClass("library-platform-row");
@@ -453,9 +439,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 	}
 
-	// Connected or not, and the one button that changes it. Signing in opens
-	// Steam's own window; the session it leaves behind is what the import reads
-	// the library with.
 	private steamAccount(row: Setting): void {
 		const connected = this.plugin.settings.steamId.trim() !== "";
 		row.settingEl.addClass("library-platform-row");
@@ -479,8 +462,30 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 	}
 
-	// A category is its name and source; the Type value, the folder and the
-	// template unfold under it.
+	// Connecting asks first: requests go through a third-party signing service.
+	private nintendoAccount(row: Setting): void {
+		const connected = this.plugin.settings.nintendoTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-nintendo" });
+		icon.appendChild(platformMark("nintendo"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.nintendoTokens = null;
+					await this.plugin.saveSettings();
+				} else {
+					await this.plugin.connectNintendo();
+				}
+				this.refresh();
+			});
+		});
+	}
+
 	private categoryRows(cat: ICategory, index: number): Row[] {
 		const label = (): string => cat.name || tr("settings.category.name", { index: index + 1 });
 		const unfolded = (): boolean => this.expanded.has(cat);
@@ -496,6 +501,8 @@ export class LibrarySettingTab extends PluginSettingTab {
 							.setPlaceholder(tr("settings.category.type.placeholder"))
 							.setValue(cat.typeValue)
 							.onChange(async (value) => {
+								// An empty Type would claim every note that has none.
+								if (!value.trim()) return;
 								this.retypeCategory(cat, value.trim());
 								await this.plugin.saveSettings();
 							}),
@@ -549,7 +556,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				.setPlaceholder(tr("settings.category.name.placeholder"))
 				.setValue(cat.name)
 				.onChange(async (value) => {
-					cat.name = value.trim();
+					this.renameCategory(cat, value.trim());
 					row.setName(label());
 					await this.plugin.saveSettings();
 				}),
@@ -558,7 +565,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 			this.addSourceOptions(dropdown);
 			dropdown.setValue(cat.contentType).onChange(async (value) => {
 				if (!isContentType(value)) return;
-				// Follow the new source unless a custom Type value was typed.
 				const def = TYPE_DEFAULTS[value];
 				const retype = Boolean(def) && (!cat.typeValue || isDefaultTypeValue(cat.typeValue));
 				if (retype && def) this.retypeCategory(cat, def);
@@ -567,6 +573,50 @@ export class LibrarySettingTab extends PluginSettingTab {
 				if (retype) this.refresh();
 			});
 		});
+		// The library shows its sections in this order: a category dropped on
+		// another takes its place.
+		const list = settings.categories;
+		const place = (moved: ICategory, to: number): void => {
+			const from = list.indexOf(moved);
+			if (from < 0 || to < 0 || to >= list.length || from === to) return;
+			list.splice(from, 1);
+			list.splice(to, 0, moved);
+			void this.plugin.saveSettings();
+			this.refresh();
+		};
+		// Obsidian 1.13 renders a row again into the same element: one handle,
+		// and handlers assigned rather than added.
+		row.settingEl.querySelector(".library-settings-drag")?.remove();
+		const handle = createDiv({ cls: "library-settings-drag", attr: { draggable: "true", "aria-label": tr("settings.category.drag") } });
+		setIcon(handle, "grip-vertical");
+		row.settingEl.prepend(handle);
+		handle.addEventListener("dragstart", (event) => {
+			this.dragging = cat;
+			if (!event.dataTransfer) return;
+			event.dataTransfer.effectAllowed = "move";
+			event.dataTransfer.setDragImage(row.settingEl, 16, 16);
+		});
+		handle.addEventListener("dragend", () => { this.dragging = null; });
+		const target = (on: boolean): void => { row.settingEl.toggleClass("is-drop-target", on); };
+		row.settingEl.ondragover = (event): void => {
+			if (!this.dragging || this.dragging === cat) return;
+			event.preventDefault();
+			target(true);
+		};
+		row.settingEl.ondragleave = (): void => target(false);
+		row.settingEl.ondrop = (event): void => {
+			event.preventDefault();
+			target(false);
+			const dragged = this.dragging;
+			this.dragging = null;
+			if (dragged) place(dragged, list.indexOf(cat));
+		};
+		// Touch screens have no drag and drop: arrows there.
+		if (Platform.isMobile) {
+			const at = list.indexOf(cat);
+			if (at > 0) row.addExtraButton((button) => button.setIcon("arrow-up").setTooltip(tr("settings.category.up")).onClick(() => place(cat, at - 1)));
+			if (at < list.length - 1) row.addExtraButton((button) => button.setIcon("arrow-down").setTooltip(tr("settings.category.down")).onClick(() => place(cat, at + 1)));
+		}
 		row.addExtraButton((button) => {
 			const setIcon = (): void => {
 				button.setIcon(this.expanded.has(cat) ? "chevron-up" : "chevron-down");
@@ -588,8 +638,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 					if (at >= 0) settings.categories.splice(at, 1);
 					this.expanded.delete(cat);
 					this.folderFrom.delete(cat);
-					// Its statistics column goes too, unless another category
-					// still shows notes of that Type.
 					if (!settings.categories.some((c) => c.typeValue === cat.typeValue)) {
 						settings.stats.tops = settings.stats.tops.filter(
 							(top) => !(top.kind === "category" && top.key === cat.typeValue),
@@ -625,10 +673,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		);
 	}
 
-	// Adding works like adding a category: a category (its best-rated titles)
-	// or a property of the notes (its most frequent values). The row stays
-	// when everything is listed already, just switched off. The candidates
-	// scan the vault, so they are built only when the row is drawn.
+	// Candidates scan the vault: built only when the row is drawn.
 	private addTop(row: Setting): void {
 		const candidates = this.topCandidates();
 		let chosen = 0;
@@ -664,8 +709,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 		);
 	}
 
-	// One category per medium: a single source may merge several providers
-	// (Games = RAWG + Steam, Books = Google Books + Open Library).
 	private addSourceOptions(d: DropdownComponent): void {
 		const options: Array<[string, string]> = [
 			["movie", tr("settings.default.movie") + " — Cinemeta, Wikidata, OMDb"],
@@ -691,8 +734,26 @@ export class LibrarySettingTab extends PluginSettingTab {
 		return list;
 	}
 
-	// A category's statistics column is keyed by its Type value, so it moves
-	// along when that value changes.
+	// Sort, filters and the Up next choice are saved under the category name.
+	private renameCategory(cat: ICategory, name: string): void {
+		const settings = this.plugin.settings;
+		const from = cat.name;
+		if (!name) return;
+		// A name another category already takes gets a number, as a new one does.
+		const taken = new Set(settings.categories.filter((c) => c !== cat).map((c) => c.name));
+		const base = name;
+		for (let n = 2; taken.has(name); n++) name = `${base} ${String(n)}`;
+		if (name === from) return;
+		cat.name = name;
+		if (!from || settings.categories.some((c) => c !== cat && c.name === from)) return;
+		for (const state of [settings.sortState, settings.filterState] as Array<Record<string, unknown>>) {
+			if (from in state && !(name in state)) state[name] = state[from];
+			delete state[from];
+		}
+		if (settings.upNextCategory === from) settings.upNextCategory = name;
+	}
+
+	// A category column is keyed by its Type value, so it moves with the rename.
 	private retypeCategory(cat: ICategory, typeValue: string): void {
 		for (const top of this.plugin.settings.stats.tops) {
 			if (top.kind === "category" && top.key === cat.typeValue) top.key = typeValue;
@@ -700,8 +761,6 @@ export class LibrarySettingTab extends PluginSettingTab {
 		cat.typeValue = typeValue;
 	}
 
-	// What "Add top" can still offer: the categories, then the properties the
-	// library's notes use — none that already has its column.
 	private topCandidates(): Array<{ group: string; label: string; top: IStatsTop }> {
 		const listed = new Set<string>();
 		for (const top of this.plugin.settings.stats.tops) listed.add(`${top.kind}:${top.key.toLowerCase()}`);
@@ -715,9 +774,10 @@ export class LibrarySettingTab extends PluginSettingTab {
 		for (const cat of this.plugin.settings.categories) {
 			offer(tr("settings.section.categories"), cat.name || cat.typeValue, { kind: "category", key: cat.typeValue });
 		}
-		// A connected platform's own totals: chosen here, never shown unasked.
+		// A platform's totals are chosen here, never shown unasked.
 		if (this.plugin.settings.psnStats) offer(tr("settings.stats.groupPlatforms"), tr("stats.psn"), { kind: "platform", key: "playstation" });
 		if (this.plugin.settings.malStats) offer(tr("settings.stats.groupPlatforms"), tr("stats.mal"), { kind: "platform", key: "myanimelist" });
+		if (this.plugin.settings.nintendoStats) offer(tr("settings.stats.groupPlatforms"), tr("stats.nintendo"), { kind: "platform", key: "nintendo" });
 		for (const property of rankableProperties(this.libraryFrontmatter(), this.plugin.settings.coverProperty)) {
 			offer(tr("settings.stats.groupProperties"), property, { kind: "property", key: property });
 		}

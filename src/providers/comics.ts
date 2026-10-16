@@ -24,7 +24,7 @@ export class ComicsProvider implements ContentProvider {
 	readonly contentTypes: ContentType[] = ['comic']
 
 	private static readonly BASE = 'https://comicvine.gamespot.com/api'
-	// Comic Vine resource ids are "<resource type>-<id>": volumes are 4050, issues are 4000.
+	// Comic Vine resource ids are "<type>-<id>": volumes 4050, issues 4000.
 	private static readonly VOLUME_TYPE = '4050'
 
 	private getKey: () => string
@@ -33,7 +33,7 @@ export class ComicsProvider implements ContentProvider {
 		this.getKey = getKey
 	}
 
-	// A Comic Vine volume is only looked up with a key; without one the note stays as it is.
+	// A volume needs a key to look up; without one the note stays as it is.
 	refreshable(): boolean {
 		return !!this.getKey().trim()
 	}

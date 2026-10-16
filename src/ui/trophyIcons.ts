@@ -1,7 +1,5 @@
 import { formatNumber, tr } from '../i18n'
 
-// The four trophy grades, best first, with the note property that keeps how
-// many of each the user earned.
 export const TROPHY_GRADES = [
 	{ key: 'platinum', property: 'Platinum', color: '#9fc3e6', label: 'stats.psn.platinum' },
 	{ key: 'gold', property: 'Gold', color: '#e3b23c', label: 'stats.psn.gold' },
@@ -9,7 +7,6 @@ export const TROPHY_GRADES = [
 	{ key: 'bronze', property: 'Bronze', color: '#c47a45', label: 'stats.psn.bronze' },
 ] as const
 
-// A trophy cup drawn in the grade's colour: cup, handles, stem and base.
 function trophyIcon(color: string): SVGSVGElement {
 	const svg = createSvg('svg', { cls: 'library-trophy-icon', attr: { viewBox: '0 0 24 24', 'aria-hidden': 'true' } })
 	svg.createSvg('path', { attr: { d: 'M6 3h12v5a6 6 0 0 1-12 0V3z', fill: color } })
@@ -20,8 +17,6 @@ function trophyIcon(color: string): SVGSVGElement {
 	return svg
 }
 
-// The trophies a note says the user earned, a cup and a count per grade;
-// grades with none are left out. Nothing is drawn without a single trophy.
 export function renderTrophies(parent: HTMLElement, fm: Record<string, unknown>, cls: string): void {
 	const earned = TROPHY_GRADES
 		.map(grade => ({ grade, count: Number(fm[grade.property]) }))

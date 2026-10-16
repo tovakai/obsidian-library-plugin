@@ -3,8 +3,7 @@ import type { ICategory } from '../constants'
 import { tr } from '../i18n'
 import type { ContentType } from '../providers/types'
 
-// A category, or a medium without one yet: its category is created with the
-// first title added to it.
+// A medium without a category gets one with its first title.
 export type AddChoice = { category: ICategory } | { type: ContentType }
 
 export class PickTypeModal extends FuzzySuggestModal<AddChoice> {

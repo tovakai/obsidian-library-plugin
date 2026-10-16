@@ -7,8 +7,6 @@ export interface ConfirmText {
 	cancel: string
 }
 
-// A yes-or-no question. Closing it any other way than the confirm button
-// counts as no, so the answer always arrives exactly once.
 export class ConfirmModal extends Modal {
 	private copy: ConfirmText
 	private onAnswer: (yes: boolean) => void

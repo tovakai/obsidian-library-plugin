@@ -12,7 +12,7 @@ export interface SeasonView {
 
 const YOUTUBE_ID = /^[\w-]{11}$/
 
-// Local copy of util.toStr: this module stays free of obsidian imports.
+// Local copy: this module stays free of obsidian imports.
 function toStr(val: unknown): string {
 	if (typeof val === 'string') return val
 	if (typeof val === 'number' || typeof val === 'boolean') return String(val)
@@ -52,8 +52,6 @@ function vimeoId(url: string): string | null {
 	}
 }
 
-// Turns a trailer link into a player target. Only known video hosts become
-// embeds; anything else is shown as a plain link by the caller.
 export function toEmbed(raw: unknown): Embed | null {
 	const url = toStr(raw).trim()
 	if (!url) return null
@@ -61,7 +59,7 @@ export function toEmbed(raw: unknown): Embed | null {
 	if (youtube) return { kind: 'youtube', src: `https://www.youtube-nocookie.com/embed/${youtube}` }
 	const vimeo = vimeoId(url)
 	if (vimeo) return { kind: 'vimeo', src: `https://player.vimeo.com/video/${vimeo}` }
-	// A video file or stream (Steam trailers are HLS), played by the <video> element.
+	// Video file or stream (Steam trailers are HLS) → <video>.
 	try {
 		const parsed = new URL(url)
 		if (parsed.protocol === 'https:' && /\.(m3u8|mp4|webm)$/i.test(parsed.pathname)) return { kind: 'video', src: url }
@@ -71,8 +69,7 @@ export function toEmbed(raw: unknown): Embed | null {
 	return null
 }
 
-// '' / null entries and non-map rows are dropped, so a hand-edited list never
-// breaks the note header.
+// Junk entries dropped: a hand-edited list must not break the header.
 export function normalizeSeasons(val: unknown): SeasonView[] {
 	if (!Array.isArray(val)) return []
 	const list: SeasonView[] = []
@@ -95,10 +92,7 @@ export function normalizeSeasons(val: unknown): SeasonView[] {
 	return list
 }
 
-// The Obsidian DOM helpers append to whatever `this` they are called on, so
-// calling one on the document itself turns into an appendChild against the
-// document — a HierarchyRequestError in the real app, while jsdom's setup
-// quietly redirects it to <body>.
+// Obsidian DOM helpers append to `this`: called on the document, they appendChild the document (HierarchyRequestError).
 export function createEmbedPlayer(embed: Embed, title: string): HTMLElement {
 	const wrapper = createDiv({ cls: 'note-header-player' })
 	if (embed.kind === 'video') {

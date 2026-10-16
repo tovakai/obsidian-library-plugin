@@ -54,8 +54,8 @@ export class GoogleBooksProvider implements ContentProvider {
 		return url ? url.replace('http://', 'https://') : null
 	}
 
-	// Google's keyless quota is shared by every caller and answers "quota
-	// exceeded" most of the time: without a key, books come from Open Library.
+	// Google's keyless quota is shared and mostly exhausted: without a key, books
+	// come from Open Library.
 	refreshable(): boolean {
 		return !!this.getKey().trim()
 	}

@@ -1,10 +1,7 @@
 import { requestUrl } from 'obsidian'
 
-// PlayStation Network for the game library and trophies. Sony has no public
-// API: these are the endpoints the PlayStation App uses, the same ones
-// Exophase and PSNProfiles rely on. The user signs in on Sony's own page in a
-// window inside Obsidian; the plugin never sees the password, only the code
-// Sony hands back, which it trades for tokens.
+// PlayStation Network library and trophies. Sony has no public API: these are
+// the PlayStation App's endpoints. Sign-in happens on Sony's own page.
 
 // The PlayStation App's public client: its id, redirect and scopes.
 const CLIENT_ID = '09515159-7237-4370-9b40-3806e67c0891'
@@ -22,7 +19,6 @@ export interface PsnTokens {
 	refreshExpiresAt: number
 }
 
-// The page that signs in, then sends the browser to PSN_REDIRECT with a code.
 export function psnAuthUrl(): string {
 	const params = [
 		'access_type=offline',
@@ -34,7 +30,6 @@ export function psnAuthUrl(): string {
 	return `${AUTH}/authorize?${params.join('&')}`
 }
 
-// The code from the address Sony redirects to, or null when it carries none.
 export function codeFromRedirect(url: string): string | null {
 	if (!url.startsWith(PSN_REDIRECT)) return null
 	const match = url.match(/[?&]code=([^&#]+)/)
@@ -79,7 +74,7 @@ export function refreshPsnTokens(refresh: string): Promise<PsnTokens | null> {
 	return tokenRequest({ refresh_token: refresh, grant_type: 'refresh_token', scope: SCOPE, token_format: 'jwt' })
 }
 
-// A minute of slack so a token does not expire between the check and the call.
+// A minute of slack so a token does not expire mid-call.
 export function psnExpired(tokens: PsnTokens, now: number = Date.now()): boolean {
 	return now >= tokens.expiresAt - 60000
 }
@@ -100,7 +95,6 @@ async function get<T>(token: string, path: string, language = ''): Promise<T | n
 	}
 }
 
-// A game the user has played, PS4 or PS5.
 export interface PsnPlayedGame {
 	titleId: string
 	name: string
@@ -112,7 +106,7 @@ export interface PsnPlayedGame {
 	// Whole minutes played.
 	minutes: number
 	conceptId: number | null
-	// Every picture Sony has for the game, by its type (PORTRAIT_BANNER, MASTER…).
+	// Every picture Sony has for the game, by type (PORTRAIT_BANNER, MASTER…).
 	images: Record<string, string>
 }
 
@@ -143,8 +137,7 @@ function imagesOf(list: Array<{ url?: string; type?: string }>): Record<string, 
 	return out
 }
 
-// language: the names in another language than the account's, such as
-// 'en-US' to look the games up by their English titles.
+// language: the names in another language than the account's, e.g. 'en-US'.
 export async function psnPlayedGames(token: string, language = ''): Promise<PsnPlayedGame[] | null> {
 	const games: PsnPlayedGame[] = []
 	for (let offset = 0; offset < 5000; offset += 200) {
@@ -178,7 +171,6 @@ export interface TrophyCounts {
 	bronze: number
 }
 
-// A game's trophy list and how far the user got in it.
 export interface PsnTrophyTitle {
 	npCommunicationId: string
 	npServiceName: string
@@ -246,7 +238,6 @@ export async function psnTrophySummary(token: string): Promise<PsnTrophySummary 
 	return { level: Number(raw.trophyLevel ?? 0), progress: raw.progress ?? 0, earned: counts(raw.earnedTrophies) }
 }
 
-// Which trophy list belongs to which game: title ids to communication ids.
 export async function psnTrophyIdsFor(token: string, titleIds: string[]): Promise<Map<string, string>> {
 	const out = new Map<string, string>()
 	for (let i = 0; i < titleIds.length; i += 5) {
@@ -261,9 +252,7 @@ export async function psnTrophyIdsFor(token: string, titleIds: string[]): Promis
 	return out
 }
 
-// A game in the user's library: bought, claimed with PlayStation Plus, or
-// free to play, whether played or not. Apps (video, music) come along and
-// are told apart by the caller.
+// A library game: bought, PS Plus or free to play (apps come along too).
 export interface PsnOwnedGame {
 	titleId: string
 	name: string
@@ -302,7 +291,7 @@ export async function psnOwnedGames(token: string): Promise<PsnOwnedGame[] | nul
 			try {
 				const resp = await requestUrl({
 					url,
-					// Sony's GraphQL refuses a request without these as possible CSRF.
+					// Sony's GraphQL refuses a request without these: a guard against possible CSRF.
 					headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'apollo-require-preflight': 'true' },
 					throw: false,
 				})
@@ -331,12 +320,12 @@ export async function psnOwnedGames(token: string): Promise<PsnOwnedGame[] | nul
 	return games
 }
 
-// A name without the trademark signs Sony puts in titles: "EA SPORTS FC™ 25".
+// Strip the trademark signs Sony puts in titles: "EA SPORTS FC™ 25".
 export function cleanPsnName(name: string): string {
 	return name.replace(/[™®©]/g, '').replace(/\s+/g, ' ').trim()
 }
 
-// "0/1 · 2/3 · 9/15 · 43/75": platinum, gold, silver, bronze, earned of all.
+// "0/1 · 2/3 · 9/15 · 43/75": platinum, gold, silver, bronze, earned of defined.
 export function trophyLine(earned: TrophyCounts, defined: TrophyCounts): string {
 	return (['platinum', 'gold', 'silver', 'bronze'] as const)
 		.map(grade => `${String(earned[grade])}/${String(defined[grade])}`)
@@ -347,7 +336,6 @@ export function trophyTotal(counts: TrophyCounts): number {
 	return counts.platinum + counts.gold + counts.silver + counts.bronze
 }
 
-// What the statistics panel shows about the PlayStation account.
 export interface PsnStats {
 	games: number
 	minutes: number
