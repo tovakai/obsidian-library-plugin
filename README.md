@@ -24,7 +24,7 @@
 
 - Movies, series, anime, games, books, comics, and music, with ratings, stills, cast, and trailers where the source has them; movies, series, games, and comics also match a title in any language.
 - Tick episodes or chapters and score them; `Progress` and `My Rating` follow. A movie is watched or not.
-- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Unstarted titles show an eye icon and gather in Up next, which narrows to one category at a time; a category can also sort its unstarted titles first.
+- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Each category filters by year, genre, country, or platform (only values your notes have) and sorts by title, year, rating, date, or unstarted first. Unstarted titles show an eye icon and gather in Up next, one category at a time if you like.
 - Similar titles under movie, series, anime, game, and book notes.
 - Connect AniList, MyAnimeList, PlayStation, and Steam in settings: lists, played games, playtime, trophies, and achievements import as notes; anime and PlayStation lists re-import once a day on desktop.
 - Categories count their titles and time spent; statistics compare those hours with "In the same time" facts like trips to the Moon or marathons run.
@@ -69,6 +69,7 @@ Type: Series
 Name: Stranger Things
 Year: 2016
 Genre: ["[[Drama]]", "[[Horror]]"]
+Country: ["United States"]
 Creator: ["[[The Duffer Brothers]]"]
 Cast: ["[[Winona Ryder]]"]
 Rating IMDB: 8.7

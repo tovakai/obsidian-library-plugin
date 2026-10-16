@@ -2642,6 +2642,7 @@ export default class LibraryPlugin extends Plugin {
 		if (!Array.isArray(this.settings.categories)) this.settings.categories = []
 		this.settings.categories = this.settings.categories.filter(cat => !!cat && typeof cat === 'object')
 		if (!this.settings.sortState || typeof this.settings.sortState !== 'object') this.settings.sortState = {}
+		if (!this.settings.filterState || typeof this.settings.filterState !== 'object') this.settings.filterState = {}
 		if (typeof this.settings.statsCollapsed !== 'boolean') this.settings.statsCollapsed = false
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false

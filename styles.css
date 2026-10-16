@@ -138,6 +138,7 @@
 
 .library-toolbar {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 12px;
 	margin-bottom: 1%;
@@ -145,6 +146,21 @@
 
 .library-toolbar-spacer {
 	flex-grow: 1;
+}
+
+/* A category's filters: the sort trigger's look, the chosen one in the
+   accent colour; their menus open from the left and scroll when long. */
+.library-sort-dropdown .library-sort-trigger.is-active {
+	color: var(--text-on-accent);
+	background-color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
+.library-filter-dropdown .library-filter-menu {
+	left: 0;
+	right: auto;
+	max-height: 320px;
+	overflow-y: auto;
 }
 
 /* Up next's category buttons in its toolbar: the same quiet buttons as the

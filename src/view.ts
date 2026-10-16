@@ -70,6 +70,34 @@ interface SortChoice {
 	asc: boolean
 }
 
+// What a category can be narrowed by, in toolbar order.
+type Facet = 'year' | 'genre' | 'country' | 'platform'
+
+const FACETS: { facet: Facet, label: string, games?: boolean }[] = [
+	{ facet: 'year', label: 'sort.year' },
+	{ facet: 'genre', label: 'header.genre' },
+	{ facet: 'country', label: 'filter.country' },
+	{ facet: 'platform', label: 'settings.stats.groupPlatforms', games: true },
+]
+
+// The values a card has for a filter: its year, its genres (as written, links
+// read by their name), its countries, its platforms.
+function facetValues(card: CardData, facet: Facet): string[] {
+	switch (facet) {
+		case 'year': return card.year > 0 ? [String(card.year)] : []
+		case 'genre': return toStrArray(card.fm.Genre).map(linkLabel).filter(Boolean)
+		case 'country': return toStrArray(card.fm.Country)
+		case 'platform': return toStrArray(card.fm.Platforms)
+	}
+}
+
+// Cards that match every chosen filter.
+function filterCards(cards: CardData[], chosen: Record<string, string>): CardData[] {
+	const active = FACETS.filter(f => chosen[f.facet])
+	if (active.length === 0) return cards
+	return cards.filter(card => active.every(f => facetValues(card, f.facet).indexOf(chosen[f.facet] as string) >= 0))
+}
+
 // A heading over a grid of cards: a category's, or the "Up next" block's.
 interface SectionSpec {
 	title: string
@@ -80,6 +108,9 @@ interface SectionSpec {
 	setCollapsed(collapsed: boolean): void
 	// The section's medium: movies, series, anime and music add the time spent.
 	kind?: ContentType
+	// A category's filters: every card it has, before filtering, to offer
+	// the values from, and the values chosen.
+	filters?: { all: CardData[], chosen: Record<string, string>, choose(facet: Facet, value: string): void }
 }
 
 // A key no category name takes: the categories' sort choices share the map.
@@ -501,6 +532,7 @@ export class LibraryView extends ItemView {
 			// A category with nothing to show is not worth a heading.
 			if (shown.length === 0) continue
 			rendered++
+			const chosen = settings.filterState[category.name] ?? {}
 			this.renderSection(root, {
 				title: category.name,
 				sortId: category.name,
@@ -510,8 +542,21 @@ export class LibraryView extends ItemView {
 				setCollapsed: (collapsed) => {
 					if (collapsed) category.collapsed = true
 					else delete category.collapsed
+				},
+				filters: {
+					all: shown,
+					chosen,
+					choose: (facet, value) => {
+						const next = { ...(settings.filterState[category.name] ?? {}) }
+						if (value) next[facet] = value
+						else delete next[facet]
+						if (Object.keys(next).length > 0) settings.filterState[category.name] = next
+						else delete settings.filterState[category.name]
+						void this.plugin.persistSettings()
+						this.render()
+					}
 				}
-			}, shown)
+			}, filterCards(shown, chosen))
 		}
 
 		// At the end of the page: everything not started yet, from every
@@ -550,7 +595,7 @@ export class LibraryView extends ItemView {
 		for (const name of ['', ...names]) {
 			const button = row.createEl('button', {
 				cls: 'library-filter-item',
-				text: name || tr('upNext.all'),
+				text: name || tr('filter.all'),
 				attr: { 'aria-pressed': name === chosen ? 'true' : 'false' }
 			})
 			if (name === chosen) button.addClass('is-active')
@@ -563,6 +608,50 @@ export class LibraryView extends ItemView {
 		}
 		const toolbar = section.querySelector('.library-toolbar')
 		toolbar?.insertBefore(row, toolbar.querySelector('.library-toolbar-spacer'))
+	}
+
+	// A dropdown per filter, after the count: only values some card of the
+	// category has, and only filters with a choice to make (two values or
+	// more), unless one is already chosen and has to stay clearable.
+	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>, kind?: ContentType): void {
+		for (const { facet, label, games } of FACETS) {
+			if (games && kind !== 'game') continue
+			const counts = new Map<string, number>()
+			for (const card of filters.all) {
+				for (const value of facetValues(card, facet)) counts.set(value, (counts.get(value) ?? 0) + 1)
+			}
+			const chosen = filters.chosen[facet] ?? ''
+			if (counts.size < 2 && !chosen) continue
+			// Years newest first, the rest alphabetically.
+			const values = [...counts.keys()].sort((a, b) => facet === 'year' ? Number(b) - Number(a) : a.localeCompare(b))
+			const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
+			const trigger = dropdown.createEl('button', {
+				cls: 'library-sort-trigger',
+				text: (chosen || tr(label)) + ' ▾',
+				attr: { 'aria-label': tr(label), 'aria-haspopup': 'true', 'aria-expanded': 'false' }
+			})
+			if (chosen) trigger.addClass('is-active')
+			const menu = dropdown.createDiv({ cls: 'library-sort-menu library-filter-menu' })
+			for (const value of ['', ...values]) {
+				const item = menu.createEl('button', {
+					cls: 'library-sort-menu-item',
+					text: value ? `${value} · ${formatNumber(counts.get(value) ?? 0)}` : tr('filter.all')
+				})
+				if (value === chosen) item.addClass('active')
+				item.addEventListener('click', e => {
+					e.stopPropagation()
+					menu.removeClass('open')
+					if (value !== chosen) filters.choose(facet, value)
+				})
+			}
+			trigger.addEventListener('click', e => {
+				e.stopPropagation()
+				const open = !menu.hasClass('open')
+				this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
+				menu.toggleClass('open', open)
+				trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
+			})
+		}
 	}
 
 	// Beside the fold button: the number of titles, and for movies, series,
@@ -595,6 +684,7 @@ export class LibraryView extends ItemView {
 			attr: { 'aria-label': spec.title, 'aria-expanded': 'true' }
 		})
 		this.sectionMeta(toolbar, cards, spec.kind)
+		if (spec.filters) this.sectionFilters(toolbar, spec.filters, spec.kind)
 		toolbar.createDiv({ cls: 'library-toolbar-spacer' })
 
 		const sortDropdown = toolbar.createDiv({ cls: 'library-sort-dropdown' })

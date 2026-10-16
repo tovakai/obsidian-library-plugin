@@ -3,6 +3,11 @@ import { SEARCH_BUDGET_MS, within } from '../util'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
 import { NON_LATIN } from './wikidata'
 
+// The Wikidata games provider, which can also tell where a game was made.
+function hasCountryOf(provider: ContentProvider): provider is ContentProvider & { countryOf(name: string, steamAppId: string | null): Promise<string[]> } {
+	return typeof (provider as { countryOf?: unknown }).countryOf === 'function'
+}
+
 // Games search: RAWG first when there is a key, then Steam's store and
 // Wikidata. The id says where a game came from, so a fetch or a refresh
 // needs no search result: Steam ids are prefixed, Wikidata's are Q-numbers,
@@ -42,8 +47,15 @@ export class GameAggregatorProvider implements ContentProvider {
 	async fetch(sourceId: string, _type: ContentType, raw?: unknown): Promise<NormalizedMetadata | null> {
 		// A PlayStation game no source knew: its note keeps what PlayStation gave.
 		if (sourceId.startsWith('psn:')) return null
-		if (sourceId.startsWith(SteamProvider.PREFIX)) return this.steam.fetch(sourceId, 'game')
 		if (/^Q\d+$/.test(sourceId)) return this.wikidata.fetch(sourceId, 'game')
-		return this.rawg.fetch(sourceId, 'game', raw)
+		const steam = sourceId.startsWith(SteamProvider.PREFIX)
+		const meta = steam ? await this.steam.fetch(sourceId, 'game') : await this.rawg.fetch(sourceId, 'game', raw)
+		// RAWG and Steam do not say where a game was made; Wikidata does.
+		const name = typeof meta?.fields.Name === 'string' ? meta.fields.Name : ''
+		if (meta && name && !(Array.isArray(meta.fields.Country) && meta.fields.Country.length > 0) && hasCountryOf(this.wikidata)) {
+			const country = await within(this.wikidata.countryOf(name, steam ? sourceId.slice(SteamProvider.PREFIX.length) : null), SEARCH_BUDGET_MS, [])
+			if (country.length > 0) meta.fields.Country = country
+		}
+		return meta
 	}
 }

@@ -60,9 +60,10 @@ export class WikidataGameProvider implements ContentProvider {
 			const genres = itemIds(item, 'P136')
 			const developers = itemIds(item, 'P178')
 			const publishers = itemIds(item, 'P123')
+			const countries = itemIds(item, 'P495')
 			const article = item.sitelinks?.enwiki?.title ?? null
 			const [labels, covers] = await Promise.all([
-				labelsOf([...genres, ...developers, ...publishers], langs),
+				labelsOf([...genres, ...developers, ...publishers, ...countries], langs),
 				wikipediaImages(article ? [article] : [])
 			])
 			const fields: Record<string, unknown> = {
@@ -70,6 +71,7 @@ export class WikidataGameProvider implements ContentProvider {
 				Year: firstYear(item, ['P577']),
 				Released: releasedDmy(firstDate(item, ['P577'])) || null,
 				Genre: labels(genres),
+				Country: labels(countries),
 				Creator: developers.length > 0 ? labels(developers) : labels(publishers),
 				Cover: article ? covers[article] ?? null : null,
 				URL: pageUrl(sourceId, article)
@@ -80,6 +82,31 @@ export class WikidataGameProvider implements ContentProvider {
 		} catch (e) {
 			console.error('Library: Wikidata game fetch error', e)
 			return null
+		}
+	}
+
+	// Where a game from RAWG or Steam was made, which neither of them says:
+	// Wikidata's country of origin, found by the Steam app id when there is
+	// one, else by the title, which then has to match an English label.
+	async countryOf(name: string, steamAppId: string | null): Promise<string[]> {
+		try {
+			const ids = steamAppId
+				? await searchItems('', `haswbstatement:P1733=${steamAppId}`, 1)
+				: await searchItems(name, VIDEO_GAME, 3)
+			if (ids.length === 0) return []
+			const langs = ['en', 'mul']
+			const found = await entities(ids, 'labels|claims', langs)
+			const wanted = name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+			const id = steamAppId ? ids[0] : ids.find(id => {
+				const label = textIn(found[id]?.labels, langs) ?? ''
+				return label.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === wanted
+			})
+			const countries = id ? itemIds(found[id], 'P495') : []
+			if (countries.length === 0) return []
+			return (await labelsOf(countries, langs))(countries)
+		} catch (e) {
+			console.error('Library: Wikidata game country error', e)
+			return []
 		}
 	}
 }
