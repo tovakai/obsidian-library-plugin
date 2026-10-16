@@ -571,6 +571,20 @@ export class LibrarySettingTab extends PluginSettingTab {
 				if (retype) this.refresh();
 			});
 		});
+		// The library shows its sections in this order.
+		const move = (step: number): void => {
+			const list = settings.categories;
+			const from = list.indexOf(cat);
+			const to = from + step;
+			if (from < 0 || to < 0 || to >= list.length) return;
+			list.splice(from, 1);
+			list.splice(to, 0, cat);
+			void this.plugin.saveSettings();
+			this.refresh();
+		};
+		const at = settings.categories.indexOf(cat);
+		if (at > 0) row.addExtraButton((button) => button.setIcon("arrow-up").setTooltip(tr("settings.category.up")).onClick(() => move(-1)));
+		if (at < settings.categories.length - 1) row.addExtraButton((button) => button.setIcon("arrow-down").setTooltip(tr("settings.category.down")).onClick(() => move(1)));
 		row.addExtraButton((button) => {
 			const setIcon = (): void => {
 				button.setIcon(this.expanded.has(cat) ? "chevron-up" : "chevron-down");
