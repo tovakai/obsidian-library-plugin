@@ -584,6 +584,9 @@ export class LibrarySettingTab extends PluginSettingTab {
 			void this.plugin.saveSettings();
 			this.refresh();
 		};
+		// Obsidian 1.13 renders a row again into the same element: one handle,
+		// and handlers assigned rather than added.
+		row.settingEl.querySelector(".library-settings-drag")?.remove();
 		const handle = createDiv({ cls: "library-settings-drag", attr: { draggable: "true", "aria-label": tr("settings.category.drag") } });
 		setIcon(handle, "grip-vertical");
 		row.settingEl.prepend(handle);
@@ -595,19 +598,19 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 		handle.addEventListener("dragend", () => { this.dragging = null; });
 		const target = (on: boolean): void => { row.settingEl.toggleClass("is-drop-target", on); };
-		row.settingEl.addEventListener("dragover", (event) => {
+		row.settingEl.ondragover = (event): void => {
 			if (!this.dragging || this.dragging === cat) return;
 			event.preventDefault();
 			target(true);
-		});
-		row.settingEl.addEventListener("dragleave", () => target(false));
-		row.settingEl.addEventListener("drop", (event) => {
+		};
+		row.settingEl.ondragleave = (): void => target(false);
+		row.settingEl.ondrop = (event): void => {
 			event.preventDefault();
 			target(false);
 			const dragged = this.dragging;
 			this.dragging = null;
 			if (dragged) place(dragged, list.indexOf(cat));
-		});
+		};
 		// Touch screens have no drag and drop: arrows there.
 		if (Platform.isMobile) {
 			const at = list.indexOf(cat);
