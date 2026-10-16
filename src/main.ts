@@ -244,15 +244,12 @@ export default class LibraryPlugin extends Plugin {
 			)
 			this.refreshBanner()
 			this.scheduleEnrich(ENRICH_START_DELAY)
-			this.registerInterval(window.setTimeout(() => this.psnSyncIfDue(), 60000))
-			this.registerInterval(window.setInterval(() => this.psnSyncIfDue(), 3600000))
 			// MAL then AniList: two imports at once could create the same note twice
 			this.registerInterval(window.setTimeout(() => this.syncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.syncTick(), 3600000))
-			this.registerInterval(window.setTimeout(() => this.steamSyncIfDue(), 60000))
-			this.registerInterval(window.setInterval(() => this.steamSyncIfDue(), 3600000))
-			this.registerInterval(window.setTimeout(() => this.nintendoSyncIfDue(), 60000))
-			this.registerInterval(window.setInterval(() => this.nintendoSyncIfDue(), 3600000))
+			// PSN, Steam, Nintendo in turn: each finds the notes the others wrote
+			this.registerInterval(window.setTimeout(() => this.gameSyncTick(), 60000))
+			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
 
@@ -1134,7 +1131,8 @@ export default class LibraryPlugin extends Plugin {
 				updated: Date.now(),
 			}
 			this.settings.nintendoLastImport = Date.now()
-			await this.persistSettings()
+			// saveSettings redraws the view: the statistics column shows the new totals
+			await this.saveSettings()
 			if (loud || created > 0 || updated > 0) new Notice(tr('notice.nintendo.imported', { created, updated }))
 		} finally {
 			this.nintendoImporting = false
@@ -1142,10 +1140,10 @@ export default class LibraryPlugin extends Plugin {
 		await this.psnLookUp(new Map())
 	}
 
-	private nintendoSyncIfDue(): void {
+	private async nintendoSyncIfDue(): Promise<void> {
 		if (!Platform.isDesktopApp || !this.settings.nintendoTokens || this.gameImporting()) return
 		if (Date.now() - this.settings.nintendoLastImport < 24 * 3600000) return
-		void this.nintendoImport(false)
+		await this.nintendoImport(false)
 	}
 
 	async psnData(): Promise<{ owned: PsnOwnedGame[]; played: PsnPlayedGame[]; trophies: PsnTrophyTitle[]; summary: PsnTrophySummary | null } | null> {
@@ -1315,17 +1313,17 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	// desktop only: two devices sharing a vault would import at once and make the same game twice
-	private psnSyncIfDue(): void {
+	private async psnSyncIfDue(): Promise<void> {
 		if (!Platform.isDesktopApp || !this.settings.psnTokens || this.gameImporting()) return
 		const stats = this.settings.psnStats
 		if (stats && Date.now() - stats.updated < 24 * 3600000) return
-		void this.psnImport(false)
+		await this.psnImport(false)
 	}
 
-	private steamSyncIfDue(): void {
+	private async steamSyncIfDue(): Promise<void> {
 		if (!Platform.isDesktopApp || !this.settings.steamId.trim() || this.gameImporting()) return
 		if (Date.now() - this.settings.steamLastImport < 24 * 3600000) return
-		void this.steamImport(false)
+		await this.steamImport(false)
 	}
 
 	private malSyncIfDue(): Promise<void> {
@@ -1343,6 +1341,12 @@ export default class LibraryPlugin extends Plugin {
 	// MAL first, AniList after: interleaved runs could create the same note twice
 	private syncTick(): void {
 		void this.malSyncIfDue().then(() => this.anilistSyncIfDue())
+	}
+
+	private gameSyncTick(): void {
+		// a failed import must not cancel the next one
+		const run = (sync: () => Promise<void>) => (): Promise<void> => sync().catch((e: unknown) => console.error('Library: game sync error', e))
+		void run(() => this.psnSyncIfDue())().then(run(() => this.steamSyncIfDue())).then(run(() => this.nintendoSyncIfDue()))
 	}
 
 	async psnToken(): Promise<string | null> {
