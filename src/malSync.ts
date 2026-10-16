@@ -73,7 +73,14 @@ export function malAuthUrl(clientId: string, verifier: string): string {
 // page: Google's own callback also carries a `code=` parameter, and taking it
 // for MAL's code breaks the exchange.
 export function codeFromRedirect(url: string): string | null {
-	if (!url.startsWith('http://localhost')) return null
+	// The host itself, not a prefix: a longer host starting with it is another site.
+	let host = ''
+	try {
+		host = new URL(url).hostname
+	} catch {
+		return null
+	}
+	if (host !== 'localhost' || !url.startsWith('http://')) return null
 	const match = url.match(/[?&]code=([^&#\s]+)/)
 	return match?.[1] ? decodeURIComponent(match[1]) : null
 }
