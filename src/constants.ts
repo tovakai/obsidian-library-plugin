@@ -24913,6 +24913,9 @@ export interface ILibrarySettings {
 	// The SteamID64 the sign-in window returned; the library is read with the
 	// session that window keeps, so no key is stored.
 	steamId: string
+	// When the Steam library was last read in full; the daily re-import
+	// waits a day from it.
+	steamLastImport: number
 	showRecommendations: boolean
 	// The "Up next" block above the statistics: every note not started yet.
 	showUpNext: boolean
@@ -24955,6 +24958,7 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	psnTokens: null,
 	psnStats: null,
 	steamId: '',
+	steamLastImport: 0,
 	showRecommendations: true,
 	showUpNext: true,
 	upNextCollapsed: false,

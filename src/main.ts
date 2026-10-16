@@ -260,6 +260,9 @@ export default class LibraryPlugin extends Plugin {
 			// could create the same note twice.
 			this.registerInterval(window.setTimeout(() => this.syncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.syncTick(), 3600000))
+			// Steam too: checked on the same hourly tick, imported once a day.
+			this.registerInterval(window.setTimeout(() => this.steamSyncIfDue(), 60000))
+			this.registerInterval(window.setInterval(() => this.steamSyncIfDue(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
 
@@ -639,12 +642,12 @@ export default class LibraryPlugin extends Plugin {
 		this.steamImporting = true
 		let session: SteamSession | null = null
 		try {
-			new Notice(tr('notice.steam.importing'))
+			if (loud) new Notice(tr('notice.steam.importing'))
 			const steam = await steamSession(profile)
-			if (!steam) { new Notice(tr('notice.steam.failed')); return }
+			if (!steam) { if (loud) new Notice(tr('notice.steam.failed')); return }
 			session = steam
 			const games = await ownedGames(steam.token, profile)
-			if (!games) { new Notice(tr('notice.steam.failed')); return }
+			if (!games) { if (loud) new Notice(tr('notice.steam.failed')); return }
 			const byUrl = new Map<string, TFile>()
 			const gameNotes: TFile[] = []
 			for (const file of this.app.vault.getMarkdownFiles()) {
@@ -723,7 +726,10 @@ export default class LibraryPlugin extends Plugin {
 					console.error('Library: Steam import error', game.appId, e)
 				}
 			}
-			new Notice(tr('notice.steam.imported', { created, updated }))
+			this.settings.steamLastImport = Date.now()
+			await this.persistSettings()
+			// A quiet run speaks up only when it brought something new.
+			if (loud || created > 0 || updated > 0) new Notice(tr('notice.steam.imported', { created, updated }))
 		} finally {
 			session?.close()
 			this.steamImporting = false
@@ -1248,6 +1254,14 @@ export default class LibraryPlugin extends Plugin {
 		const stats = this.settings.psnStats
 		if (stats && Date.now() - stats.updated < 24 * 3600000) return
 		void this.psnImport(false)
+	}
+
+	// Steam re-import, once a day and only on desktop like the others, and
+	// quiet: a run nobody asked for shows no notices.
+	private steamSyncIfDue(): void {
+		if (!Platform.isDesktopApp || !this.settings.steamId.trim() || this.steamImporting) return
+		if (Date.now() - this.settings.steamLastImport < 24 * 3600000) return
+		void this.steamImport(false)
 	}
 
 	// MyAnimeList re-import, once a day and only on desktop: a shared vault
@@ -2649,6 +2663,7 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
+		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
 		if (typeof this.settings.upNextInCategories !== 'boolean') this.settings.upNextInCategories = true
 		if (typeof this.settings.skipFields !== 'string') this.settings.skipFields = ''
 		if (!this.settings.psnTokens || typeof this.settings.psnTokens !== 'object') this.settings.psnTokens = null
