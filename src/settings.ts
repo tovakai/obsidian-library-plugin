@@ -556,7 +556,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				.setPlaceholder(tr("settings.category.name.placeholder"))
 				.setValue(cat.name)
 				.onChange(async (value) => {
-					cat.name = value.trim();
+					this.renameCategory(cat, value.trim());
 					row.setName(label());
 					await this.plugin.saveSettings();
 				}),
@@ -732,6 +732,19 @@ export class LibrarySettingTab extends PluginSettingTab {
 			if (fm && types.has(toStr(fm.Type))) list.push(fm);
 		}
 		return list;
+	}
+
+	// Sort, filters and the Up next choice are saved under the category name.
+	private renameCategory(cat: ICategory, name: string): void {
+		const settings = this.plugin.settings;
+		const from = cat.name;
+		cat.name = name;
+		if (!from || from === name || settings.categories.some((c) => c !== cat && c.name === from)) return;
+		for (const state of [settings.sortState, settings.filterState] as Array<Record<string, unknown>>) {
+			if (from in state && !(name in state)) state[name] = state[from];
+			delete state[from];
+		}
+		if (settings.upNextCategory === from) settings.upNextCategory = name;
 	}
 
 	// A category column is keyed by its Type value, so it moves with the rename.

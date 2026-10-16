@@ -445,6 +445,8 @@ export default class LibraryPlugin extends Plugin {
 		}
 		this.keySignatures = this.apiKeySignatures()
 		this.refreshViews()
+		// The open tab holds the replaced settings object: an edit there would be lost.
+		this.settingTab?.refresh()
 	}
 
 	// saves without re-rendering views: for state the view already applied to its own DOM
@@ -605,7 +607,7 @@ export default class LibraryPlugin extends Plugin {
 
 	// Steam library into Games: Playtime in hours per owned game; the store API limits requests per minute, so lookups are spaced
 	async steamImport(loud = false): Promise<void> {
-		if (this.steamImporting) {
+		if (this.gameImporting()) {
 			if (loud) new Notice(tr('notice.steam.importing'))
 			return
 		}
@@ -1061,9 +1063,15 @@ export default class LibraryPlugin extends Plugin {
 		return tokens ? nintendoPlayLog(tokens) : null
 	}
 
+	// One game import at a time: each looks for the notes the others write, and
+	// two at once would each create the note for a game on both platforms.
+	private gameImporting(): boolean {
+		return this.psnImporting || this.steamImporting || this.nintendoImporting
+	}
+
 	// Switch play activity into Games: one note per game (shared with PSN/Steam); Nintendo reports minutes and only played games
 	async nintendoImport(loud: boolean): Promise<void> {
-		if (this.nintendoImporting) return
+		if (this.gameImporting()) return
 		if (!this.settings.nintendoTokens) return
 		const provider = this.registry.forType('game')
 		if (!provider) return
@@ -1135,7 +1143,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private nintendoSyncIfDue(): void {
-		if (!Platform.isDesktopApp || !this.settings.nintendoTokens || this.nintendoImporting) return
+		if (!Platform.isDesktopApp || !this.settings.nintendoTokens || this.gameImporting()) return
 		if (Date.now() - this.settings.nintendoLastImport < 24 * 3600000) return
 		void this.nintendoImport(false)
 	}
@@ -1150,13 +1158,14 @@ export default class LibraryPlugin extends Plugin {
 
 	// PSN games into Games: those played, and library games with trophies (apps have none)
 	async psnImport(loud: boolean): Promise<void> {
-		if (this.psnImporting) return
-		const token = await this.psnToken()
-		if (!token) { if (loud) new Notice(tr('notice.psn.noToken')); return }
-		const provider = this.registry.forType('game')
-		if (!provider) return
+		if (this.gameImporting()) return
 		this.psnImporting = true
+		let token: string | null = null
 		try {
+			token = await this.psnToken()
+			if (!token) { if (loud) new Notice(tr('notice.psn.noToken')); return }
+			const provider = this.registry.forType('game')
+			if (!provider) return
 			if (loud) new Notice(tr('notice.psn.importing'))
 			const data = await this.psnData()
 			if (!data) { if (loud) new Notice(tr('notice.psn.failed')); return }
@@ -1253,6 +1262,7 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			this.psnImporting = false
 		}
+		if (!token) return
 		// sources know games by English title, Sony in the account language: the note keeps Sony's
 		const english = new Map<string, string>()
 		for (const game of await psnPlayedGames(token, 'en-US') ?? []) english.set(game.titleId, cleanPsnName(game.name))
@@ -1306,14 +1316,14 @@ export default class LibraryPlugin extends Plugin {
 
 	// desktop only: two devices sharing a vault would import at once and make the same game twice
 	private psnSyncIfDue(): void {
-		if (!Platform.isDesktopApp || !this.settings.psnTokens || this.psnImporting) return
+		if (!Platform.isDesktopApp || !this.settings.psnTokens || this.gameImporting()) return
 		const stats = this.settings.psnStats
 		if (stats && Date.now() - stats.updated < 24 * 3600000) return
 		void this.psnImport(false)
 	}
 
 	private steamSyncIfDue(): void {
-		if (!Platform.isDesktopApp || !this.settings.steamId.trim() || this.steamImporting) return
+		if (!Platform.isDesktopApp || !this.settings.steamId.trim() || this.gameImporting()) return
 		if (Date.now() - this.settings.steamLastImport < 24 * 3600000) return
 		void this.steamImport(false)
 	}
@@ -1869,7 +1879,10 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private async enrichPass(force: boolean): Promise<void> {
-		if (this.enrichRunning) return
+		if (this.enrichRunning) {
+			if (force) new Notice(tr('notice.searching'))
+			return
+		}
 		this.enrichRunning = true
 		let updated = 0
 		let marked = 0

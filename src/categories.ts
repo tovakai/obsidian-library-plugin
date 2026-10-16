@@ -54,8 +54,14 @@ export function newCategory(contentType: ContentType, settings: ILibrarySettings
 	const taken = new Set(settings.categories.map(cat => cat.typeValue))
 	let typeValue = base
 	for (let n = 2; taken.has(typeValue); n++) typeValue = `${base} ${String(n)}`
+	// A second category of a kind gets a number: sort, filters and the time
+	// chart tell categories apart by name.
+	const names = new Set(settings.categories.map(cat => cat.name))
+	const label = tr(`settings.default.${contentType}`)
+	let name = label
+	for (let n = 2; names.has(name); n++) name = `${label} ${String(n)}`
 	return {
-		name: tr(`settings.default.${contentType}`),
+		name,
 		typeValue,
 		contentType,
 		folder: joinFolder(settings.libraryFolder, I18N.en[`settings.default.${contentType}`] ?? base),
