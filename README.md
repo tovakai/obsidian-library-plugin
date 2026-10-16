@@ -26,7 +26,7 @@
 - Tick episodes or chapters and score them; `Progress` and `My Rating` follow. A movie is watched or not.
 - Categories and folders (Library/Movies, Library/Books) appear as you add titles. Each category filters by year, genre, country, or platform (only values your notes have) and sorts by title, year, rating, date, or unstarted first. Unstarted titles show an eye icon and gather in Up next, one category at a time if you like.
 - Similar titles under movie, series, anime, game, and book notes.
-- Connect AniList, MyAnimeList, PlayStation, and Steam in settings: lists, played games, playtime, trophies, and achievements import as notes; all four re-import once a day on desktop.
+- Connect AniList, MyAnimeList, PlayStation, Steam, and Nintendo Switch in settings: lists, played games, playtime, trophies, and achievements import as notes and re-import once a day on desktop.
 - Categories count their titles and time spent; statistics compare those hours with "In the same time" facts like trips to the Moon or marathons run.
 - Genres, creators, and actors are links; each linked note collects the titles it appears in.
 - All fields sit in frontmatter, so Bases and Dataview can read them. Your own template, and source fields you choose to skip. Desktop and mobile, interface in every language Obsidian supports.
@@ -105,6 +105,8 @@ Your library is plain notes that open offline; covers load from the web. The plu
 | `graphql.anilist.co`, `anilist.co`, `s4.anilist.co`, streaming services' image hosts | Anime, manga, sync | Title or ids; your token, progress, status, score |
 | `myanimelist.net`, `api.myanimelist.net`, `api-cdn.myanimelist.net` | Anime and manga search, covers, sign-in, list import, sync | Search text, your sign-in on MyAnimeList's page (the plugin keeps only the token); your token, progress, status, score |
 | `ca.account.sony.com`, `my.account.sony.com`, `m.np.playstation.com`, `web.np.playstation.com`, `image.api.playstation.com`, `psnobj.prod.dl.playstation.net` | PlayStation sign-in, played games, trophies, covers | Your sign-in on Sony's page (the plugin keeps only the token); the token |
+| `accounts.nintendo.com`, `api.accounts.nintendo.com`, `api-lp1.znc.srv.nintendo.net`, `atum-img-lp1.cdn.nintendo.net` | Nintendo sign-in, play activity, covers | Your sign-in on Nintendo's page (the plugin keeps only the session token); the tokens |
+| `nxapi-auth.fancy.org.uk`, `nxapi-znca-api.fancy.org.uk` | A third-party signing service: signs and encrypts the Nintendo Switch app requests, which Nintendo accepts only from its app; asked before you sign in | Your Nintendo Account id token, account id, and the Nintendo Switch app requests and answers |
 | `comicvine.gamespot.com` | Comic search, with a key | Title, key |
 | `www.youtube.com`, `www.youtube-nocookie.com`, `i.ytimg.com`, `player.vimeo.com`, `www.dailymotion.com` | Trailers | Video id |
 | `twitter.com`, `t.me`, `wa.me`, `www.reddit.com`, `www.facebook.com`, `www.linkedin.com`, `vk.com`, `bsky.app`, `www.pinterest.com` | Share buttons | Caption with title, score, and link; the image stays local |

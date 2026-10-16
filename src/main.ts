@@ -51,6 +51,7 @@ import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal } from './ui/psnLoginModal'
 import { AuthModal } from './ui/authModal'
+import { SIGNER_PROJECT, codeFromRedirect as nintendoCode, exchangeNintendoCode, nintendoAuth, nintendoPlayLog, type NintendoPlayedGame } from './nintendo'
 import { renderTrophies } from './ui/trophyIcons'
 import { renderPlatformLabels } from './ui/platformIcons'
 import { createEmbedPlayer, toEmbed } from './trailer'
@@ -99,6 +100,9 @@ const LINK_FIELDS = ['Genre', 'Creator', 'Cast']
 // The background metadata pass waits for the vault to settle, then walks the
 // library one note at a time so the sources are never hit in a burst.
 const ENRICH_START_DELAY = 10 * 1000
+// An iPhone's Safari, for sign-in pages that only fit a narrow window as phones.
+const PHONE_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+
 const SOURCE_SCORES = ['Rating IMDB', 'Rating RT', 'Rating MC', 'Rating RAWG', 'Rating AniList', 'Rating MAL']
 
 // Where a new note goes: a category, or a medium whose category is created
@@ -149,6 +153,8 @@ export default class LibraryPlugin extends Plugin {
 	private malRefreshing: Promise<string | null> | null = null
 	private psnRefreshing: Promise<string | null> | null = null
 	private steamImporting = false
+	private nintendoImporting = false
+	private lookingUp = false
 	private psnImporting = false
 	private malImporting = false
 	private anilistImporting = false
@@ -263,6 +269,8 @@ export default class LibraryPlugin extends Plugin {
 			// Steam too: checked on the same hourly tick, imported once a day.
 			this.registerInterval(window.setTimeout(() => this.steamSyncIfDue(), 60000))
 			this.registerInterval(window.setInterval(() => this.steamSyncIfDue(), 3600000))
+			this.registerInterval(window.setTimeout(() => this.nintendoSyncIfDue(), 60000))
+			this.registerInterval(window.setInterval(() => this.nintendoSyncIfDue(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
 
@@ -393,6 +401,11 @@ export default class LibraryPlugin extends Plugin {
 			id: 'psn-import',
 			name: tr('cmd.psnImport'),
 			callback: () => { void this.psnImport(true) }
+		})
+		this.addCommand({
+			id: 'nintendo-import',
+			name: tr('cmd.nintendoImport'),
+			callback: () => { void this.nintendoImport(true) }
 		})
 	}
 
@@ -1073,6 +1086,127 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
+	// Nintendo: the user is told first that a third-party signing service
+	// carries the requests (its terms ask for that before sign-in), then signs
+	// in on Nintendo's page; true once the account is connected.
+	async connectNintendo(): Promise<boolean> {
+		if (!Platform.isDesktopApp) {
+			new Notice(tr('notice.nintendo.desktopOnly'))
+			return false
+		}
+		const agreed = await new Promise<boolean>((resolve) => {
+			new ConfirmModal(this.app, {
+				title: tr('nintendo.consent.title'),
+				text: tr('nintendo.consent.text', { url: SIGNER_PROJECT }),
+				confirm: tr('nintendo.consent.confirm'),
+				cancel: tr('nintendo.consent.cancel'),
+			}, resolve).open()
+		})
+		if (!agreed) return false
+		const auth = await nintendoAuth()
+		return new Promise<boolean>((resolve) => {
+			new AuthModal(this.app, auth.url, (code) => {
+				void (async () => {
+					const tokens = code ? await exchangeNintendoCode(code, auth.verifier) : null
+					if (tokens) {
+						this.settings.nintendoTokens = tokens
+						await this.saveSettings()
+					} else if (code) {
+						new Notice(tr('notice.nintendo.failed'))
+					}
+					resolve(tokens !== null)
+					if (tokens) void this.nintendoImport(true)
+				})()
+			}, { title: tr('nintendo.loginTitle'), extract: nintendoCode, userAgent: PHONE_AGENT }).open()
+		})
+	}
+
+	// The connected account's play activity; null when not connected or a step fails.
+	async nintendoGames(): Promise<NintendoPlayedGame[] | null> {
+		const tokens = this.settings.nintendoTokens
+		return tokens ? nintendoPlayLog(tokens) : null
+	}
+
+	// Nintendo Switch play activity into the Games category: one note per
+	// game (a game also on PlayStation or Steam stays one note), its Switch
+	// hours, Nintendo's picture as the cover where the note has none, and the
+	// day it was first played as the date it joined the library, when earlier.
+	// Genres, creators and the trailer are looked up afterwards, as for
+	// PlayStation. Nintendo reports play time in minutes, and only played games.
+	async nintendoImport(loud: boolean): Promise<void> {
+		if (this.nintendoImporting) return
+		if (!this.settings.nintendoTokens) return
+		const provider = this.registry.forType('game')
+		if (!provider) return
+		this.nintendoImporting = true
+		try {
+			if (loud) new Notice(tr('notice.nintendo.importing'))
+			const games = await this.nintendoGames()
+			if (!games) { if (loud) new Notice(tr('notice.nintendo.importFailed')); return }
+			let category = this.settings.categories.find(c => c.contentType === 'game')
+			const typeValue = category?.typeValue ?? TYPE_DEFAULTS.game ?? 'Game'
+			const notes = this.app.vault.getMarkdownFiles().filter(file => !isTemplateFile(file.path)
+				&& toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.Type) === typeValue)
+			let created = 0
+			let updated = 0
+			const isSwitch = (value: string): boolean => /switch|nintendo/i.test(value)
+			for (const game of games) {
+				if (this.unloaded) return
+				// The eShop page names the game: its application id is the stable key.
+				const titleId = (/apps\/([0-9a-f]{16})/i.exec(game.shopUri ?? '')?.[1] ?? '').toUpperCase()
+				const name = game.name.replace(/[™®©]/g, '').replace(/\s+/g, ' ').trim()
+				const hours = playtimeHours(game.totalPlayTime)
+				const since = game.firstPlayedAt > 0 ? dmyOf(new Date(game.firstPlayedAt * 1000).toISOString()) : ''
+				try {
+					const existing = notes.find(file => {
+						const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+						return (titleId && toStr(fm?.['Nintendo ID']) === titleId) || sameTitle(toStr(fm?.Name) || file.basename, name)
+					})
+					if (existing) {
+						const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
+						const listed = toStrArray(fm?.Platforms).some(value => value === 'Switch')
+						if (listed && Number(fm?.['Playtime Switch']) === hours && (!titleId || toStr(fm?.['Nintendo ID']) === titleId)) continue
+						await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
+							if (titleId) current['Nintendo ID'] = titleId
+							const cover = this.fieldTarget('Cover')
+							if (game.imageUri && !coverValue(current, this.coverProperty())) current[cover] = game.imageUri
+							dropPlatforms(current, isSwitch)
+							addPlatform(current, 'Switch', hours)
+							if (since && parseDate(since) < parseDate(current.Date)) current.Date = since
+						})
+						updated++
+						continue
+					}
+					if (!category) category = await this.categoryFor('game')
+					const fields: Record<string, unknown> = {}
+					if (titleId) fields['Nintendo ID'] = titleId
+					if (game.imageUri) fields[this.fieldTarget('Cover')] = game.imageUri
+					if (since) fields.Date = since
+					addPlatform(fields, 'Switch', hours)
+					const note = { fields: { Name: name }, progressTotal: null, imdbId: null }
+					const file = await this.newNote(category, provider.id, `nintendo:${titleId || name}`, name, note, fields)
+					notes.push(file)
+					created++
+				} catch (e) {
+					console.error('Library: Nintendo import error', name, e)
+				}
+			}
+			this.settings.nintendoLastImport = Date.now()
+			await this.persistSettings()
+			if (loud || created > 0 || updated > 0) new Notice(tr('notice.nintendo.imported', { created, updated }))
+		} finally {
+			this.nintendoImporting = false
+		}
+		await this.psnLookUp(new Map())
+	}
+
+	// Nintendo, like the others: desktop only, once a day, quiet.
+	private nintendoSyncIfDue(): void {
+		if (!Platform.isDesktopApp || !this.settings.nintendoTokens || this.nintendoImporting) return
+		if (Date.now() - this.settings.nintendoLastImport < 24 * 3600000) return
+		void this.nintendoImport(false)
+	}
+
 	// Everything PlayStation tells about the user: played games, trophy lists,
 	// trophy level. Null when not connected or Sony does not answer.
 	async psnData(): Promise<{ owned: PsnOwnedGame[]; played: PsnPlayedGame[]; trophies: PsnTrophyTitle[]; summary: PsnTrophySummary | null } | null> {
@@ -1208,16 +1342,26 @@ export default class LibraryPlugin extends Plugin {
 		await this.psnLookUp(english)
 	}
 
-	// Games imported from PlayStation that no source matched yet get their
-	// genres, creators, year and trailer: one at a time, spaced out, in the
-	// background. A game no source knows keeps what PlayStation gave and is
-	// tried again on the next import.
+	// Games imported from PlayStation or Nintendo that no source matched yet
+	// get their genres, creators, year and trailer: one at a time, spaced out,
+	// in the background. A game no source knows keeps what the platform gave
+	// and is tried again on the next import. One walk at a time: both imports
+	// call it, and two walks would fetch the same notes twice.
 	private async psnLookUp(english: Map<string, string>): Promise<void> {
 		const provider = this.registry.forType('game')
-		if (!provider) return
+		if (!provider || this.lookingUp) return
+		this.lookingUp = true
+		try {
+			await this.lookUpImported(provider, english)
+		} finally {
+			this.lookingUp = false
+		}
+	}
+
+	private async lookUpImported(provider: ContentProvider, english: Map<string, string>): Promise<void> {
 		const pending = this.app.vault.getMarkdownFiles().filter((file) => {
 			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
-			return fm && toStr(fm['Source ID']).startsWith('psn:') && !isTemplateFile(file.path)
+			return fm && /^(psn|nintendo):/.test(toStr(fm['Source ID'])) && !isTemplateFile(file.path)
 		})
 		for (const file of pending) {
 			if (this.unloaded) return
@@ -1241,7 +1385,7 @@ export default class LibraryPlugin extends Plugin {
 					})
 				}
 			} catch (e) {
-				console.error('Library: PlayStation look-up error', file.path, e)
+				console.error('Library: game look-up error', file.path, e)
 			}
 			await new Promise<void>(resolve => { this.psnTimer = window.setTimeout(resolve, 1500) })
 		}
@@ -1518,6 +1662,7 @@ export default class LibraryPlugin extends Plugin {
 		if (this.settings.anilistToken.trim()) await this.anilistImport(true)
 		if (this.settings.psnTokens) await this.psnImport(true)
 		if (this.settings.steamId.trim()) await this.steamImport(true)
+		if (this.settings.nintendoTokens) await this.nintendoImport(true)
 	}
 
 	// Entries for notes that no longer exist only grow the settings file.
@@ -2664,6 +2809,8 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
 		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
+		if (!this.settings.nintendoTokens || typeof this.settings.nintendoTokens !== 'object') this.settings.nintendoTokens = null
+		if (typeof this.settings.nintendoLastImport !== 'number') this.settings.nintendoLastImport = 0
 		if (typeof this.settings.upNextInCategories !== 'boolean') this.settings.upNextInCategories = true
 		if (typeof this.settings.skipFields !== 'string') this.settings.skipFields = ''
 		if (!this.settings.psnTokens || typeof this.settings.psnTokens !== 'object') this.settings.psnTokens = null

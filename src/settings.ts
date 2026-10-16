@@ -268,6 +268,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				rows: [
 					{ name: "PlayStation", desc: tr("settings.psn.desc"), render: (row) => this.psnAccount(row) },
 					{ name: "Steam", desc: tr("settings.steam.desc"), render: (row) => this.steamAccount(row) },
+					{ name: "Nintendo Switch", desc: tr("settings.nintendo.desc"), render: (row) => this.nintendoAccount(row) },
 				],
 			},
 			...categories,
@@ -473,6 +474,31 @@ export class LibrarySettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				} else {
 					await this.plugin.connectSteam();
+				}
+				this.refresh();
+			});
+		});
+	}
+
+	// Connected or not, and the one button that changes it; connecting asks
+	// first, since the requests go through a third-party signing service.
+	private nintendoAccount(row: Setting): void {
+		const connected = this.plugin.settings.nintendoTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-nintendo" });
+		icon.appendChild(platformMark("nintendo"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.nintendoTokens = null;
+					await this.plugin.saveSettings();
+				} else {
+					await this.plugin.connectNintendo();
 				}
 				this.refresh();
 			});

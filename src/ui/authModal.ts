@@ -7,6 +7,9 @@ import { App, Modal } from 'obsidian'
 export interface AuthModalOptions {
 	title: string
 	extract: (url: string) => string | null
+	// A browser to present as: Nintendo lays its sign-in out for 1024px and
+	// wider unless it sees a phone, and the phone layout fits the modal.
+	userAgent?: string
 }
 
 export class AuthModal extends Modal {
@@ -34,7 +37,7 @@ export class AuthModal extends Modal {
 		const win = this.contentEl.ownerDocument.win as Window & { createEl: typeof createEl }
 		const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
 			cls: 'library-auth-webview',
-			attr: { partition: 'persist:library-auth', src: this.authUrl },
+			attr: { partition: 'persist:library-auth', src: this.authUrl, ...(this.opts.userAgent ? { useragent: this.opts.userAgent } : {}) },
 		})
 		// Every address the window stood on, kept for a stuck sign-in: read back
 		// through eval as `window.__authTrail`, with the answer redacted.
