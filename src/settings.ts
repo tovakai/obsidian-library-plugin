@@ -5,6 +5,7 @@ import {
 	PluginSettingTab,
 	requireApiVersion,
 	Setting,
+	setIcon,
 	type DropdownComponent,
 	type SettingDefinition,
 	type SettingDefinitionItem,
@@ -69,6 +70,7 @@ function note(text: string): Row {
 export class LibrarySettingTab extends PluginSettingTab {
 	private plugin: LibraryPlugin;
 	private expanded = new Set<ICategory>();
+	private dragging: ICategory | null = null;
 	// Edits in progress, by starting value: notes move on blur/tab close, not per keystroke.
 	private libraryFrom: string | null = null;
 	private folderFrom = new Map<ICategory, string>();
@@ -571,20 +573,47 @@ export class LibrarySettingTab extends PluginSettingTab {
 				if (retype) this.refresh();
 			});
 		});
-		// The library shows its sections in this order.
-		const move = (step: number): void => {
-			const list = settings.categories;
-			const from = list.indexOf(cat);
-			const to = from + step;
-			if (from < 0 || to < 0 || to >= list.length) return;
+		// The library shows its sections in this order: a category dropped on
+		// another takes its place.
+		const list = settings.categories;
+		const place = (moved: ICategory, to: number): void => {
+			const from = list.indexOf(moved);
+			if (from < 0 || to < 0 || to >= list.length || from === to) return;
 			list.splice(from, 1);
-			list.splice(to, 0, cat);
+			list.splice(to, 0, moved);
 			void this.plugin.saveSettings();
 			this.refresh();
 		};
-		const at = settings.categories.indexOf(cat);
-		if (at > 0) row.addExtraButton((button) => button.setIcon("arrow-up").setTooltip(tr("settings.category.up")).onClick(() => move(-1)));
-		if (at < settings.categories.length - 1) row.addExtraButton((button) => button.setIcon("arrow-down").setTooltip(tr("settings.category.down")).onClick(() => move(1)));
+		const handle = createDiv({ cls: "library-settings-drag", attr: { draggable: "true", "aria-label": tr("settings.category.drag") } });
+		setIcon(handle, "grip-vertical");
+		row.settingEl.prepend(handle);
+		handle.addEventListener("dragstart", (event) => {
+			this.dragging = cat;
+			if (!event.dataTransfer) return;
+			event.dataTransfer.effectAllowed = "move";
+			event.dataTransfer.setDragImage(row.settingEl, 16, 16);
+		});
+		handle.addEventListener("dragend", () => { this.dragging = null; });
+		const target = (on: boolean): void => { row.settingEl.toggleClass("is-drop-target", on); };
+		row.settingEl.addEventListener("dragover", (event) => {
+			if (!this.dragging || this.dragging === cat) return;
+			event.preventDefault();
+			target(true);
+		});
+		row.settingEl.addEventListener("dragleave", () => target(false));
+		row.settingEl.addEventListener("drop", (event) => {
+			event.preventDefault();
+			target(false);
+			const dragged = this.dragging;
+			this.dragging = null;
+			if (dragged) place(dragged, list.indexOf(cat));
+		});
+		// Touch screens have no drag and drop: arrows there.
+		if (Platform.isMobile) {
+			const at = list.indexOf(cat);
+			if (at > 0) row.addExtraButton((button) => button.setIcon("arrow-up").setTooltip(tr("settings.category.up")).onClick(() => place(cat, at - 1)));
+			if (at < list.length - 1) row.addExtraButton((button) => button.setIcon("arrow-down").setTooltip(tr("settings.category.down")).onClick(() => place(cat, at + 1)));
+		}
 		row.addExtraButton((button) => {
 			const setIcon = (): void => {
 				button.setIcon(this.expanded.has(cat) ? "chevron-up" : "chevron-down");
