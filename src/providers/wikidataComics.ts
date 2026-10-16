@@ -4,13 +4,11 @@ import {
 	wikipediaImages, yearIn
 } from './wikidata'
 
-// Comic book series, limited series, graphic novels, comic strips and comic
-// albums. Manga series are left to AniList, which knows their chapters.
+// Comic series and graphic novels; manga is left to AniList.
 const COMICS = 'haswbstatement:' + ['Q14406742', 'Q3297186', 'Q725377', 'Q838795', 'Q2831984']
 	.map(id => `P31=${id}`).join('|')
 
-// Western comics found on Wikidata by their title in any language, their
-// covers from the English Wikipedia article.
+// Western comics by any-language title; covers from Wikipedia.
 export class WikidataComicProvider implements ContentProvider {
 	readonly id = 'wikidata'
 	readonly contentTypes: ContentType[] = ['comic']
@@ -52,7 +50,6 @@ export class WikidataComicProvider implements ContentProvider {
 			const name = textIn(item?.labels, langs)
 			if (!item || !name) return null
 			const genres = itemIds(item, 'P136')
-			// The writers and the artists; the publisher when neither is known.
 			const creators = [...itemIds(item, 'P50'), ...itemIds(item, 'P110')]
 			const publishers = itemIds(item, 'P123')
 			const article = item.sitelinks?.enwiki?.title ?? null
@@ -69,7 +66,7 @@ export class WikidataComicProvider implements ContentProvider {
 				Cover: article ? covers[article] ?? null : null,
 				URL: pageUrl(sourceId, article)
 			}
-			// "Number of parts": the issues or volumes, as the reading progress.
+			// "Number of parts" (issues or volumes) as the reading progress.
 			const parts = Number((claimValues(item, 'P2635')[0] as { amount?: unknown } | undefined)?.amount)
 			return { fields, progressTotal: Number.isSafeInteger(parts) && parts > 0 ? parts : null, imdbId: null }
 		} catch (e) {

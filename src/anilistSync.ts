@@ -1,12 +1,9 @@
 import { requestUrl } from 'obsidian'
 
-// AniList progress sync. Reading anime metadata is public (see AnimeProvider); writing to a
-// user's list needs OAuth. Implicit grant with the plugin's own registered client: the user
-// authorizes, the token arrives in the redirect's fragment, no secret anywhere.
+// AniList progress sync. Writing needs OAuth: implicit grant, no client secret.
 const ENDPOINT = 'https://graphql.anilist.co'
 
-// The plugin's registered client: every user connects through it, no setup
-// (redirect = the PIN page).
+// The plugin's registered client (redirect = the PIN page): no setup per user.
 export const ANILIST_CLIENT_ID = '53801'
 
 export interface AniListEntry {
@@ -21,7 +18,6 @@ export interface AniListEntry {
 
 export type MediaListStatus = 'CURRENT' | 'COMPLETED' | 'PLANNING'
 
-// The host of an address, or null for text that is not one.
 function hostOf(url: string): string | null {
 	try {
 		return new URL(url).hostname
@@ -30,15 +26,13 @@ function hostOf(url: string): string | null {
 	}
 }
 
-// Build the authorize URL (implicit grant). The client must be registered with the PIN redirect.
+// Implicit grant; the client is registered with the PIN redirect.
 export function anilistAuthUrl(clientId: string): string {
 	return `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=token`
 }
 
-// The implicit grant answers in the redirect's fragment:
-// https://anilist.co/api/v2/oauth/pin#access_token=…&token_type=Bearer.
-// Only AniList's own host counts: a longer host that merely starts with it
-// would hand the plugin someone else's token.
+// Token from the redirect fragment (…/oauth/pin#access_token=…). Only the exact
+// host anilist.co counts: a longer host would hand over another token.
 export function tokenFromRedirect(url: string): string | null {
 	if (hostOf(url) !== 'anilist.co' || !url.startsWith('https:')) return null
 	const match = /[#&]access_token=([^&\s]+)/.exec(url)
@@ -51,14 +45,13 @@ export function tokenFromRedirect(url: string): string | null {
 	}
 }
 
-// The same value out of a pasted address or a bare token (mobile fallback).
+// Same value out of a pasted address or a bare token (mobile fallback).
 export function tokenFromInput(text: string): string {
 	const trimmed = text.trim()
 	return tokenFromRedirect(trimmed) ?? trimmed
 }
 
-// The list's score onto the plugin's 1-10 scale: AniList stores it in the
-// account's own format (10, 10-decimal, 100, 5 or 3 points).
+// AniList stores the score in the account's format: 10, 100, 5 or 3 points.
 export function toTenPoint(score: number, format: string): number {
 	if (!(score > 0)) return 0
 	const points = format === 'POINT_100' ? score / 10
@@ -68,15 +61,13 @@ export function toTenPoint(score: number, format: string): number {
 	return Math.round(points * 10) / 10
 }
 
-// Map the note's Complete/Progress state to an AniList list status.
 export function listStatus(complete: boolean, watched: number): MediaListStatus {
 	if (complete) return 'COMPLETED'
 	if (watched > 0) return 'CURRENT'
 	return 'PLANNING'
 }
 
-// null covers every failure: `throw: false` only silences HTTP errors, so an
-// offline device or a non-JSON body still throws and is caught here.
+// null covers every failure: `throw: false` silences only HTTP errors.
 async function gql<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T | null> {
 	try {
 		const resp = await requestUrl({
@@ -98,8 +89,7 @@ async function gql<T>(token: string, query: string, variables: Record<string, un
 	}
 }
 
-// Validate the token and return the authenticated user (null if the token is
-// bad/expired), with the account's score format for normalizing ratings.
+// The authenticated user (null when bad), with its score format.
 export async function aniListViewer(token: string): Promise<{ id: number; name: string; scoreFormat: string } | null> {
 	const json = await gql<{
 		data?: { Viewer?: { id: number; name: string; mediaListOptions?: { scoreFormat?: string } | null } | null }
@@ -109,7 +99,6 @@ export async function aniListViewer(token: string): Promise<{ id: number; name: 
 	return { id: viewer.id, name: viewer.name, scoreFormat: viewer.mediaListOptions?.scoreFormat ?? 'POINT_10' }
 }
 
-// Push one note's progress/status/score to the user's AniList list.
 export async function pushEntry(
 	token: string,
 	mediaId: number,
@@ -149,8 +138,7 @@ interface ListCollectionResponse {
 	}
 }
 
-// Pull the user's full anime or manga list (all statuses) as flat entries; null
-// when the request failed, so an empty list is never mistaken for a sync.
+// The full list (all statuses); null on failure, so empty is not a sync.
 export async function fetchList(token: string, userId: number, type: AniListMediaKind = 'ANIME'): Promise<AniListEntry[] | null> {
 	const query =
 		'query ($userId: Int, $type: MediaType) { MediaListCollection(userId: $userId, type: $type) {' +

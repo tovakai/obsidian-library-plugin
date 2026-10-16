@@ -1,12 +1,11 @@
 import type { ContentType } from './providers/types'
 import type { MalTokens } from './malSync'
 import type { PsnStats, PsnTokens } from './psn'
-import type { NintendoTokens } from './nintendo'
+import type { NintendoStats, NintendoTokens } from './nintendo'
 
 export const progressPattern: RegExp = /^(\d+)\s*\/\s*(\d+)$/
 export const dmyDatePattern: RegExp = /^(\d{2})\.(\d{2})\.(\d{4})$/
-// Rotten Tomatoes keeps its whole label as a tomato — the wordmark would only
-// be recognised as the site's score with the picture next to it.
+// Whole RT label is the tomato; the wordmark would read as the site's score.
 export const RATING_RT_ICON = '🍅'
 export const localeMap: Record<string, SupportedLocale> = {
 	ru: 'ru',
@@ -395,6 +394,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Gold',
 		'stats.psn.silver': 'Silver',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Games',
+		'stats.nintendo.time': 'Time played',
 		'header.lastPlayed': 'Last played',
 		'notice.psn.expired': 'PlayStation sign-in has expired: connect again in settings',
 		'sort.played': 'Last played',
@@ -749,6 +751,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Золото',
 		'stats.psn.silver': 'Серебро',
 		'stats.psn.bronze': 'Бронза',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Игры',
+		'stats.nintendo.time': 'Время в играх',
 		'header.lastPlayed': 'Последняя игра',
 		'notice.psn.expired': 'Вход в PlayStation истёк: подключите его заново в настройках',
 		'sort.played': 'Последняя игра',
@@ -1103,6 +1108,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Gold',
 		'stats.psn.silver': 'Silber',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Spiele',
+		'stats.nintendo.time': 'Spielzeit',
 		'header.lastPlayed': 'Zuletzt gespielt',
 		'notice.psn.expired': 'Die PlayStation-Anmeldung ist abgelaufen: verbinden Sie sie in den Einstellungen neu',
 		'sort.played': 'Zuletzt gespielt',
@@ -1457,6 +1465,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Oro',
 		'stats.psn.silver': 'Plata',
 		'stats.psn.bronze': 'Bronce',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Juegos',
+		'stats.nintendo.time': 'Tiempo jugado',
 		'header.lastPlayed': 'Última partida',
 		'notice.psn.expired': 'La sesión de PlayStation caducó: vuelve a conectarla en los ajustes',
 		'sort.played': 'Última partida',
@@ -1811,6 +1822,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Or',
 		'stats.psn.silver': 'Argent',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jeux',
+		'stats.nintendo.time': 'Temps de jeu',
 		'header.lastPlayed': 'Dernière partie',
 		'notice.psn.expired': 'La connexion à PlayStation a expiré : reconnectez-la dans les paramètres',
 		'sort.played': 'Dernière partie',
@@ -2165,6 +2179,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': '金',
 		'stats.psn.silver': '银',
 		'stats.psn.bronze': '铜',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': '游戏',
+		'stats.nintendo.time': '游戏时长',
 		'header.lastPlayed': '最近游玩',
 		'notice.psn.expired': 'PlayStation 登录已过期：请在设置中重新连接',
 		'sort.played': '最近游玩',
@@ -2519,6 +2536,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ذهبي',
 		'stats.psn.silver': 'فضي',
 		'stats.psn.bronze': 'برونزي',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'الألعاب',
+		'stats.nintendo.time': 'وقت اللعب',
 		'header.lastPlayed': 'آخر لعب',
 		'notice.psn.expired': 'انتهت صلاحية الدخول إلى PlayStation: اربطه من جديد في الإعدادات',
 		'sort.played': 'آخر لعب',
@@ -2873,6 +2893,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'זהב',
 		'stats.psn.silver': 'כסף',
 		'stats.psn.bronze': 'ארד',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'משחקים',
+		'stats.nintendo.time': 'זמן משחק',
 		'header.lastPlayed': 'שוחק לאחרונה',
 		'notice.psn.expired': 'תוקף ההתחברות ל-PlayStation פג: יש להתחבר מחדש בהגדרות',
 		'sort.played': 'שוחק לאחרונה',
@@ -3225,6 +3248,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Золото',
 		'stats.psn.silver': 'Срібло',
 		'stats.psn.bronze': 'Бронза',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Ігри',
+		'stats.nintendo.time': 'Час в іграх',
 		'header.lastPlayed': 'Остання гра',
 		'notice.psn.expired': 'Вхід у PlayStation закінчився: підключіть його знову в налаштуваннях',
 		'sort.played': 'Остання гра',
@@ -3577,6 +3603,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ゴールド',
 		'stats.psn.silver': 'シルバー',
 		'stats.psn.bronze': 'ブロンズ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ゲーム',
+		'stats.nintendo.time': 'プレイ時間',
 		'header.lastPlayed': '最終プレイ',
 		'notice.psn.expired': 'PlayStation のサインインが期限切れです: 設定から再接続してください',
 		'sort.played': '最終プレイ',
@@ -3929,6 +3958,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Ginto',
 		'stats.psn.silver': 'Pilak',
 		'stats.psn.bronze': 'Tanso',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Mga laro',
+		'stats.nintendo.time': 'Oras ng paglalaro',
 		'header.lastPlayed': 'Huling nilaro',
 		'notice.psn.expired': 'Nag-expire na ang sign-in sa PlayStation: ikonekta muli sa mga setting',
 		'sort.played': 'Huling nilaro',
@@ -4281,6 +4313,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': '골드',
 		'stats.psn.silver': '실버',
 		'stats.psn.bronze': '브론즈',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': '게임',
+		'stats.nintendo.time': '플레이 시간',
 		'header.lastPlayed': '마지막 플레이',
 		'notice.psn.expired': 'PlayStation 로그인이 만료되었습니다: 설정에서 다시 연결하세요',
 		'sort.played': '마지막 플레이',
@@ -4633,6 +4668,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Goud',
 		'stats.psn.silver': 'Zilver',
 		'stats.psn.bronze': 'Brons',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Games',
+		'stats.nintendo.time': 'Speeltijd',
 		'header.lastPlayed': 'Laatst gespeeld',
 		'notice.psn.expired': 'De PlayStation-aanmelding is verlopen: verbind opnieuw in de instellingen',
 		'sort.played': 'Laatst gespeeld',
@@ -4985,6 +5023,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Zlato',
 		'stats.psn.silver': 'Stříbro',
 		'stats.psn.bronze': 'Bronz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Hry',
+		'stats.nintendo.time': 'Herní čas',
 		'header.lastPlayed': 'Naposledy hráno',
 		'notice.psn.expired': 'Přihlášení k PlayStation vypršelo: připojte jej znovu v nastavení',
 		'sort.played': 'Naposledy hráno',
@@ -5337,6 +5378,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Zlato',
 		'stats.psn.silver': 'Srebro',
 		'stats.psn.bronze': 'Bronca',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Igre',
+		'stats.nintendo.time': 'Vrijeme igranja',
 		'header.lastPlayed': 'Zadnje igrano',
 		'notice.psn.expired': 'Prijava na PlayStation je istekla: ponovno se povežite u postavkama',
 		'sort.played': 'Zadnje igrano',
@@ -5689,6 +5733,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'सोना',
 		'stats.psn.silver': 'चाँदी',
 		'stats.psn.bronze': 'कांस्य',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'गेम',
+		'stats.nintendo.time': 'खेलने का समय',
 		'header.lastPlayed': 'आख़िरी बार खेला',
 		'notice.psn.expired': 'PlayStation साइन-इन की अवधि खत्म हो गई: सेटिंग्स में फिर से कनेक्ट करें',
 		'sort.played': 'आख़िरी बार खेला',
@@ -6041,6 +6088,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'সোনা',
 		'stats.psn.silver': 'রুপা',
 		'stats.psn.bronze': 'ব্রোঞ্জ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'গেম',
+		'stats.nintendo.time': 'খেলার সময়',
 		'header.lastPlayed': 'শেষ খেলা',
 		'notice.psn.expired': 'PlayStation সাইন-ইনের মেয়াদ শেষ: সেটিংসে আবার সংযুক্ত করুন',
 		'sort.played': 'শেষ খেলা',
@@ -6393,6 +6443,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Vàng',
 		'stats.psn.silver': 'Bạc',
 		'stats.psn.bronze': 'Đồng',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Trò chơi',
+		'stats.nintendo.time': 'Thời gian chơi',
 		'header.lastPlayed': 'Chơi lần cuối',
 		'notice.psn.expired': 'Phiên đăng nhập PlayStation đã hết hạn: hãy kết nối lại trong cài đặt',
 		'sort.played': 'Chơi lần cuối',
@@ -6745,6 +6798,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Altın',
 		'stats.psn.silver': 'Gümüş',
 		'stats.psn.bronze': 'Bronz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Oyunlar',
+		'stats.nintendo.time': 'Oyun süresi',
 		'header.lastPlayed': 'Son oynanan',
 		'notice.psn.expired': 'PlayStation oturumunun süresi doldu: ayarlardan yeniden bağlanın',
 		'sort.played': 'Son oynanan',
@@ -7097,6 +7153,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Oro',
 		'stats.psn.silver': 'Argento',
 		'stats.psn.bronze': 'Bronzo',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Giochi',
+		'stats.nintendo.time': 'Tempo di gioco',
 		'header.lastPlayed': 'Ultima partita',
 		'notice.psn.expired': 'L\'accesso a PlayStation è scaduto: ricollegalo nelle impostazioni',
 		'sort.played': 'Ultima partita',
@@ -7449,6 +7508,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Emas',
 		'stats.psn.silver': 'Salaka',
 		'stats.psn.bronze': 'Prunggu',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Game',
+		'stats.nintendo.time': 'Wektu dolanan',
 		'header.lastPlayed': 'Pungkasan didolanake',
 		'notice.psn.expired': 'Mlebu PlayStation wis kadaluwarsa: sambungake maneh ing setelan',
 		'sort.played': 'Pungkasan didolanake',
@@ -7801,6 +7863,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'سونا',
 		'stats.psn.silver': 'چاندی',
 		'stats.psn.bronze': 'کانسی',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'گیمز',
+		'stats.nintendo.time': 'کھیل کا وقت',
 		'header.lastPlayed': 'آخری بار کھیلا',
 		'notice.psn.expired': 'PlayStation سائن ان کی میعاد ختم ہو گئی: ترتیبات میں دوبارہ جوڑیں',
 		'sort.played': 'آخری بار کھیلا',
@@ -8153,6 +8218,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Złoto',
 		'stats.psn.silver': 'Srebro',
 		'stats.psn.bronze': 'Brąz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Gry',
+		'stats.nintendo.time': 'Czas gry',
 		'header.lastPlayed': 'Ostatnio grane',
 		'notice.psn.expired': 'Logowanie do PlayStation wygasło: połącz ponownie w ustawieniach',
 		'sort.played': 'Ostatnio grane',
@@ -8505,6 +8573,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ทอง',
 		'stats.psn.silver': 'เงิน',
 		'stats.psn.bronze': 'ทองแดง',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'เกม',
+		'stats.nintendo.time': 'เวลาเล่น',
 		'header.lastPlayed': 'เล่นล่าสุด',
 		'notice.psn.expired': 'การลงชื่อเข้าใช้ PlayStation หมดอายุแล้ว: เชื่อมต่อใหม่ในการตั้งค่า',
 		'sort.played': 'เล่นล่าสุด',
@@ -8857,6 +8928,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Qızıl',
 		'stats.psn.silver': 'Gümüş',
 		'stats.psn.bronze': 'Bürünc',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Oyunlar',
+		'stats.nintendo.time': 'Oyun vaxtı',
 		'header.lastPlayed': 'Son oynanılan',
 		'notice.psn.expired': 'PlayStation girişinin vaxtı bitib: ayarlarda yenidən qoşun',
 		'sort.played': 'Son oynanılan',
@@ -9209,6 +9283,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'طلا',
 		'stats.psn.silver': 'نقره',
 		'stats.psn.bronze': 'برنز',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'بازی‌ها',
+		'stats.nintendo.time': 'زمان بازی',
 		'header.lastPlayed': 'آخرین بازی',
 		'notice.psn.expired': 'ورود به PlayStation منقضی شده است: دوباره در تنظیمات متصل کنید',
 		'sort.played': 'آخرین بازی',
@@ -9561,6 +9638,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Aur',
 		'stats.psn.silver': 'Argint',
 		'stats.psn.bronze': 'Bronz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jocuri',
+		'stats.nintendo.time': 'Timp de joc',
 		'header.lastPlayed': 'Jucat ultima dată',
 		'notice.psn.expired': 'Conectarea la PlayStation a expirat: conectează-te din nou în setări',
 		'sort.played': 'Jucat ultima dată',
@@ -9913,6 +9993,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'රන්',
 		'stats.psn.silver': 'රිදී',
 		'stats.psn.bronze': 'ලෝකඩ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ක්‍රීඩා',
+		'stats.nintendo.time': 'ක්‍රීඩා කාලය',
 		'header.lastPlayed': 'අවසන් වරට ක්‍රීඩා කළේ',
 		'notice.psn.expired': 'PlayStation පුරනය කල් ඉකුත් විය: සැකසීම් තුළ නැවත සම්බන්ධ කරන්න',
 		'sort.played': 'අවසන් වරට ක්‍රීඩා කළේ',
@@ -10265,6 +10348,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Золата',
 		'stats.psn.silver': 'Срэбра',
 		'stats.psn.bronze': 'Бронза',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Гульні',
+		'stats.nintendo.time': 'Час у гульнях',
 		'header.lastPlayed': 'Апошняя гульня',
 		'notice.psn.expired': 'Уваход у PlayStation скончыўся: падключыце яго зноў у наладах',
 		'sort.played': 'Апошняя гульня',
@@ -10617,6 +10703,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Алтын',
 		'stats.psn.silver': 'Күміс',
 		'stats.psn.bronze': 'Қола',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Ойындар',
+		'stats.nintendo.time': 'Ойын уақыты',
 		'header.lastPlayed': 'Соңғы ойын',
 		'notice.psn.expired': 'PlayStation-ға кіру мерзімі өтті: баптауларда қайта қосыңыз',
 		'sort.played': 'Соңғы ойын',
@@ -10969,6 +11058,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Oltin',
 		'stats.psn.silver': 'Kumush',
 		'stats.psn.bronze': 'Bronza',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'O\'yinlar',
+		'stats.nintendo.time': 'O\'yin vaqti',
 		'header.lastPlayed': 'Oxirgi o\'yin',
 		'notice.psn.expired': 'PlayStation\'ga kirish muddati tugadi: sozlamalarda qayta ulang',
 		'sort.played': 'Oxirgi o\'yin',
@@ -11319,6 +11411,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Goud',
 		'stats.psn.silver': 'Silwer',
 		'stats.psn.bronze': 'Brons',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Speletjies',
+		'stats.nintendo.time': 'Speeltyd',
 		'header.lastPlayed': 'Laas gespeel',
 		'notice.psn.expired': 'Die PlayStation-aanmelding het verval: koppel weer in die instellings',
 		'sort.played': 'Laas gespeel',
@@ -11669,6 +11764,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ወርቅ',
 		'stats.psn.silver': 'ብር',
 		'stats.psn.bronze': 'ነሐስ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ጨዋታዎች',
+		'stats.nintendo.time': 'የጨዋታ ጊዜ',
 		'header.lastPlayed': 'ለመጨረሻ ጊዜ የተጫወቱት',
 		'notice.psn.expired': 'የPlayStation መግቢያ ጊዜው አልፏል፦ በቅንብሮች ውስጥ እንደገና ያገናኙ',
 		'sort.played': 'ለመጨረሻ ጊዜ የተጫወቱት',
@@ -12019,6 +12117,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Злато',
 		'stats.psn.silver': 'Сребро',
 		'stats.psn.bronze': 'Бронз',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Игри',
+		'stats.nintendo.time': 'Време за игра',
 		'header.lastPlayed': 'Последна игра',
 		'notice.psn.expired': 'Входът в PlayStation изтече: свържете се отново в настройките',
 		'sort.played': 'Последна игра',
@@ -12369,6 +12470,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Or',
 		'stats.psn.silver': 'Plata',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jocs',
+		'stats.nintendo.time': 'Temps de joc',
 		'header.lastPlayed': 'Darrera partida',
 		'notice.psn.expired': 'La sessió de PlayStation ha caducat: torna-la a connectar a la configuració',
 		'sort.played': 'Darrera partida',
@@ -12719,6 +12823,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Guld',
 		'stats.psn.silver': 'Sølv',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Spil',
+		'stats.nintendo.time': 'Spilletid',
 		'header.lastPlayed': 'Sidst spillet',
 		'notice.psn.expired': 'Login på PlayStation er udløbet: forbind igen i indstillingerne',
 		'sort.played': 'Sidst spillet',
@@ -13069,6 +13176,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ރަން',
 		'stats.psn.silver': 'ރިހި',
 		'stats.psn.bronze': 'ލޯ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ގޭމުތައް',
+		'stats.nintendo.time': 'ކުޅުނު ވަގުތު',
 		'header.lastPlayed': 'އެންމެ ފަހުން ކުޅުނީ',
 		'notice.psn.expired': 'PlayStation ވަނުމުގެ މުއްދަތު ހަމަވެއްޖެ: ސެޓިންގްސްގައި އަލުން ގުޅުއްވާ',
 		'sort.played': 'އެންމެ ފަހުން ކުޅުނީ',
@@ -13419,6 +13529,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Χρυσό',
 		'stats.psn.silver': 'Ασημένιο',
 		'stats.psn.bronze': 'Χάλκινο',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Παιχνίδια',
+		'stats.nintendo.time': 'Χρόνος παιχνιδιού',
 		'header.lastPlayed': 'Τελευταίο παιχνίδι',
 		'notice.psn.expired': 'Η σύνδεση στο PlayStation έληξε: συνδεθείτε ξανά στις ρυθμίσεις',
 		'sort.played': 'Τελευταίο παιχνίδι',
@@ -13769,6 +13882,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Oro',
 		'stats.psn.silver': 'Arĝento',
 		'stats.psn.bronze': 'Bronzo',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Ludoj',
+		'stats.nintendo.time': 'Ludtempo',
 		'header.lastPlayed': 'Laste ludita',
 		'notice.psn.expired': 'La ensaluto al PlayStation eksvalidiĝis: rekonektu en la agordoj',
 		'sort.played': 'Laste ludita',
@@ -14119,6 +14235,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Urrea',
 		'stats.psn.silver': 'Zilarra',
 		'stats.psn.bronze': 'Brontzea',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jokoak',
+		'stats.nintendo.time': 'Jolas-denbora',
 		'header.lastPlayed': 'Azken partida',
 		'notice.psn.expired': 'PlayStationeko saioa iraungi da: konektatu berriro ezarpenetan',
 		'sort.played': 'Azken partida',
@@ -14469,6 +14588,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Kulta',
 		'stats.psn.silver': 'Hopea',
 		'stats.psn.bronze': 'Pronssi',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Pelit',
+		'stats.nintendo.time': 'Peliaika',
 		'header.lastPlayed': 'Viimeksi pelattu',
 		'notice.psn.expired': 'PlayStation-kirjautuminen on vanhentunut: yhdistä uudelleen asetuksissa',
 		'sort.played': 'Viimeksi pelattu',
@@ -14819,6 +14941,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Ór',
 		'stats.psn.silver': 'Airgead',
 		'stats.psn.bronze': 'Cré-umha',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Cluichí',
+		'stats.nintendo.time': 'Am imeartha',
 		'header.lastPlayed': 'Imeartha go deireanach',
 		'notice.psn.expired': 'Tá síniú isteach PlayStation imithe in éag: ceangail arís sna socruithe',
 		'sort.played': 'Imeartha go deireanach',
@@ -15169,6 +15294,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Ouro',
 		'stats.psn.silver': 'Prata',
 		'stats.psn.bronze': 'Bronce',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Xogos',
+		'stats.nintendo.time': 'Tempo de xogo',
 		'header.lastPlayed': 'Última partida',
 		'notice.psn.expired': 'A sesión de PlayStation caducou: volve conectala na configuración',
 		'sort.played': 'Última partida',
@@ -15519,6 +15647,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Arany',
 		'stats.psn.silver': 'Ezüst',
 		'stats.psn.bronze': 'Bronz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Játékok',
+		'stats.nintendo.time': 'Játékidő',
 		'header.lastPlayed': 'Utoljára játszva',
 		'notice.psn.expired': 'A PlayStation-bejelentkezés lejárt: csatlakoztasd újra a beállításokban',
 		'sort.played': 'Utoljára játszva',
@@ -15869,6 +16000,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Emas',
 		'stats.psn.silver': 'Perak',
 		'stats.psn.bronze': 'Perunggu',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Game',
+		'stats.nintendo.time': 'Waktu bermain',
 		'header.lastPlayed': 'Terakhir dimainkan',
 		'notice.psn.expired': 'Sesi masuk PlayStation telah berakhir: hubungkan lagi di pengaturan',
 		'sort.played': 'Terakhir dimainkan',
@@ -16219,6 +16353,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ოქრო',
 		'stats.psn.silver': 'ვერცხლი',
 		'stats.psn.bronze': 'ბრინჯაო',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'თამაშები',
+		'stats.nintendo.time': 'თამაშის დრო',
 		'header.lastPlayed': 'ბოლოს ნათამაშები',
 		'notice.psn.expired': 'PlayStation-ში შესვლის ვადა ამოიწურა: ხელახლა დააკავშირეთ პარამეტრებში',
 		'sort.played': 'ბოლოს ნათამაშები',
@@ -16569,6 +16706,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'មាស',
 		'stats.psn.silver': 'ប្រាក់',
 		'stats.psn.bronze': 'សំរិទ្ធ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ហ្គេម',
+		'stats.nintendo.time': 'ពេលវេលាលេង',
 		'header.lastPlayed': 'លេងចុងក្រោយ',
 		'notice.psn.expired': 'ការចូលគណនី PlayStation បានផុតកំណត់៖ សូមភ្ជាប់ម្ដងទៀតក្នុងការកំណត់',
 		'sort.played': 'លេងចុងក្រោយ',
@@ -16919,6 +17059,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ಚಿನ್ನ',
 		'stats.psn.silver': 'ಬೆಳ್ಳಿ',
 		'stats.psn.bronze': 'ಕಂಚು',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ಆಟಗಳು',
+		'stats.nintendo.time': 'ಆಟದ ಸಮಯ',
 		'header.lastPlayed': 'ಕೊನೆಯದಾಗಿ ಆಡಿದ್ದು',
 		'notice.psn.expired': 'PlayStation ಸೈನ್-ಇನ್ ಅವಧಿ ಮುಗಿದಿದೆ: ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಮತ್ತೆ ಸಂಪರ್ಕಿಸಿ',
 		'sort.played': 'ಕೊನೆಯದಾಗಿ ಆಡಿದ್ದು',
@@ -17269,6 +17412,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Алтын',
 		'stats.psn.silver': 'Күмүш',
 		'stats.psn.bronze': 'Коло',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Оюндар',
+		'stats.nintendo.time': 'Оюн убактысы',
 		'header.lastPlayed': 'Акыркы оюн',
 		'notice.psn.expired': 'PlayStation\'го кирүү мөөнөтү бүттү: жөндөөлөрдөн кайра туташтырыңыз',
 		'sort.played': 'Акыркы оюн',
@@ -17619,6 +17765,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Aurum',
 		'stats.psn.silver': 'Argentum',
 		'stats.psn.bronze': 'Aes',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Ludi',
+		'stats.nintendo.time': 'Tempus ludi',
 		'header.lastPlayed': 'Novissime lusum',
 		'notice.psn.expired': 'Aditus ad PlayStation exspiravit: in optionibus iterum coniunge',
 		'sort.played': 'Novissime lusum',
@@ -17969,6 +18118,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Auksas',
 		'stats.psn.silver': 'Sidabras',
 		'stats.psn.bronze': 'Bronza',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Žaidimai',
+		'stats.nintendo.time': 'Žaidimo laikas',
 		'header.lastPlayed': 'Paskutinį kartą žaista',
 		'notice.psn.expired': 'PlayStation prisijungimas baigėsi: prisijunkite iš naujo nustatymuose',
 		'sort.played': 'Paskutinį kartą žaista',
@@ -18319,6 +18471,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Zelts',
 		'stats.psn.silver': 'Sudrabs',
 		'stats.psn.bronze': 'Bronza',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Spēles',
+		'stats.nintendo.time': 'Spēles laiks',
 		'header.lastPlayed': 'Pēdējoreiz spēlēts',
 		'notice.psn.expired': 'PlayStation pieteikšanās beigusies: savienojiet no jauna iestatījumos',
 		'sort.played': 'Pēdējoreiz spēlēts',
@@ -18669,6 +18824,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Uraɣ',
 		'stats.psn.silver': 'Lfeṭṭa',
 		'stats.psn.bronze': 'Brunz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Uraren',
+		'stats.nintendo.time': 'Akud n wurar',
 		'header.lastPlayed': 'Aneggaru i yettwarren',
 		'notice.psn.expired': 'Tuqqna ɣer PlayStation tfukk: ales tuqqna deg yiɣewwaren',
 		'sort.played': 'Aneggaru i yettwarren',
@@ -19019,6 +19177,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'സ്വർണം',
 		'stats.psn.silver': 'വെള്ളി',
 		'stats.psn.bronze': 'വെങ്കലം',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ഗെയിമുകൾ',
+		'stats.nintendo.time': 'കളിസമയം',
 		'header.lastPlayed': 'അവസാനം കളിച്ചത്',
 		'notice.psn.expired': 'PlayStation സൈൻ-ഇൻ കാലാവധി കഴിഞ്ഞു: ക്രമീകരണങ്ങളിൽ വീണ്ടും ബന്ധിപ്പിക്കുക',
 		'sort.played': 'അവസാനം കളിച്ചത്',
@@ -19369,6 +19530,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Emas',
 		'stats.psn.silver': 'Perak',
 		'stats.psn.bronze': 'Gangsa',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Permainan',
+		'stats.nintendo.time': 'Masa bermain',
 		'header.lastPlayed': 'Terakhir dimain',
 		'notice.psn.expired': 'Log masuk PlayStation telah tamat: sambung semula dalam tetapan',
 		'sort.played': 'Terakhir dimain',
@@ -19719,6 +19883,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'सुन',
 		'stats.psn.silver': 'चाँदी',
 		'stats.psn.bronze': 'कांस्य',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'गेमहरू',
+		'stats.nintendo.time': 'खेल्ने समय',
 		'header.lastPlayed': 'पछिल्लो पटक खेलेको',
 		'notice.psn.expired': 'PlayStation साइन-इनको म्याद सकियो: सेटिङमा फेरि जोड्नुहोस्',
 		'sort.played': 'पछिल्लो पटक खेलेको',
@@ -20069,6 +20236,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Gull',
 		'stats.psn.silver': 'Sølv',
 		'stats.psn.bronze': 'Bronse',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Spel',
+		'stats.nintendo.time': 'Speletid',
 		'header.lastPlayed': 'Sist spela',
 		'notice.psn.expired': 'Innlogginga til PlayStation har gått ut: kopla til på nytt i innstillingane',
 		'sort.played': 'Sist spela',
@@ -20419,6 +20589,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Gull',
 		'stats.psn.silver': 'Sølv',
 		'stats.psn.bronze': 'Bronse',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Spill',
+		'stats.nintendo.time': 'Spilletid',
 		'header.lastPlayed': 'Sist spilt',
 		'notice.psn.expired': 'Påloggingen til PlayStation har utløpt: koble til på nytt i innstillingene',
 		'sort.played': 'Sist spilt',
@@ -20769,6 +20942,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'ସୁନା',
 		'stats.psn.silver': 'ରୁପା',
 		'stats.psn.bronze': 'ପିତ୍ତଳ',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'ଗେମ',
+		'stats.nintendo.time': 'ଖେଳ ସମୟ',
 		'header.lastPlayed': 'ଶେଷ ଖେଳ',
 		'notice.psn.expired': 'PlayStation ସାଇନ-ଇନର ଅବଧି ଶେଷ: ସେଟିଂସରେ ପୁଣି ସଂଯୋଗ କରନ୍ତୁ',
 		'sort.played': 'ଶେଷ ଖେଳ',
@@ -21119,6 +21295,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Aur',
 		'stats.psn.silver': 'Argent',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jòcs',
+		'stats.nintendo.time': 'Temps de jòc',
 		'header.lastPlayed': 'Darrièra partida',
 		'notice.psn.expired': 'La connexion a PlayStation a expirat: torna-la connectar dins los paramètres',
 		'sort.played': 'Darrièra partida',
@@ -21469,6 +21648,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Ouro',
 		'stats.psn.silver': 'Prata',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jogos',
+		'stats.nintendo.time': 'Tempo de jogo',
 		'header.lastPlayed': 'Último jogo',
 		'notice.psn.expired': 'A sessão da PlayStation expirou: volte a ligá-la nas definições',
 		'sort.played': 'Último jogo',
@@ -21819,6 +22001,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'सुवर्णम्',
 		'stats.psn.silver': 'रजतम्',
 		'stats.psn.bronze': 'कांस्यम्',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'क्रीडाः',
+		'stats.nintendo.time': 'क्रीडासमयः',
 		'header.lastPlayed': 'अन्तिमक्रीडा',
 		'notice.psn.expired': 'PlayStation प्रवेशस्य अवधिः समाप्ता: विन्यासेषु पुनः संयोजय',
 		'sort.played': 'अन्तिमक्रीडा',
@@ -22169,6 +22354,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Zlato',
 		'stats.psn.silver': 'Striebro',
 		'stats.psn.bronze': 'Bronz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Hry',
+		'stats.nintendo.time': 'Herný čas',
 		'header.lastPlayed': 'Naposledy hrané',
 		'notice.psn.expired': 'Prihlásenie do PlayStation vypršalo: pripojte ho znova v nastaveniach',
 		'sort.played': 'Naposledy hrané',
@@ -22519,6 +22707,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Zlato',
 		'stats.psn.silver': 'Srebro',
 		'stats.psn.bronze': 'Bron',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Igre',
+		'stats.nintendo.time': 'Čas igranja',
 		'header.lastPlayed': 'Nazadnje igrano',
 		'notice.psn.expired': 'Prijava v PlayStation je potekla: znova se povežite v nastavitvah',
 		'sort.played': 'Nazadnje igrano',
@@ -22869,6 +23060,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Ar',
 		'stats.psn.silver': 'Argjend',
 		'stats.psn.bronze': 'Bronz',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Lojëra',
+		'stats.nintendo.time': 'Koha e lojës',
 		'header.lastPlayed': 'Luajtur së fundi',
 		'notice.psn.expired': 'Hyrja në PlayStation ka skaduar: lidheni sërish te cilësimet',
 		'sort.played': 'Luajtur së fundi',
@@ -23219,6 +23413,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Zlato',
 		'stats.psn.silver': 'Srebro',
 		'stats.psn.bronze': 'Bronza',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Igre',
+		'stats.nintendo.time': 'Vreme igranja',
 		'header.lastPlayed': 'Poslednje igrano',
 		'notice.psn.expired': 'Prijava na PlayStation je istekla: ponovo se povežite u podešavanjima',
 		'sort.played': 'Poslednje igrano',
@@ -23569,6 +23766,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Guld',
 		'stats.psn.silver': 'Silver',
 		'stats.psn.bronze': 'Brons',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Spel',
+		'stats.nintendo.time': 'Speltid',
 		'header.lastPlayed': 'Senast spelat',
 		'notice.psn.expired': 'Inloggningen på PlayStation har gått ut: anslut igen i inställningarna',
 		'sort.played': 'Senast spelat',
@@ -23919,6 +24119,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Dhahabu',
 		'stats.psn.silver': 'Fedha',
 		'stats.psn.bronze': 'Shaba',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Michezo',
+		'stats.nintendo.time': 'Muda wa kucheza',
 		'header.lastPlayed': 'Ilichezwa mwisho',
 		'notice.psn.expired': 'Muda wa kuingia kwenye PlayStation umeisha: unganisha tena kwenye mipangilio',
 		'sort.played': 'Ilichezwa mwisho',
@@ -24269,6 +24472,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'தங்கம்',
 		'stats.psn.silver': 'வெள்ளி',
 		'stats.psn.bronze': 'வெண்கலம்',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'கேம்கள்',
+		'stats.nintendo.time': 'விளையாட்டு நேரம்',
 		'header.lastPlayed': 'கடைசியாக விளையாடியது',
 		'notice.psn.expired': 'PlayStation உள்நுழைவு காலாவதியானது: அமைப்புகளில் மீண்டும் இணைக்கவும்',
 		'sort.played': 'கடைசியாக விளையாடியது',
@@ -24619,6 +24825,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'బంగారం',
 		'stats.psn.silver': 'వెండి',
 		'stats.psn.bronze': 'కంచు',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'గేమ్‌లు',
+		'stats.nintendo.time': 'ఆట సమయం',
 		'header.lastPlayed': 'చివరిగా ఆడినది',
 		'notice.psn.expired': 'PlayStation సైన్-ఇన్ గడువు ముగిసింది: సెట్టింగ్‌లలో మళ్లీ కనెక్ట్ చేయండి',
 		'sort.played': 'చివరిగా ఆడినది',
@@ -24969,6 +25178,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Алтын',
 		'stats.psn.silver': 'Көмеш',
 		'stats.psn.bronze': 'Бронза',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Уеннар',
+		'stats.nintendo.time': 'Уен вакыты',
 		'header.lastPlayed': 'Соңгы уен',
 		'notice.psn.expired': 'PlayStation\'га керү вакыты чыкты: көйләүләрдә яңадан тоташтырыгыз',
 		'sort.played': 'Соңгы уен',
@@ -25319,6 +25531,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': '金',
 		'stats.psn.silver': '銀',
 		'stats.psn.bronze': '銅',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': '遊戲',
+		'stats.nintendo.time': '遊戲時數',
 		'header.lastPlayed': '最近遊玩',
 		'notice.psn.expired': 'PlayStation 登入已過期：請在設定中重新連結',
 		'sort.played': '最近遊玩',
@@ -25669,6 +25884,9 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'stats.psn.gold': 'Ouro',
 		'stats.psn.silver': 'Prata',
 		'stats.psn.bronze': 'Bronze',
+		'stats.nintendo': 'Nintendo Switch',
+		'stats.nintendo.games': 'Jogos',
+		'stats.nintendo.time': 'Tempo de jogo',
 		'header.lastPlayed': 'Última partida',
 		'notice.psn.expired': 'O acesso à PlayStation expirou: conecte de novo nas configurações',
 		'sort.played': 'Última partida',
@@ -25732,24 +25950,19 @@ export interface ICategory {
 	typeValue: string
 	contentType: ContentType
 	folder: string
-	// The section is folded on the Library tab; kept across restarts.
 	collapsed?: boolean
-	// A note new notes of this category start as a copy of; unset for none.
+	// Template note new notes copy; unset = none.
 	template?: string
 }
 
-// One column of the statistics: a category's best-rated titles, or the most
-// frequent values of a frontmatter property across the whole library.
 export interface IStatsTop {
 	kind: 'category' | 'property' | 'platform'
-	// The category's Type value, the property name as the notes write it, or a
-	// connected platform ('playstation').
+	// Top key shapes: category Type value, property name as written, or platform id ('playstation').
 	key: string
 }
 
 export interface IStatsSettings {
 	watchTime: boolean
-	// The columns, in the order they were added.
 	tops: IStatsTop[]
 }
 
@@ -25760,8 +25973,7 @@ export interface ISortState {
 
 export interface ILibrarySettings {
 	categories: ICategory[]
-	// Where a new category gets its folder, one English subfolder per medium
-	// (Library/Movies); '' is the vault root.
+	// Parent of each category's English subfolder (Library/Movies); '' = vault root.
 	libraryFolder: string
 	omdbApiKey: string
 	googleBooksApiKey: string
@@ -25771,48 +25983,38 @@ export interface ILibrarySettings {
 	malClientId: string
 	malClientSecret: string
 	malTokens: MalTokens | null
-	// MyAnimeList progress and rating last pushed for a note: the auto-push
-	// sends nothing when the note still shows these values.
+	// Last pushed progress/rating per note; the auto-push skips notes still showing them.
 	malEcho: Record<string, { p: string; r: number }>
-	// The last MyAnimeList import: totals for the statistics panel.
 	malStats: { anime: number; manga: number; updated: number } | null
-	// When the last full import ran; the hourly check reimports once a day.
+	// Last full import; the hourly check reimports once a day.
 	malLastImport: number
-	// The same, for the AniList import.
 	anilistLastImport: number
-	// The typeValue of the category manga imports go to; empty before the
-	// first import created it.
+	// Category typeValue manga imports use; empty until the first import creates one.
 	malMangaType: string
-	// PlayStation sign-in, made by the Connect button; null when not connected.
 	psnTokens: PsnTokens | null
-	// The last PlayStation import: totals for the statistics panel.
 	psnStats: PsnStats | null
-	// The SteamID64 the sign-in window returned; the library is read with the
-	// session that window keeps, so no key is stored.
+	// SteamID64 from the sign-in window; its session reads the library, no key stored.
 	steamId: string
-	// When the Steam library was last read in full; the daily re-import
-	// waits a day from it.
+	// Last full read; the daily re-import waits a day from it.
 	steamLastImport: number
-	// The Nintendo Account the play activity is read from; null when not connected.
 	nintendoTokens: NintendoTokens | null
+	nintendoStats: NintendoStats | null
 	nintendoLastImport: number
 	showRecommendations: boolean
-	// The "Up next" block above the statistics: every note not started yet.
 	showUpNext: boolean
 	upNextCollapsed: boolean
-	// The one category Up next shows, by name; empty for all of them.
+	// Category Up next shows, by name; empty = all.
 	upNextCategory: string
-	// Off: not-started titles show in Up next only, not in their categories.
+	// Off: not-started titles appear in Up next only.
 	upNextInCategories: boolean
 	twitchClientId: string
 	twitchClientSecret: string
 	coverProperty: string
-	// Fields from the sources that notes leave out, comma separated.
+	// Comma-separated source fields to leave out of notes.
 	skipFields: string
 	tmdbApiKey: string
 	sortState: Record<string, ISortState>
-	// Per category name: the value each filter (year, genre, country,
-	// platform) narrows the section to.
+	// Per category name: chosen year/genre/country/platform.
 	filterState: Record<string, Record<string, string>>
 	statsCollapsed: boolean
 	stats: IStatsSettings
@@ -25840,6 +26042,7 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	steamId: '',
 	steamLastImport: 0,
 	nintendoTokens: null,
+	nintendoStats: null,
 	nintendoLastImport: 0,
 	showRecommendations: true,
 	showUpNext: true,

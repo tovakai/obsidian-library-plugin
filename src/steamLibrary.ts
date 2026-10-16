@@ -1,20 +1,14 @@
 import { requestUrl } from 'obsidian'
 
-// Everything Steam: the sign-in window's address, the SteamID it hands back,
-// and the library itself. Nobody types a key — the window keeps the account's
-// cookies in its own partition (the one ui/authModal.ts makes), and a hidden
-// webview on that partition reads steamcommunity.com as the signed-in user: a
-// short-lived token for the Web API and an achievements page per game. Nothing
-// about the session or the account is stored in settings.
+// Steam sign-in and library. No key: a hidden webview on the sign-in window's
+// partition reads steamcommunity.com as the user (nothing is kept in settings).
 const API = 'https://api.steampowered.com'
 const WEB = 'https://steamcommunity.com'
 const ORIGIN = encodeURIComponent(WEB)
 // The sign-in window's partition, so the hidden webview sees its cookies.
 const PARTITION = 'persist:library-auth'
 
-// The OpenID window: Steam signs the user in and sends them back to
-// steamcommunity.com with the account in the address, which is all the
-// import needs to know.
+// The OpenID window returns to steamcommunity.com with the account in the address.
 export function steamAuthUrl(): string {
 	const params = [
 		'openid.ns=http://specs.openid.net/auth/2.0',
@@ -27,8 +21,7 @@ export function steamAuthUrl(): string {
 	return `${WEB}/openid/login?${params.join('&')}`
 }
 
-// The SteamID64 out of the address the window comes back to; null while it is
-// still on the sign-in page, and for anything that is not steamcommunity.com.
+// SteamID64 out of the returned address; null on the sign-in page or another host.
 export function steamIdFromRedirect(url: string): string | null {
 	if (!url.startsWith(`${WEB}/`)) return null
 	const match = url.match(/(?:%2F|\/)id(?:%2F|\/)(7656119\d{10})/)
@@ -59,8 +52,6 @@ async function get<T>(url: string): Promise<T | null> {
 	}
 }
 
-// The token out of the JSON the signed-in page shows; null while the window is
-// somewhere else, where the text is not that JSON.
 export function steamTokenFromAnswer(text: string): string | null {
 	try {
 		const answer = JSON.parse(text) as { data?: { webapi_token?: unknown } }
@@ -77,12 +68,9 @@ export interface SteamSession {
 	close(): void
 }
 
-// The signed-in session, behind a webview two pixels wide on the window's
-// partition: it reads the token once, then the achievements page of whatever
-// game is asked for. Null when the session is gone — the window lands on the
-// sign-in page — so the import can ask the user to connect again.
+// The signed-in session: a hidden webview on the sign-in partition reads the
+// token, then an achievements page per game; null when the session is gone.
 export async function steamSession(steamId: string): Promise<SteamSession | null> {
-	// Made by the window it draws in, like the sign-in window itself.
 	const win = activeDocument.win as Window & { createEl: typeof createEl }
 	const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
 		cls: 'library-steam-probe',
@@ -108,8 +96,7 @@ export async function steamSession(steamId: string): Promise<SteamSession | null
 		return typeof answer === 'string' ? answer : ''
 	}
 
-	// The page is ready once its text parses; a window sitting on the sign-in
-	// page instead is what a dead session looks like.
+	// A window still on the sign-in page is what a dead session looks like.
 	let token: string | null = null
 	const until = Date.now() + 15000
 	while (token === null && Date.now() < until) {
@@ -122,8 +109,7 @@ export async function steamSession(steamId: string): Promise<SteamSession | null
 	}
 
 	const id = encodeURIComponent(steamId)
-	// The achievements summary is in the page as "... of ...", in English,
-	// whatever the account's own language is. window.fetch in the page carries
+	// The summary is in the page as "... of ...". window.fetch in the page carries
 	// the session cookies; the plugin's own code never calls fetch.
 	const page = (appId: number): string =>
 		`window.fetch("/profiles/${id}/stats/${String(appId)}?l=english").then(r => r.text()).then(t => {` +
@@ -143,7 +129,6 @@ export async function steamSession(steamId: string): Promise<SteamSession | null
 	}
 }
 
-// null when the request fails or the token has gone stale.
 export async function ownedGames(token: string, steamId: string): Promise<OwnedGame[] | null> {
 	const json = await get<{ response?: { games?: { appid: number; name?: string; playtime_forever?: number; rtime_last_played?: number }[] } }>(
 		`${API}/IPlayerService/GetOwnedGames/v1/?access_token=${encodeURIComponent(token)}&steamid=${encodeURIComponent(steamId)}` +
@@ -159,7 +144,7 @@ export async function ownedGames(token: string, steamId: string): Promise<OwnedG
 	}))
 }
 
-// Hours with one decimal, the unit the Playtime property stores.
+// Hours with one decimal, the unit Playtime stores.
 export function playtimeHours(minutes: number): number {
 	return Math.round(minutes / 6) / 10
 }

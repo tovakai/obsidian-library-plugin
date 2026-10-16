@@ -19,9 +19,8 @@ const SEARCH = 'query ($s: String) { Page(perPage: 15) { media(search: $s, type:
 const MEDIA = 'query ($id: Int) { Media(id: $id, type: MANGA) { id title { romaji english native } startDate { year }' +
 	' chapters volumes genres coverImage { extraLarge large } staff(perPage: 8) { edges { role node { name { full } } } } siteUrl } }'
 
-// Manga, manhwa and light novels from AniList (no key). The anime source is
-// AniList too; these notes carry their own id prefix, so the AniList and
-// MyAnimeList progress sync, made for anime, never touches them.
+// Manga/manhwa from AniList (no key); notes carry the `manga:` prefix, so the
+// anime sync never touches them.
 export class MangaProvider implements ContentProvider {
 	readonly id = 'manga'
 	readonly contentTypes: ContentType[] = ['comic']
@@ -66,7 +65,6 @@ export class MangaProvider implements ContentProvider {
 		if (!Number.isSafeInteger(id)) return null
 		const media = (await this.gql<{ data?: { Media?: MangaMedia } }>(MEDIA, { id }))?.data?.Media
 		if (!media) return null
-		// The writer and the artist, not the translators and letterers.
 		const creators: string[] = []
 		for (const edge of media.staff?.edges ?? []) {
 			const name = edge.node?.name?.full

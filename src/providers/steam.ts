@@ -33,8 +33,6 @@ interface SteamAppDetailsResponse {
 
 const GALLERY_SIZE = 8
 
-// The first store trailer (an HLS stream, or an MP4 on older listings) and the
-// screenshots of an app's store page.
 function steamMedia(app: SteamAppDetails): Record<string, unknown> {
 	const out: Record<string, unknown> = {}
 	const movie = (app.movies ?? []).find(m => m.hls_h264 || m.mp4?.max)
@@ -45,7 +43,6 @@ function steamMedia(app: SteamAppDetails): Record<string, unknown> {
 	return out
 }
 
-// Trailer and screenshots for a game known by its Steam app id.
 export async function steamMediaFor(appId: number): Promise<Record<string, unknown>> {
 	try {
 		const resp = await requestUrl({ url: `https://store.steampowered.com/api/appdetails?appids=${String(appId)}&l=english`, throw: false })
@@ -60,7 +57,7 @@ export async function steamMediaFor(appId: number): Promise<Record<string, unkno
 
 export class SteamProvider implements ContentProvider {
 	readonly id = 'steam'
-	// Registered through GameAggregatorProvider only; never bound to a registry content type.
+	// Registered through GameAggregatorProvider only, never bound to a registry type.
 	readonly contentTypes: ContentType[] = ['game']
 	private trailers: GameTrailerFinder
 
@@ -70,8 +67,8 @@ export class SteamProvider implements ContentProvider {
 
 	private static readonly STORE = 'https://store.steampowered.com'
 	static readonly CDN = 'https://cdn.cloudflare.steamstatic.com/steam/apps'
-	// RAWG and Steam both use numeric ids, so Steam ids carry a prefix to stay
-	// distinguishable when a refresh routes without the original search result.
+	// RAWG ids are numeric too, so Steam's carry a prefix, to keep a refresh
+	// routable without the search result.
 	static readonly PREFIX = 'steam:'
 
 	private appId(value: string): number | null {
@@ -144,7 +141,7 @@ export class SteamProvider implements ContentProvider {
 				Cover: await this.cover(id, app.header_image),
 				URL: `${SteamProvider.STORE}/app/${String(id)}/`
 			}
-			// Metacritic is 0-100; the note stores ratings on a 0-10 scale.
+			// Metacritic 0-100; notes store 0-10.
 			const score = app.metacritic?.score
 			if (typeof score === 'number' && score > 0) fields['Rating MC'] = Math.round(score) / 10
 			Object.assign(fields, steamMedia(app))
@@ -157,8 +154,7 @@ export class SteamProvider implements ContentProvider {
 		}
 	}
 
-	// Prefer the portrait capsule so game cards match the other poster-shaped sources;
-	// fall back to the wide header image for apps that have no portrait asset.
+	// Portrait capsule, matching other posters; the wide header as fallback.
 	private async cover(id: number, header?: string): Promise<string | null> {
 		const portrait = `${SteamProvider.CDN}/${String(id)}/library_600x900.jpg`
 		try {

@@ -41,9 +41,8 @@ interface TmdbTvDetails {
 	seasons?: TmdbSeason[]
 }
 
-// Fills the IMDb-like extras OMDb does not expose: trailer, stills and the
-// per-season breakdown. Resolves the note's imdbID through TMDB's find endpoint,
-// so notes stay keyed by IMDb id.
+// Fills the extras OMDb lacks: trailer, stills, per-season breakdown. Keys by
+// IMDb id through TMDB's find endpoint.
 export class TmdbEnricher implements MetadataEnricher {
 	private static readonly BASE = 'https://api.themoviedb.org/3'
 	private static readonly IMAGE = 'https://image.tmdb.org/t/p/w780'
@@ -143,7 +142,6 @@ export class TmdbEnricher implements MetadataEnricher {
 			// season_number 0 is TMDB's bucket for specials.
 			if (typeof number !== 'number' || number <= 0) continue
 			if (list.length >= TmdbEnricher.MAX_SEASONS) break
-			// One request per season brings its episodes and its videos.
 			const details = await this.get<TmdbSeasonDetails>(`/tv/${String(tvId)}/season/${String(number)}`, {
 				append_to_response: 'videos'
 			})

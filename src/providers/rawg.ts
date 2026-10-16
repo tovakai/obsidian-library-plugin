@@ -38,7 +38,7 @@ export class RawgProvider implements ContentProvider {
 
 	private trailers: GameTrailerFinder
 
-	// A RAWG id is only looked up with a key; without one the note stays as it is.
+	// A RAWG id needs a key to look up.
 	refreshable(): boolean {
 		return !!this.getKey().trim()
 	}
@@ -77,8 +77,8 @@ export class RawgProvider implements ContentProvider {
 		}
 	}
 
-	// RAWG's screenshots; the trailer from YouTube (IGDB, Wikidata) or else the
-	// game's Steam page, since RAWG's own video list is mostly empty.
+	// RAWG's screenshots; trailer from YouTube (IGDB, Wikidata), else the Steam
+	// page — RAWG's own video list is mostly empty.
 	private async media(id: string, name: string, params: URLSearchParams): Promise<Record<string, unknown>> {
 		const out: Record<string, unknown> = {}
 		const get = async <T>(path: string): Promise<T | null> => {
@@ -118,7 +118,7 @@ export class RawgProvider implements ContentProvider {
 				Cover: details.background_image ?? null
 			}
 			if (details.slug) fields['URL'] = `https://rawg.io/games/${details.slug}`
-			// RAWG rates 0-5, Metacritic 0-100 — both are normalized to a 0-10 scale.
+			// RAWG 0-5, Metacritic 0-100; both normalized to 0-10.
 			if (typeof details.rating === 'number' && details.rating > 0) {
 				fields['Rating RAWG'] = Math.round(details.rating * 20) / 10
 			}

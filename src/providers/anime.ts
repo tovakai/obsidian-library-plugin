@@ -31,8 +31,8 @@ interface AniListMediaResponse {
 const MEDIA_FIELDS =
 	'id idMal title { romaji english native } startDate { year } episodes duration genres status averageScore coverImage { extraLarge large } bannerImage trailer { id site } streamingEpisodes { thumbnail } studios(isMain: true) { nodes { name } } siteUrl'
 
-// Anime via AniList GraphQL (no key). Jikan's search endpoint proxies MyAnimeList and is frequently down (504).
-// A note added from MyAnimeList ("mal:" id) is found here by its MyAnimeList id.
+// Anime via AniList GraphQL (no key); a "mal:" note is found here by that id.
+// Jikan (the MyAnimeList proxy) answers 504 too often to search through.
 export class AnimeProvider implements ContentProvider {
 	readonly id = 'anilist'
 	readonly contentTypes: ContentType[] = ['anime']
@@ -108,12 +108,10 @@ export class AnimeProvider implements ContentProvider {
 				URL: media.siteUrl ?? `https://anilist.co/anime/${media.id}`
 			}
 			if (typeof media.averageScore === 'number') fields['Rating AniList'] = media.averageScore / 10
-			// AniList reports the length of one episode; the note contract keeps
-			// `Runtime` per episode for anything episodic.
+			// AniList's duration is one episode's length.
 			if (typeof media.duration === 'number' && media.duration > 0) fields.Runtime = media.duration
 			const trailer = this.trailer(media)
 			if (trailer) fields.Trailer = trailer
-			// The banner, the trailer's still and episode stills from the streaming listings.
 			const stills = [
 				media.bannerImage,
 				media.trailer?.site === 'youtube' && media.trailer.id ? `https://i.ytimg.com/vi/${media.trailer.id}/hqdefault.jpg` : null,

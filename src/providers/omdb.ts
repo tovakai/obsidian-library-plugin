@@ -70,13 +70,12 @@ interface CinemetaMeta {
 	videos?: { season?: number }[]
 }
 
-// "Japan, United States" as a list; empty for none or OMDb's "N/A".
 function countries(value: string | undefined): string[] {
 	if (!value || value === 'N/A') return []
 	return value.split(',').map(s => s.trim()).filter(Boolean)
 }
 
-// The body of a failed request may not be JSON (an HTML error page).
+// A failed request's body may not be JSON (an HTML error page).
 function jsonOf(resp: { json: unknown }): unknown {
 	try {
 		return resp.json
@@ -89,12 +88,12 @@ function na(value: string | undefined): string | null {
 	return value && value !== 'N/A' ? value : null
 }
 
-// Wikidata classes a title must have to count as a movie or as a series.
+// P31 classes (Wikidata): film, feature film, television film, animated film, animated
+// feature film / television series, miniseries, web series, anime series, animated series.
 const FILM_CLASSES = ['Q11424', 'Q24869', 'Q506240', 'Q202866', 'Q29168811']
 const SERIES_CLASSES = ['Q5398426', 'Q1259759', 'Q526877', 'Q63952888', 'Q117467246']
 
-// "brother 1997" searches "brother" and puts the 1997 titles first. A bare
-// year stays a title ("1917"), and so does a far-future one ("2049").
+// "brother 1997" searches "brother"; "1917"/"2049" stay titles.
 export function splitYear(query: string): { title: string; year: number | null } {
 	const match = query.trim().match(/^(.*\S)\s+(\d{4})$/)
 	const year = match ? Number(match[2]) : NaN
@@ -102,9 +101,6 @@ export function splitYear(query: string): { title: string; year: number | null }
 	return { title: query.trim(), year: null }
 }
 
-// One entry per title, where the first source to list it put it; a later
-// source still fills what that one left out (the reader's own title, the
-// year, the poster). Then the titles of the asked-for year come first.
 function arrange(results: SearchResult[], year: number | null): SearchResult[] {
 	const byId = new Map<string, SearchResult>()
 	for (const result of results) {
@@ -130,9 +126,7 @@ export class OmdbProvider implements ContentProvider {
 	private static readonly CINEMETA = 'https://v3-cinemeta.strem.io'
 	private static readonly REST = 60 * 60 * 1000
 
-	// With no key, or for an hour after OMDb reports its daily limit (1,000
-	// requests on a free key) or an outage, notes come from Cinemeta: the same
-	// IMDb ids, no key, no daily cap.
+	// No key, or an hour after OMDb's limit (1,000/day free) or an outage: Cinemeta.
 	private restingSince = 0
 
 	private getKey: () => string
@@ -157,15 +151,14 @@ export class OmdbProvider implements ContentProvider {
 		return na(value)
 	}
 
-	// OMDb returns Rotten Tomatoes as a percentage string ("87%") in the Ratings array.
+	// Rotten Tomatoes as "87%" in Ratings.
 	private rtRating(details: OmdbDetails): number | null {
 		const entry = (details.Ratings ?? []).find((r) => r.Source === 'Rotten Tomatoes')
 		const match = entry?.Value?.match(/^(\d+)%$/)
 		return match ? Number(match[1]) : null
 	}
 
-	// OMDb wins for shared keys (e.g. Runtime); enrichers only fill what OMDb
-	// lacks, in order — TMDB (richer, keyed) before Cinemeta (keyless).
+	// Enrichers fill only what OMDb lacks, in order: TMDB, then keyless Cinemeta.
 	private async applyEnrichers(
 		fields: Record<string, unknown>,
 		imdbId: string,
@@ -184,8 +177,7 @@ export class OmdbProvider implements ContentProvider {
 		return Date.now() - this.restingSince < OmdbProvider.REST
 	}
 
-	// True when the answer means "ask Cinemeta instead": the daily limit or an
-	// outage. "Movie not found!" or a wrong key is a real answer and stays one.
+	// Daily limit or outage: ask Cinemeta. "Movie not found!" stays a miss.
 	private unavailable(status: number, json: unknown): boolean {
 		const error = json && typeof json === 'object' ? (json as { Error?: unknown }).Error : null
 		if (status >= 500 || (typeof error === 'string' && /limit reached/i.test(error))) {
@@ -195,9 +187,7 @@ export class OmdbProvider implements ContentProvider {
 		return false
 	}
 
-	// OMDb answers ten titles at most, and only with a key; Cinemeta and
-	// Wikidata add the rest, so a title many films share still lists the one
-	// meant, and a search in Russian or Japanese finds its titles by name.
+	// OMDb answers ten titles and only with a key; Cinemeta/Wikidata add the rest.
 	async search(query: string, type: ContentType): Promise<SearchResult[]> {
 		const kind = type === 'series' ? 'series' : 'movie'
 		const { title, year } = splitYear(query)
@@ -230,8 +220,7 @@ export class OmdbProvider implements ContentProvider {
 		}
 	}
 
-	// A query in another script finds its titles through Wikidata's labels,
-	// so those lead; a Latin one leads with Cinemeta, which ranks by fame.
+	// Non-Latin queries lead with Wikidata labels; Latin with Cinemeta.
 	private async searchOpen(query: string, title: string, kind: 'movie' | 'series'): Promise<SearchResult[]> {
 		const [cinemeta, wikidata] = await Promise.all([
 			within(this.searchCinemeta(title, kind), SEARCH_BUDGET_MS, []),
@@ -260,8 +249,6 @@ export class OmdbProvider implements ContentProvider {
 				out.push({
 					provider: this.id,
 					sourceId: imdb,
-					// Named in English like every other movie note; the reader's
-					// own title and the description go underneath.
 					title: english ?? local ?? imdb,
 					year: yearIn(description),
 					cover: `https://images.metahub.space/poster/small/${imdb}/img`,
@@ -305,7 +292,6 @@ export class OmdbProvider implements ContentProvider {
 		}
 	}
 
-	// The same fields OMDb gives, from Cinemeta's record of the title.
 	private async fromCinemeta(imdbId: string, type: ContentType): Promise<{ fields: Record<string, unknown>; years: string | null; seasons: number } | null> {
 		try {
 			const kind = type === 'series' ? 'series' : 'movie'
@@ -366,7 +352,6 @@ export class OmdbProvider implements ContentProvider {
 			const genres = genreSource
 				? genreSource.split(',').map((s) => s.trim()).filter(Boolean)
 				: []
-			// OMDb lists the top-billed actors of a movie or series.
 			const actorSource = na(details.Actors)
 			const cast = actorSource
 				? actorSource.split(',').map((s) => s.trim()).filter(Boolean)
@@ -403,9 +388,8 @@ export class OmdbProvider implements ContentProvider {
 		}
 	}
 
-	// The episode total comes from the season list the enrichers already
-	// fetched. OMDb is asked season by season, a request each, only when that
-	// list is missing or short: TMDB lists at most 15 seasons.
+	// Episode total from the enrichers' season list; OMDb is asked season by season
+	// only when that list is missing or short (TMDB caps at 15).
 	private async enrichSeries(
 		fields: Record<string, unknown>,
 		years: string | null,

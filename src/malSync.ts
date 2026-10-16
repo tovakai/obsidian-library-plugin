@@ -2,26 +2,20 @@ import { requestUrl } from 'obsidian'
 import { MalProvider } from './providers/mal'
 import { MangaProvider } from './providers/manga'
 
-// MyAnimeList progress sync for anime notes, from AniList or MyAnimeList. MAL's OAuth has
-// no PIN page: the plugin's own registered client (App Type "web", redirect
-// http://localhost) is embedded, the user authorizes in a webview and the redirect
-// carries the code. PKCE uses the plain method, the only one MAL accepts.
-// OAuth client, PKCE and token refresh adapted from RobertoJarquinRR's fork (MIT).
+// MyAnimeList progress sync. MAL has no PIN page: the plugin's registered web
+// client (redirect http://localhost, PKCE plain) is embedded. OAuth client, PKCE
+// and token refresh adapted from RobertoJarquinRR's fork (MIT).
 const AUTH_URL = 'https://myanimelist.net/v1/oauth2/authorize'
 const TOKEN_URL = 'https://myanimelist.net/v1/oauth2/token'
 const API = 'https://api.myanimelist.net/v2'
 const ANILIST = 'https://graphql.anilist.co'
 
-// The plugin's registered client: every user connects through it, no setup. The
-// app is configured with no client_secret (PKCE public client), so an empty
-// secret is sent — MAL accepts it for the plain method.
+// The plugin's registered client; no client_secret (PKCE public client).
 export const MAL_CLIENT_ID = '2f13c7079ccc195191fc2fac84d0fdf5'
 export const MAL_CLIENT_SECRET = ''
 
-// The client pair to sign in or refresh with: the user's own registration when
-// they have one (accounts made before the plugin's client), else the embedded
-// PKCE client. Tokens are bound to the client that issued them, so every path
-// must pick the same pair.
+// The user's own registration when set, else the embedded PKCE client: tokens are
+// bound to the issuing client.
 export function malClientPair(creds: { malClientId: string; malClientSecret: string }): { id: string; secret: string } {
 	const own = creds.malClientId.trim()
 	return own ? { id: own, secret: creds.malClientSecret.trim() } : { id: MAL_CLIENT_ID, secret: MAL_CLIENT_SECRET }
@@ -34,8 +28,6 @@ export interface MalTokens {
 	expiresAt: number
 }
 
-// One entry of the user's MAL list: enough to match an existing note or create
-// a new one with progress and score.
 export interface MalEntry {
 	malId: number
 	progress: number
@@ -55,8 +47,7 @@ export function isStarted(status: string): boolean {
 	return STARTED.has(status as MalStatus)
 }
 
-// 96 random bytes in base64url: 128 characters, the longest verifier RFC 7636
-// allows, all from its unreserved set and each equally likely.
+// 96 bytes → 128 base64url chars, the longest RFC 7636 verifier allows.
 export function makeVerifier(): string {
 	const bytes = crypto.getRandomValues(new Uint8Array(96))
 	let binary = ''
@@ -69,11 +60,9 @@ export function malAuthUrl(clientId: string, verifier: string): string {
 		`&code_challenge=${verifier}&code_challenge_method=plain`
 }
 
-// The code from the app's registered redirect address, or null for any other
-// page: Google's own callback also carries a `code=` parameter, and taking it
-// for MAL's code breaks the exchange.
+// Code from the app's localhost redirect; the host is compared exactly, not by
+// prefix (Google's callback also carries `code=`).
 export function codeFromRedirect(url: string): string | null {
-	// The host itself, not a prefix: a longer host starting with it is another site.
 	let host = ''
 	try {
 		host = new URL(url).hostname
@@ -85,7 +74,6 @@ export function codeFromRedirect(url: string): string | null {
 	return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
-// The pasted text is the whole redirect address or the bare code.
 export function codeFromInput(input: string): string {
 	return codeFromRedirect(input) ?? input.trim()
 }
@@ -96,8 +84,6 @@ export function malStatus(complete: boolean, watched: number): MalStatus {
 	return 'plan_to_watch'
 }
 
-// Token endpoint: the secret goes along only when the client has one ("web"
-// clients do, "other" clients do not).
 async function tokenRequest(fields: Record<string, string>, secret: string): Promise<MalTokens | null> {
 	const params: string[] = []
 	for (const key of Object.keys(fields)) params.push(`${key}=${encodeURIComponent(fields[key] ?? '')}`)
@@ -136,7 +122,7 @@ export function refreshTokens(clientId: string, secret: string, refresh: string)
 	return tokenRequest({ grant_type: 'refresh_token', client_id: clientId, refresh_token: refresh }, secret)
 }
 
-// A minute of slack so a token does not expire between the check and the call.
+// A minute of slack so a token does not expire mid-call.
 export function isExpired(tokens: MalTokens, now: number = Date.now()): boolean {
 	return now >= tokens.expiresAt - 60000
 }
@@ -165,10 +151,7 @@ export function malViewer(token: string): Promise<{ id: number; name: string } |
 	return api<{ id: number; name: string }>(token, '/users/@me')
 }
 
-// MAL scores are whole numbers 1–10; 0 would clear the user's score, so it is left out.
-// A note carries no status beyond Complete, so status is only sent for a finished
-// title: sending "watching" would overwrite the user's on_hold / dropped entry.
-// Anime counts episodes, manga counts chapters — one endpoint, one field.
+// MAL scores are 1–10 (0 would clear it); status only when Complete.
 export async function pushMalEntry(token: string, malId: number, kind: 'anime' | 'manga', progress: number, status: MalStatus | null, rating: number | null): Promise<boolean> {
 	const parts = [`${kind === 'anime' ? 'num_watched_episodes' : 'num_chapters_read'}=${String(Math.max(0, Math.floor(progress)))}`]
 	if (status) parts.push(`status=${status}`)
@@ -182,8 +165,7 @@ interface MalListPage {
 	paging?: { next?: string }
 }
 
-// The whole list, page by page — anime or manga; null when any page fails,
-// so a partial list is never mistaken for a sync.
+// Whole list, page by page; null on any failed page, so partials are not synced.
 export async function fetchMalList(token: string, kind: 'anime' | 'manga' = 'anime'): Promise<MalEntry[] | null> {
 	const out: MalEntry[] = []
 	const countField = kind === 'anime' ? 'num_episodes_watched' : 'num_chapters_read'
@@ -209,9 +191,7 @@ export async function fetchMalList(token: string, kind: 'anime' | 'manga' = 'ani
 	return out
 }
 
-// AniList knows each title's MAL id, so it maps ids both ways: AniList ids to
-// MyAnimeList ones, or back. Public query, 50 ids per page. Titles the other
-// site does not list are simply missing.
+// AniList knows MAL ids, so ids map both ways (50 per page).
 async function mapIds(ids: number[], from: 'id' | 'idMal', type: 'ANIME' | 'MANGA'): Promise<Map<number, number> | null> {
 	const out = new Map<number, number>()
 	for (let i = 0; i < ids.length; i += 50) {
@@ -241,7 +221,6 @@ async function mapIds(ids: number[], from: 'id' | 'idMal', type: 'ANIME' | 'MANG
 	return out
 }
 
-// Anime ids: the existing call sites keep their old arguments.
 export function malIdsFor(anilistIds: number[]): Promise<Map<number, number> | null> {
 	return mapIds(anilistIds, 'id', 'ANIME')
 }
@@ -250,7 +229,6 @@ export function anilistIdsFor(malIds: number[]): Promise<Map<number, number> | n
 	return mapIds(malIds, 'idMal', 'ANIME')
 }
 
-// Manga ids: same GraphQL trick, type MANGA.
 export function malMangaIdsFor(anilistIds: number[]): Promise<Map<number, number> | null> {
 	return mapIds(anilistIds, 'id', 'MANGA')
 }
@@ -259,8 +237,7 @@ export function anilistMangaIdsFor(malIds: number[]): Promise<Map<number, number
 	return mapIds(malIds, 'idMal', 'MANGA')
 }
 
-// The id an anime note was added under: AniList's, or MyAnimeList's for a
-// note found there ("mal:" ids). Null for anything else.
+// The id an anime note was added under: AniList's, or MyAnimeList's (`mal:`).
 export function animeIds(sourceId: string): { anilist: number | null; mal: number | null } | null {
 	const fromMal = sourceId.startsWith(MalProvider.PREFIX)
 	const id = Number(fromMal ? sourceId.slice(MalProvider.PREFIX.length) : sourceId)
@@ -268,7 +245,7 @@ export function animeIds(sourceId: string): { anilist: number | null; mal: numbe
 	return fromMal ? { anilist: null, mal: id } : { anilist: id, mal: null }
 }
 
-// Same for manga notes, whose Source ID is "manga:" + AniList id.
+// Same for manga notes: Source ID is `manga:` + AniList id.
 export function mangaIds(sourceId: string): { anilist: number | null; mal: number | null } | null {
 	const id = Number(sourceId.startsWith(MangaProvider.PREFIX) ? sourceId.slice(MangaProvider.PREFIX.length) : sourceId)
 	if (!Number.isSafeInteger(id) || id <= 0) return null

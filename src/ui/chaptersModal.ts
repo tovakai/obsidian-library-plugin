@@ -1,7 +1,6 @@
 import { App, Modal, Setting } from 'obsidian'
 import { tr } from '../i18n'
 
-// Chapters for a book with no table of contents: a count, or one title per line.
 export class ChaptersModal extends Modal {
 	private onSubmit: (chapters: string[] | number) => void
 

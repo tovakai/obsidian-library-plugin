@@ -27,9 +27,7 @@ export function parseWatched(val: unknown): number {
 	return match ? Number(match[1]) : 0
 }
 
-// The note has been marked by hand since the last sync wrote or received
-// it: their progress and rating stay, the list may only fill what the note
-// leaves empty (an empty Progress means no opinion).
+// Hand-edited since the echo last wrote it; empty Progress means no opinion.
 export function editedSince(echo: { p: string; r: number } | undefined, progress: string, score: number): boolean {
 	if (!echo || !progress.trim()) return false
 	return parseWatched(echo.p) !== parseWatched(progress) || echo.r !== score
@@ -46,7 +44,7 @@ export function parseDate(val: unknown): number {
 	return Number.isNaN(timestamp) ? 0 : timestamp
 }
 
-// An ISO date ("2025-08-01T22:01:09Z") as the plugin writes dates, in local time.
+// ISO → the note's dd.mm.yyyy, local time.
 export function dmyOf(iso: string): string {
 	const date = new Date(iso)
 	if (Number.isNaN(date.getTime())) return ''
@@ -55,9 +53,7 @@ export function dmyOf(iso: string): string {
 	return `${dd}.${mm}.${String(date.getFullYear())}`
 }
 
-// A release date as the plugin writes dates, from "2020-11-17", Wikidata's
-// "+2020-11-17T00:00:00Z" or Steam's "17 Nov, 2020"; '' when the value has no
-// day in it ("2020", "Q4 2020", "Coming soon").
+// '' when the source date has no day in it ("2020", "Q4 2020", "Coming soon").
 export function releasedDmy(value: string | null | undefined): string {
 	const raw = (value ?? '').trim()
 	const iso = raw.match(/^\+?(\d{4})-(\d{2})-(\d{2})/)
@@ -74,8 +70,7 @@ export function todayDmy(): string {
 	return `${dd}.${mm}.${now.getFullYear()}`
 }
 
-// Most file systems cap one name at 255 bytes, and a Cyrillic or CJK title
-// takes two or three bytes per character; the rest is headroom for " (2).md".
+// 255-byte FS cap; 2–3 bytes per Cyrillic/CJK char, rest headroom for " (2).md".
 const MAX_FILENAME_BYTES = 200
 
 function truncateBytes(value: string, max: number): string {
@@ -90,16 +85,14 @@ function truncateBytes(value: string, max: number): string {
 	return out
 }
 
-// A leading dot would hide the note from Obsidian (".hack//Sign"), and
-// trailing dots or spaces are invalid on Windows.
+// Leading dot hides a note in Obsidian; trailing dots/spaces invalid on Windows.
 export function sanitizeFilename(name: string): string {
 	const cleaned = name.replace(/[\\/:*?"<>|#^[\]]/g, '').replace(/\s+/g, ' ').trim()
 	const trimmed = truncateBytes(cleaned.replace(/^\.+/, ''), MAX_FILENAME_BYTES)
 	return trimmed.replace(/[. ]+$/, '').trim() || 'Untitled'
 }
 
-// Frontmatter is user data: only web links may become clickable or loadable,
-// never `javascript:` or another scheme that would run inside the app.
+// Untrusted frontmatter: http(s) only, never `javascript:` or another scheme.
 export function safeUrl(value: unknown): string | null {
 	const url = toStr(value).trim()
 	return /^https?:\/\/\S/i.test(url) ? url : null
@@ -117,8 +110,7 @@ export function isEmptyValue(val: unknown): boolean {
 	return val == null || val === '' || (Array.isArray(val) && val.length === 0)
 }
 
-// Properties that never make a top: unique per note, measurements, or the
-// plugin's own bookkeeping. Compared in lower case.
+// Never a top: per-note unique, measurements, plugin bookkeeping. Lower case.
 const UNRANKED = new Set([
 	'name', 'url', 'cover', 'image', 'baner', 'gallery', 'trailer', 'seasons', 'source', 'source id',
 	'date', 'progress', 'related', 'type', 'isbn', 'aliases', 'cssclasses', 'runtime', 'season',
@@ -126,8 +118,6 @@ const UNRANKED = new Set([
 	'rating anilist'
 ])
 
-// The properties a set of notes uses that can be ranked — once each, since
-// "genre" and "Genre" are the same property to the reader.
 export function rankableProperties(frontmatters: Record<string, unknown>[], coverProperty: string): string[] {
 	const found = new Map<string, string>()
 	for (const fm of frontmatters) {
@@ -140,21 +130,19 @@ export function rankableProperties(frontmatters: Record<string, unknown>[], cove
 	return [...found.values()].sort((a, b) => a.localeCompare(b))
 }
 
-// Every value a note holds under a property, whatever the key's case.
 export function propertyValues(fm: Record<string, unknown>, property: string): string[] {
 	const lower = property.toLowerCase()
 	const values: string[] = []
 	for (const [key, value] of Object.entries(fm)) {
 		if (key.trim().toLowerCase() !== lower) continue
-		// A number is a value too: "Top: Year" counts 2014 like any genre.
+		// Numbers count too ("Top: Year"): toStrArray would drop them.
 		const list = typeof value === 'number' && Number.isFinite(value) ? [String(value)] : toStrArray(value)
 		values.push(...list.map(linkLabel))
 	}
 	return values
 }
 
-// A medium's own word for its top: "Top movies" reads, "Top Movies" does not
-// in a language that declines the name ("Топ фильмов", not "Топ Фильмы").
+// A medium's own word for its top: declined languages need "Топ фильмов", not "Топ Фильмы".
 const MEDIUM_TOPS: Partial<Record<ContentType, string>> = {
 	movie: 'stats.topOf.movie',
 	series: 'stats.topOf.series',
@@ -165,9 +153,7 @@ const MEDIUM_TOPS: Partial<Record<ContentType, string>> = {
 	anime: 'stats.topOf.anime'
 }
 
-// A statistics column's heading: "Top genres", "Top movies", or "Top: Author"
-// for anything without a word of its own — another property, a manual
-// category, or two categories of one medium that the word could not tell apart.
+// Medium word only when unambiguous; else "Top: <name>".
 export function topLabel(top: IStatsTop, categories: ICategory[]): string {
 	if (top.kind === 'platform') return tr('stats.psn')
 	if (top.kind === 'property') {
@@ -185,7 +171,7 @@ export function topLabel(top: IStatsTop, categories: ICategory[]): string {
 	return word && !shared ? tr(word) : tr('stats.topNamed', { name: category.name || category.typeValue })
 }
 
-// OMDb returns "148 min"; TMDB returns a plain number of minutes.
+// OMDb "148 min"; TMDB a plain number.
 export function runtimeMinutes(val: unknown): number | null {
 	if (typeof val === 'number') {
 		return Number.isFinite(val) && val > 0 ? Math.round(val) : null
@@ -194,9 +180,7 @@ export function runtimeMinutes(val: unknown): number | null {
 	return match ? Number(match[1]) : null
 }
 
-// OMDb carries junk per-episode runtimes for a few series ("1 min" on The
-// Sandman); anything under the floor counts as missing so the value neither
-// shadows the better source nor sticks in an existing note.
+// OMDb junk runtimes ("1 min"): below = missing, so a bad value never sticks.
 export const MIN_RUNTIME_MINUTES = 5
 
 export function plausibleRuntime(val: unknown): number | null {
@@ -204,8 +188,7 @@ export function plausibleRuntime(val: unknown): number | null {
 	return minutes !== null && minutes >= MIN_RUNTIME_MINUTES ? minutes : null
 }
 
-// Episode counts live in two places: the Progress denominator the user keeps up
-// to date, and the season list the enrichment writes. Progress wins.
+// Progress denominator wins over the season list the enrichment writes.
 function progressEpisodes(fm: Record<string, unknown>): { watched: number; total: number } {
 	const match = toStr(fm.Progress).match(progressPattern)
 	if (match) return { watched: Number(match[1]), total: Number(match[2]) }
@@ -220,9 +203,6 @@ function isComplete(fm: Record<string, unknown>): boolean {
 	return fm.Complete === true || toStr(fm.Complete) === 'true'
 }
 
-// How a medium keeps track of a title: series, anime and books by their
-// progress alone, movies by the Complete switch alone (watched or not), every
-// other medium by both, as before.
 export type Tracking = 'progress' | 'watched' | 'both'
 
 export function trackingOf(kind: ContentType | undefined): Tracking {
@@ -230,9 +210,6 @@ export function trackingOf(kind: ContentType | undefined): Tracking {
 	return kind === 'movie' ? 'watched' : 'both'
 }
 
-// Done with a title. Series, anime and books are done once every episode,
-// chapter or page counts as seen; a note without a total to count against
-// keeps the Complete it had. Every other medium is done by its Complete switch.
 export function isFinished(fm: Record<string, unknown>, kind?: ContentType): boolean {
 	if (trackingOf(kind) !== 'progress') return isComplete(fm)
 	const match = toStr(fm.Progress).match(progressPattern)
@@ -240,18 +217,12 @@ export function isFinished(fm: Record<string, unknown>, kind?: ContentType): boo
 	return total > 0 ? Number(match?.[1]) >= total : isComplete(fm)
 }
 
-// A title that will not grow: a series with an End Year, a finished anime,
-// and any book. The sources give the full episode total, so an anime with
-// every episode watched is done — no status text is kept in the note.
 export function hasEnded(fm: Record<string, unknown>, kind?: ContentType): boolean {
 	if (kind === 'book' || toStr(fm['End Year']).trim()) return true
 	return kind === 'anime' && isFinished(fm, 'anime')
 }
 
-// The share of a title to show as progress, or null for none. Movies never
-// show one. Series, anime and books hide it once a title that will not grow is
-// done; a running series at 100% keeps it, more episodes may come. Every other
-// medium hides it once Complete is on. Nothing done yet shows nothing.
+// Null for movies; hidden when a title that won't grow is done, or Complete is on for other media.
 export function shownProgress(fm: Record<string, unknown>, kind?: ContentType): number | null {
 	const tracking = trackingOf(kind)
 	if (tracking === 'watched') return null
@@ -261,32 +232,26 @@ export function shownProgress(fm: Record<string, unknown>, kind?: ContentType): 
 	return isFinished(fm, kind) && hasEnded(fm, kind) ? null : percent
 }
 
-// Nothing of it done yet: not done, nothing watched, read or played, and
-// no rating of one's own, since a rated title was seen whether ticked or not.
+// A rated title counts as seen, ticked or not.
 export function notStarted(fm: Record<string, unknown>, kind?: ContentType): boolean {
 	if (isFinished(fm, kind) || parseWatched(fm.Progress) > 0) return false
-	// A game with hours on the clock was played, trophies or not.
 	if (Number(fm.Playtime) > 0) return false
 	const rating = fm['My Rating'] ?? fm.Rating
 	return rating === null || rating === undefined || toStr(rating).trim() === ''
 }
 
-// A series keeps the length of one episode in `Runtime`; the note shows the
-// whole run. A movie has no Progress and an album keeps its whole length, so
-// both stay as they are.
+// Series store one episode's length in Runtime; the note shows the whole run.
 export function totalRuntimeMinutes(fm: Record<string, unknown>, perEpisode: number, kind?: ContentType): number {
 	if (perEpisode <= 0) return 0
 	const { total } = progressEpisodes(fm)
 	return total > 1 && kind !== 'music' ? perEpisode * total : perEpisode
 }
 
-// The time actually spent: watched episodes at the per-episode length, the
-// whole run once the title is done. 0 when the length is unknown.
 export function watchedRuntimeMinutes(fm: Record<string, unknown>, kind?: ContentType): number {
 	const perEpisode = runtimeMinutes(fm.Runtime)
 	if (perEpisode === null) return 0
 	const { watched, total } = progressEpisodes(fm)
-	// An album's Runtime is the whole album: the share of tracks played counts.
+	// Album Runtime is the whole album: the played track share counts.
 	if (kind === 'music') {
 		if (isFinished(fm, kind)) return perEpisode
 		return total > 0 ? Math.round(perEpisode * Math.min(1, watched / total)) : 0
@@ -295,8 +260,6 @@ export function watchedRuntimeMinutes(fm: Record<string, unknown>, kind?: Conten
 	return perEpisode * watched
 }
 
-// The time a title took: a game's Playtime in hours, or the watched or
-// listened runtime of everything else.
 export function spentMinutes(fm: Record<string, unknown>, kind?: ContentType): number {
 	if (kind === 'game') {
 		const hours = Number(fm.Playtime)
@@ -305,9 +268,6 @@ export function spentMinutes(fm: Record<string, unknown>, kind?: ContentType): n
 	return watchedRuntimeMinutes(fm, kind)
 }
 
-// Time in the units a person would say it in, the larger two at most:
-// 45 min, 5 h 20 min, 12 d 5 h, 4 mo 12 d, 2 y 3 mo. Unit names come from
-// the platform in the reader's language, short form.
 export function spentTime(totalMinutes: number): string {
 	const minutes = Math.round(totalMinutes)
 	const HOUR = 60
@@ -325,8 +285,6 @@ export function spentTime(totalMinutes: number): string {
 	return pair(Math.floor(minutes / YEAR), 'year', Math.floor((minutes % YEAR) / MONTH), 'month')
 }
 
-// Minutes alone stop reading once a whole series run is summed up: 2907 becomes
-// 48 h 27 min. Whole hours drop the minutes part, anything under an hour stays.
 export function runtimeParts(totalMinutes: number): string[] {
 	const hours = Math.floor(totalMinutes / 60)
 	const minutes = totalMinutes % 60
@@ -346,8 +304,7 @@ export function toStrArray(val: unknown): string[] {
 	return []
 }
 
-// Sources title their hits their own way ("Dune (2021)", "Дюна"); compare
-// loosely so a hand-made note can be matched against a search result.
+// Loose match: source titles differ ("Dune (2021)" vs "Дюна").
 export function sameTitle(a: string, b: string): boolean {
 	const left = titleKey(a)
 	return left !== '' && left === titleKey(b)
@@ -361,16 +318,14 @@ function titleKey(value: string): string {
 		.trim()
 }
 
-// "[[Target|Alias]]" shows "Alias", "[[Target]]" shows "Target", plain text
-// stays as is: Genre and Cast hold links, the header and statistics show names.
+// Genre/Cast/Creator hold [[links]]; the UI shows names: [[T|Alias]] → Alias.
 export function linkLabel(value: string): string {
 	const match = value.match(/^\[\[([^\]|]*)(?:\|([^\]]*))?\]\]$/)
 	if (!match) return value
 	return (match[2] ?? match[1] ?? '').trim()
 }
 
-// A property as links, one per distinct entry: a plain name becomes
-// "[[Name]]", a link someone already wrote (alias and all) is kept.
+// Plain names → [[links]]; hand-written links (alias and all) kept.
 export function toLinks(value: unknown): string[] {
 	const links: string[] = []
 	for (const item of toStrArray(value)) {
@@ -381,8 +336,7 @@ export function toLinks(value: unknown): string[] {
 	return links
 }
 
-// A link target is also a note name: a slash would turn "AC/DC" into a folder
-// path, and the other characters are invalid in file names on Windows and mobile.
+// A target is a note name: a slash = folder path, others invalid on Windows/mobile.
 export function sanitizeLink(name: string): string {
 	return name
 		.replace(/[[\]|#^*"<>?:]/g, '')
@@ -405,8 +359,7 @@ export function inferContentType(typeValue: string): ContentType {
 	}
 }
 
-// Reads the cover from the configured frontmatter property, falling back to the
-// names used by earlier versions so notes keep rendering after a property rename.
+// Falls back to older property names, so a rename keeps notes rendering.
 export function coverValue(fm: Record<string, unknown>, property = 'Cover'): unknown {
 	const keys = [property, 'Cover', 'Image', 'Baner']
 	for (const key of keys) {
@@ -421,8 +374,7 @@ export function coverSrc(app: App, raw: unknown): string | null {
 	const value = toStr(raw).trim()
 	if (!value) return null
 	if (/^https?:\/\//i.test(value)) return value
-	// A vault image is a plain path or an internal link the properties panel
-	// writes ("[[poster.jpg]]", "![[poster.jpg|300]]").
+	// Vault image: a path or the properties panel's "[[poster.jpg]]" / "![[...|300]]".
 	const link = value.match(/^!?\[\[([^\]|#]+)/)
 	const path = (link?.[1] ?? value).trim()
 	if (!path) return null
@@ -431,8 +383,7 @@ export function coverSrc(app: App, raw: unknown): string | null {
 	return file ? app.vault.getResourcePath(file) : null
 }
 
-// A search waits this long for each source; one that has not answered by
-// then is left out, so a stalled server cannot hold back the others.
+// Per-source search timeout: a stalled server must not hold back the others.
 export const SEARCH_BUDGET_MS = 4000
 
 export function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -445,14 +396,10 @@ export function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise
 	})
 }
 
-// A game on one more platform: the platform joins Platforms (once), its own
-// hours go to "Playtime <platform>" (Playtime PS5, Playtime Steam), and
-// Playtime becomes the sum over every platform. Only an import adds a
-// platform: a Steam store link alone says where the game is sold, not owned.
+// "Playtime <platform>" holds each platform's hours, Playtime their sum; a store link alone is not ownership.
 export function addPlatform(fm: Record<string, unknown>, platform: string, hours: number | null): void {
 	const perPlatform = (): string[] => Object.keys(fm).filter(key => /^Playtime .+/.test(key))
-	// A game's console is listed once: "PS5" makes a bare "PlayStation" (Sony
-	// names no console for some entries) redundant; its hours still count.
+	// "PS5" makes a bare "PlayStation" entry redundant; its hours still count.
 	const isPlayStation = (value: string): boolean => /^ps\d/i.test(value)
 	let platforms = toStrArray(fm.Platforms)
 	if (isPlayStation(platform)) platforms = platforms.filter(value => value.toLowerCase() !== 'playstation')
@@ -464,8 +411,6 @@ export function addPlatform(fm: Record<string, unknown>, platform: string, hours
 	if (perPlatform().length > 0) fm.Playtime = Math.round(total * 10) / 10
 }
 
-// Takes one platform family off a game before an import writes it afresh:
-// its Platforms entries and its hours. family: a test on a Platforms value.
 export function dropPlatforms(fm: Record<string, unknown>, family: (platform: string) => boolean): void {
 	fm.Platforms = toStrArray(fm.Platforms).filter(value => !family(value))
 	for (const key of Object.keys(fm)) {
@@ -474,7 +419,6 @@ export function dropPlatforms(fm: Record<string, unknown>, family: (platform: st
 	}
 }
 
-// The exact hours behind a converted time, for a tooltip: "1,578.5 hours".
 export function exactHours(totalMinutes: number): string {
 	return formatNumber(Math.round(totalMinutes / 6) / 10, { style: 'unit', unit: 'hour', unitDisplay: 'long', maximumFractionDigits: 1 })
 }

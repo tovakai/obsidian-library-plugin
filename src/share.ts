@@ -68,7 +68,7 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, max
 		}
 	}
 	if (line) lines.push(line)
-	// Ellipsize the last line if words were dropped or it (a single long word) overflows.
+	// Ellipsize the last line when words were dropped or it (one long word) overflows.
 	const i = lines.length - 1
 	if (i >= 0) {
 		let last = lines[i] ?? ''
@@ -86,7 +86,6 @@ export interface ShareText {
 	redditTitle: string
 }
 
-// Ratings from every source, in the order the card prints them (RT stays a %).
 export function shareRatings(fm: Frontmatter): string[] {
 	const ext: string[] = []
 	const imdb = toStr(fm['Rating IMDB']).trim()
@@ -147,9 +146,7 @@ export function shareIntent(network: string, share: ShareText): string {
 	}
 }
 
-// A colour of the open theme, so the card carries the vault's accent; a
-// canvas cannot read CSS variables itself. A colour the canvas cannot parse
-// leaves the fallback in place of an invisible pill.
+// Canvas can't read CSS vars; an unparsable colour keeps the fallback (not an invisible pill).
 function themeColor(ctx: CanvasRenderingContext2D, name: string, fallback: string): string {
 	ctx.fillStyle = fallback
 	const value = getComputedStyle(activeDocument.body).getPropertyValue(name).trim()
@@ -157,7 +154,6 @@ function themeColor(ctx: CanvasRenderingContext2D, name: string, fallback: strin
 	return typeof ctx.fillStyle === 'string' ? ctx.fillStyle : fallback
 }
 
-// Render a shareable landscape card (poster + title + rating) to a PNG blob.
 export async function renderShareCard(app: App, fm: Frontmatter, name: string, coverProperty = 'Cover'): Promise<Blob | null> {
 	const canvas = createEl('canvas')
 	canvas.width = W
@@ -239,8 +235,7 @@ export async function renderShareCard(app: App, fm: Frontmatter, name: string, c
 		})
 	}
 
-	// The top-billed actors, while they still leave room for the ratings line
-	// above the rating pill.
+	// Cast only while it leaves room above the rating pill.
 	const cast = toStrArray(fm.Cast).map(linkLabel).slice(0, 3).join(', ')
 	const pillTop = posterY + POSTER_H - 96
 	if (cast && y + 48 + 48 <= pillTop) {
@@ -286,7 +281,6 @@ export async function renderShareCard(app: App, fm: Frontmatter, name: string, c
 	})
 }
 
-// Copy a PNG blob to the system clipboard. Returns false if unsupported.
 export async function copyImageToClipboard(blob: Blob): Promise<boolean> {
 	const clip = navigator.clipboard
 	if (!clip || typeof ClipboardItem === 'undefined' || typeof clip.write !== 'function') {
@@ -311,7 +305,6 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
 	}
 }
 
-// Save a PNG blob into the vault's attachment folder. Returns the created file.
 export async function saveImageToVault(app: App, blob: Blob, baseName: string): Promise<TFile> {
 	const bytes = await blob.arrayBuffer()
 	const safe = sanitizeFilename(baseName) || 'card'
@@ -325,9 +318,7 @@ export function canNativeShare(): boolean {
 
 type ShareStatus = 'shared' | 'unsupported' | 'failed'
 
-// Share the rendered card via the OS share sheet (Web Share API). The image file
-// is attached directly where the platform supports it (mobile); otherwise falls
-// back to text + link, and reports 'unsupported' if the API is missing (desktop).
+// Web Share API: image where canShare allows it (mobile), else text + link.
 export async function nativeShare(blob: Blob, share: ShareText, baseName: string): Promise<ShareStatus> {
 	const nav = navigator as Navigator & {
 		canShare?: (data: { files?: File[] }) => boolean
@@ -347,7 +338,7 @@ export async function nativeShare(blob: Blob, share: ShareText, baseName: string
 		await nav.share({ text, url: share.url || undefined, title: share.redditTitle })
 		return 'shared'
 	} catch (e) {
-		// AbortError = user dismissed the sheet; treat as handled.
+		// AbortError = dismissed; treat as shared.
 		if (e instanceof DOMException && e.name === 'AbortError') return 'shared'
 		return 'failed'
 	}

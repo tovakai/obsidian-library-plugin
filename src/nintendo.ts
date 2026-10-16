@@ -1,13 +1,8 @@
 import { requestUrl } from 'obsidian'
 
-// Nintendo Switch play activity, the list a user page in the Nintendo Switch
-// app shows: every game played and the time spent on it. Nintendo has no
-// public API for it. The app's own API (Coral) only takes requests the app
-// signed and encrypted with code inside it, so the signing and the
-// encryption go through a third-party signing service that runs that app,
-// under this plugin's own client. The user signs in on Nintendo's page in a
-// window inside Obsidian and is told about the service before that; the
-// plugin keeps only the session token Nintendo hands back.
+// Nintendo Switch play activity. No public API: the app's Coral API takes only
+// requests signed and encrypted by its own code, done through a third-party
+// signing service; only the session token Nintendo returns is kept.
 
 // The Nintendo Switch app's Nintendo Account client.
 const NA_CLIENT = '71b963c1b7b6d119'
@@ -17,13 +12,11 @@ const NA_AUTH = 'https://accounts.nintendo.com/connect/1.0.0'
 const NA_API = 'https://api.accounts.nintendo.com/2.0.0'
 const CORAL = 'https://api-lp1.znc.srv.nintendo.net'
 
-// The signing service and this plugin's public client with it: the id is
-// all it takes.
+// The signing service and this plugin's public client; the id is all it takes.
 const SIGNER_TOKEN = 'https://nxapi-auth.fancy.org.uk/api/oauth/token'
 const SIGNER_CLIENT = 'PWel8OIrEux7ABhjDItZ3g'
 const SIGNER_API = 'https://nxapi-znca-api.fancy.org.uk/api/znca/'
-// The API generation the client was written against: a fixed value the
-// service checks, and it refuses one it does not know.
+// The API generation the client was written against; an unknown one is refused.
 const SIGNER_CLIENT_VERSION = 'd8fAZDPzwimzQ7c6'
 export const SIGNER_PROJECT = 'https://github.com/samuelthomas2774/nxapi-znca-api'
 const USER_AGENT = 'obsidian-library-plugin (+https://github.com/venvk/obsidian-library-plugin)'
@@ -64,7 +57,6 @@ export interface NintendoAuth {
 	verifier: string
 }
 
-// The sign-in page and the PKCE verifier its code is later traded with.
 export async function nintendoAuth(): Promise<NintendoAuth> {
 	const verifier = base64Url(randomBytes(32))
 	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
@@ -81,15 +73,14 @@ export async function nintendoAuth(): Promise<NintendoAuth> {
 	return { url: `${NA_AUTH}/authorize?${params.toString()}`, verifier }
 }
 
-// The code in the address Nintendo sends the window to, from the fragment
-// (npf…://auth#session_token_code=…&state=…), or null for any other address.
+// session_token_code from the npf…://auth fragment.
 export function codeFromRedirect(url: string): string | null {
 	if (!url.startsWith(NINTENDO_REDIRECT)) return null
 	const match = /[?&#]session_token_code=([^&#]+)/.exec(url)
 	return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
-// The session token for the code. Only statuses are logged: bodies carry tokens.
+// The session token for the code. Only statuses are logged; bodies carry tokens.
 async function sessionToken(code: string, verifier: string): Promise<string | null> {
 	const resp = await requestUrl({
 		url: `${NA_AUTH}/api/session_token`,
@@ -145,7 +136,6 @@ async function naUser(access: string): Promise<NaUser | null> {
 	return json.id ? { id: json.id, language: json.language ?? 'en-GB' } : null
 }
 
-// The account a successful sign-in connects: its session token and id.
 export async function exchangeNintendoCode(code: string, verifier: string): Promise<NintendoTokens | null> {
 	try {
 		const session = await sessionToken(code, verifier)
@@ -159,8 +149,7 @@ export async function exchangeNintendoCode(code: string, verifier: string): Prom
 	}
 }
 
-// The signing service: this client's access token, kept for its lifetime as
-// the service's terms ask, and the app version signatures are made for.
+// The signing service's token, kept for its lifetime as the service's terms ask.
 interface Signer {
 	token: string
 	expires: number
@@ -212,9 +201,7 @@ async function signerPost(session: Signer, path: string, body: unknown, accept =
 	return { status: resp.status, text: resp.text }
 }
 
-// A Coral answer: plain JSON for an error Coral raises before decrypting the
-// request, otherwise encrypted, whatever its Content-Type says, and then
-// decrypted by the signing service.
+// Coral answers plain JSON for errors, otherwise encrypted text.
 interface CoralEnvelope<T> {
 	status?: number
 	result?: T
@@ -250,8 +237,7 @@ interface CoralLogin {
 	nsaId: string
 }
 
-// Signs in to the Nintendo Switch app's API as the app does: the signing
-// service signs the request (f) and encrypts it, Coral answers with its own token.
+// The signing service signs (f) and encrypts; Coral answers with its token.
 async function coralLogin(session: Signer, idToken: string, user: NaUser): Promise<CoralLogin | null> {
 	const url = `${CORAL}/v4/Account/Login`
 	const signed = await signerPost(session, 'f', {
@@ -285,8 +271,6 @@ async function coralLogin(session: Signer, idToken: string, user: NaUser): Promi
 	return token && nsaId ? { token, nsaId } : null
 }
 
-// One authenticated Coral call: the JSON body encrypted by the signing
-// service, the answer decrypted by it.
 async function coralCall<T>(session: Signer, login: CoralLogin, path: string, parameter: Record<string, unknown>): Promise<T | null> {
 	const url = CORAL + path
 	const sealed = await signerPost(session, 'encrypt-request', { url, token: login.token, data: JSON.stringify({ parameter }) })
@@ -314,19 +298,17 @@ async function coralCall<T>(session: Signer, login: CoralLogin, path: string, pa
 	return coralAnswer<T>(session, resp, path)
 }
 
-// One game of the user's play activity, as the Nintendo Switch app lists it.
 export interface NintendoPlayedGame {
 	name: string
 	imageUri: string | null
 	shopUri: string | null
-	// As Nintendo reports it; see nintendoPlayLog for the unit.
+	// Minutes played, as Coral reports them.
 	totalPlayTime: number
 	// Epoch seconds, 0 when unknown.
 	firstPlayedAt: number
 }
 
-// The play log lists video and music apps beside the games and marks them in
-// no way, so they are told apart by name.
+// The play log mixes video and music apps in with the games, told apart by name.
 // ponytail: fixed list of the apps the eShop carries, extend when one slips through.
 const MEDIA_APP = /^(youtube|netflix|hulu|twitch|crunchyroll|funimation|disney\+|prime video|amazon prime video|spotify|pluto tv|plex|dazn|abema|niconico|u-next|tubi|vevo)$/i
 
@@ -334,7 +316,6 @@ export function isMediaApp(name: string): boolean {
 	return MEDIA_APP.test(name.replace(/[™®©]/g, '').replace(/\s+/g, ' ').trim())
 }
 
-// The play activity of the connected account; null when any step fails.
 export async function nintendoPlayLog(tokens: NintendoTokens): Promise<NintendoPlayedGame[] | null> {
 	try {
 		const session = await signerSession()
@@ -357,4 +338,10 @@ export async function nintendoPlayLog(tokens: NintendoTokens): Promise<NintendoP
 		console.error('Library: Nintendo play activity error', e)
 		return null
 	}
+}
+
+export interface NintendoStats {
+	games: number
+	minutes: number
+	updated: number
 }

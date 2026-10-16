@@ -1,29 +1,9 @@
-// Seasons and episodes of a series or anime note, with what the user has
-// watched and rated. All of it lives in the `Seasons` frontmatter list:
-//
-//   Seasons:
-//     - name: Season 1
-//       episodes: 8              # the episode count (from the source)
-//       rating: 8.1              # the source's season rating
-//       trailer: https://…
-//       my_rating: 9             # the user's season rating, when no episode is rated
-//       episode_list:
-//         - title: Chapter One   # from the source, when it has titles
-//           watched: true
-//           my_rating: 8
-//
-// Until the user ticks anything, the first N episodes count as watched, N
-// being the Progress numerator, so notes from earlier versions keep their
-// progress. The first tick writes every episode's state out.
-//
-// A book keeps its chapters the same way, as one flat `Chapters` list of
-// `{title, watched, my_rating}`; once a book has chapters its Progress counts
-// chapters, not pages.
-//
+// All state lives in the `Seasons` frontmatter list: `{name, episodes, rating, trailer, my_rating,
+// episode_list: [{title, watched, my_rating}]}`; a book keeps the same entries flat in `Chapters`.
+// Before any tick, the first N episodes (N = Progress numerator) count watched; the first tick writes them all.
 // No obsidian import: the logic is unit-tested on plain objects.
 
-// series: `Seasons`; anime: `Seasons`, or one season from Progress;
-// book: the flat `Chapters` list as a single season.
+// series/anime: `Seasons`; book: flat `Chapters` as one season.
 export type TrackKind = 'series' | 'anime' | 'book'
 
 export interface EpisodeState {
@@ -34,17 +14,12 @@ export interface EpisodeState {
 
 export interface SeasonState {
 	name: string
-	// The source's season rating.
 	sourceRating: number | null
 	trailer: string | null
-	// The user's own season rating, used when no episode is rated.
 	manualRating: number | null
 	episodes: EpisodeState[]
-	// Average of the rated episodes, else the manual rating.
 	rating: number | null
-	// Every episode ticked (and there is at least one).
 	watched: boolean
-	// Rated through its episodes, so the season rating is not typed by hand.
 	ratedByEpisodes: boolean
 }
 
@@ -64,7 +39,7 @@ function text(value: unknown): string {
 	return ''
 }
 
-// A 0–10 score, or null for anything else (blank, 0, junk).
+// 0–10, or null (blank, 0, junk).
 function score(value: unknown): number | null {
 	const n = typeof value === 'number' ? value : Number(text(value))
 	return Number.isFinite(n) && n > 0 ? Math.min(10, n) : null
@@ -99,7 +74,7 @@ function rawEpisodes(season: Record<string, unknown>): Record<string, unknown>[]
 	return list.map((entry) => record(entry) ?? {})
 }
 
-// The user has ticked episodes before: the ticks, not Progress, say what is watched.
+// Ticks exist: they, not Progress, say what is watched.
 function tracked(seasons: Record<string, unknown>[]): boolean {
 	return seasons.some((season) => rawEpisodes(season).some((episode) => typeof episode.watched === 'boolean'))
 }
@@ -110,16 +85,14 @@ function countOf(season: Record<string, unknown>): number {
 	return Math.max(count, rawEpisodes(season).length)
 }
 
-// The seasons to show. An anime note has no season list — one AniList entry
-// is one season — so its Progress total stands in as a single season.
+// Anime: one AniList entry = one season, so the Progress total stands in.
 export function seasonsOf(fm: Record<string, unknown>, kind: TrackKind = 'series'): SeasonState[] {
 	let seasons = rawSeasons(fm, kind)
 	const progress = progressOf(fm)
 	if (seasons.length === 0 && kind === 'anime' && progress.total > 0) seasons = [{ name: 'Season 1', episodes: progress.total }]
 	const ticks = tracked(seasons)
 	const complete = fm.Complete === true || text(fm.Complete) === 'true'
-	// Untracked: the first `watched` episodes in order count as seen. A book
-	// whose Progress still counts pages reads that share of its chapters.
+	// Untracked: first N episodes count as seen; a book's page Progress maps to that share of chapters.
 	let remaining = complete ? Number.POSITIVE_INFINITY : progress.watched
 	const count = seasons.reduce((sum, season) => sum + countOf(season), 0)
 	if (kind === 'book' && !complete && progress.total > 0 && progress.total !== count) {
@@ -157,10 +130,8 @@ export function seasonsOf(fm: Record<string, unknown>, kind: TrackKind = 'series
 	return out
 }
 
-// Writes the seasons back into the note: every episode's tick and rating,
-// Progress from the ticks, My Rating from the seasons. Series, anime and books
-// are done when their progress is full, so a Complete switch goes. Keys the
-// plugin does not know stay as they are.
+// Writes ticks + ratings back, Progress from ticks, My Rating from seasons; Complete is dropped.
+// Seasons and episodes the plugin does not know keep their other keys.
 function writeBack(fm: Record<string, unknown>, states: SeasonState[], kind: TrackKind = 'series'): void {
 	const raw = rawSeasons(fm, kind)
 	const seasons = states.map((state, index) => {
@@ -186,9 +157,7 @@ function writeBack(fm: Record<string, unknown>, states: SeasonState[], kind: Tra
 	const total = episodes.length
 	const watched = episodes.filter((e) => e.watched).length
 	if (total > 0) {
-		// A book's old total counted pages; its chapters are the whole now.
-		// Every listed episode ticked is the whole too, even when the source
-		// counted more: the progress reaches 100% and the title is done.
+		// Book total = chapters; all episodes ticked = 100%, even when the source counted more.
 		const recorded = kind === 'book' || watched === total ? total : Math.max(total, progressOf(fm).total)
 		fm.Progress = `${String(watched)}/${String(recorded)}`
 		delete fm.Complete
@@ -204,8 +173,6 @@ function recompute(state: SeasonState): void {
 	state.watched = state.episodes.length > 0 && state.episodes.every((e) => e.watched)
 }
 
-// A tick or a rating on a season or one of its episodes. A season tick ticks
-// (or clears) all of its episodes.
 export function applyEpisodeChange(fm: Record<string, unknown>, change: EpisodeChange, kind: TrackKind = 'series'): void {
 	const states = seasonsOf(fm, kind)
 	const season = states[change.season]
@@ -224,9 +191,7 @@ export function applyEpisodeChange(fm: Record<string, unknown>, change: EpisodeC
 	writeBack(fm, states, kind)
 }
 
-// Progress moved ahead from elsewhere (AniList pull, a Complete from before 2.4.1):
-// tick the episodes up to it, never untick. Nothing to do while the note
-// still counts watched episodes from Progress alone.
+// Progress advanced elsewhere (AniList pull, pre-2.4.1 Complete): tick up to it, never untick.
 export function followProgress(fm: Record<string, unknown>, kind: TrackKind = 'series'): void {
 	const seasons = rawSeasons(fm, kind)
 	if (!tracked(seasons)) return
@@ -247,8 +212,7 @@ export function followProgress(fm: Record<string, unknown>, kind: TrackKind = 's
 	writeBack(fm, states, kind)
 }
 
-// A book gets its chapters: titles from a table of contents or typed by
-// hand, or a plain count. The share of pages read so far carries over.
+// Titles from a table of contents or typed by hand, or a plain count; pages read carry over as the same share.
 export function setChapters(fm: Record<string, unknown>, chapters: string[] | number): void {
 	const titles = typeof chapters === 'number' ? Array.from({ length: Math.max(0, Math.floor(chapters)) }, () => '') : chapters
 	if (titles.length === 0) return
@@ -266,9 +230,7 @@ export function hasChapters(fm: Record<string, unknown>): boolean {
 	return Array.isArray(fm.Chapters) && (fm.Chapters as unknown[]).length > 0
 }
 
-// A refresh brings the source's season list. New seasons and episodes (a
-// running show) are added, titles fill in, and the user's ticks, ratings and
-// hand-typed names stay.
+// Refresh merge: new seasons/episodes arrive, titles fill in; ticks, ratings and typed names stay.
 export function mergeSeasons(existing: unknown, fetched: unknown): unknown[] {
 	const old = Array.isArray(existing) ? (existing as unknown[]) : []
 	const fresh = Array.isArray(fetched) ? (fetched as unknown[]) : []

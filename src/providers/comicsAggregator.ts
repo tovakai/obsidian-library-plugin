@@ -2,13 +2,11 @@ import { MangaProvider } from './manga'
 import { SEARCH_BUDGET_MS, within } from '../util'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
 
-// Japanese kana and kanji, and Korean hangul: a query in them names a manga
-// or a manhwa.
+// Kana, kanji, hangul: such a query names a manga or manhwa.
 const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/
 
-// Comics search: Comic Vine first when there is a key, then Wikidata for
-// western comics and AniList for manga. The id says the source: Wikidata's
-// are Q-numbers, AniList's carry "manga:", Comic Vine's are bare numbers.
+// Comic Vine first when there is a key, then Wikidata, then AniList. Source ID
+// says which: Q-number = Wikidata, `manga:` = AniList, bare number = Comic Vine.
 export class ComicsAggregatorProvider implements ContentProvider {
 	readonly id = 'comics'
 	readonly contentTypes: ContentType[] = ['comic']

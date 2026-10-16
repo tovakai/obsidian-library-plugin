@@ -2,12 +2,7 @@ import { MalProvider } from './mal'
 import { SEARCH_BUDGET_MS, isEmptyValue, within } from '../util'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
 
-// Anime search: MyAnimeList first once its Client ID is set, as every keyed
-// source comes first, then AniList, which needs no key. A title both list
-// stays once, as MyAnimeList's entry. The id says where a note came from:
-// "mal:" for MyAnimeList, a bare number for AniList. Both kinds keep
-// `Source: anilist` (this provider's id), so the sync and the
-// recommendations still find every anime note.
+// MAL first with a Client ID, then AniList; deduped by idMal. Source stays anilist.
 export class AnimeAggregatorProvider implements ContentProvider {
 	readonly id = 'anilist'
 	readonly contentTypes: ContentType[] = ['anime']
@@ -25,7 +20,6 @@ export class AnimeAggregatorProvider implements ContentProvider {
 			within(this.mal.search(query), SEARCH_BUDGET_MS, []),
 			within(this.anilist.search(query, type), SEARCH_BUDGET_MS, [])
 		])
-		// AniList knows each title's MyAnimeList id.
 		const listed = new Set(fromMal.map(result => result.sourceId))
 		const unlisted = fromAniList.filter((result) => {
 			const idMal = (result.raw as { idMal?: number | null } | null)?.idMal
@@ -40,8 +34,7 @@ export class AnimeAggregatorProvider implements ContentProvider {
 
 	async fetch(sourceId: string, type: ContentType, raw?: unknown): Promise<NormalizedMetadata | null> {
 		if (!sourceId.startsWith(MalProvider.PREFIX)) return this.anilist.fetch(sourceId, type, raw)
-		// MyAnimeList has no trailers or stills: AniList's entry for the same
-		// title fills them, and anything else MyAnimeList left out.
+		// MyAnimeList has no trailers or stills; AniList fills them and the rest.
 		const [own, extra] = await Promise.all([this.mal.fetch(sourceId), this.anilist.fetch(sourceId, type)])
 		if (!own) return null
 		for (const [key, value] of Object.entries(extra?.fields ?? {})) {

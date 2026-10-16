@@ -18,10 +18,8 @@ interface MalAnime {
 const SEARCH_FIELDS = 'alternative_titles,start_date'
 const DETAIL_FIELDS = 'alternative_titles,start_date,mean,num_episodes,average_episode_duration,genres,studios'
 
-// Anime from the MyAnimeList API, for notes kept on that site. Public data
-// needs only the Client ID the MyAnimeList sync already asks for; without it
-// the provider stays silent. Its notes carry "mal:" ids, so a refresh comes
-// back here and the sync uses the id as is.
+// MyAnimeList anime; needs only the Client ID, silent without it. Notes carry
+// `mal:` ids and refresh back here.
 export class MalProvider implements ContentProvider {
 	readonly id = 'mal'
 	readonly contentTypes: ContentType[] = ['anime']
@@ -51,12 +49,11 @@ export class MalProvider implements ContentProvider {
 			headers: { 'X-MAL-CLIENT-ID': clientId, Accept: 'application/json' },
 			throw: false
 		})
-		// A failed request may answer with an HTML page: only a 200 is read as JSON.
+		// A failed request may answer with HTML; only 200 is JSON.
 		return resp.status === 200 ? resp.json as T : null
 	}
 
-	// The English title first, as AniList's notes have it; MyAnimeList's own
-	// title is the romaji one.
+	// English title first, like AniList notes.
 	private title(anime: MalAnime): string {
 		return anime.alternative_titles?.en || anime.title
 	}
@@ -96,7 +93,7 @@ export class MalProvider implements ContentProvider {
 				URL: `https://myanimelist.net/anime/${id}`
 			}
 			if (typeof anime.mean === 'number') fields['Rating MAL'] = anime.mean
-			// MyAnimeList gives seconds; `Runtime` keeps the minutes of one episode.
+			// MyAnimeList gives seconds; `Runtime` keeps one episode's minutes.
 			const seconds = anime.average_episode_duration ?? 0
 			if (seconds > 0) fields.Runtime = Math.round(seconds / 60)
 			const episodes = anime.num_episodes && anime.num_episodes > 0 ? anime.num_episodes : null
@@ -108,8 +105,7 @@ export class MalProvider implements ContentProvider {
 	}
 }
 
-// "2006-10-04", "2006-10" or "2006", read as written: `new Date` takes it for
-// UTC midnight and gives the year before west of Greenwich.
+// Read as written: `new Date` would give the previous year west of Greenwich.
 export function yearOf(date: string | undefined): number | null {
 	const match = date?.match(/^(\d{4})/)
 	return match ? Number(match[1]) : null

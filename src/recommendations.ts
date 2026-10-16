@@ -4,20 +4,14 @@ import { SteamProvider } from './providers/steam'
 import type { ContentType } from './providers/types'
 import { claim, entities, itemIds, languages, searchItems, textIn, yearIn } from './providers/wikidata'
 
-// Titles similar to a note's, from whichever source can say so:
-// AniList's user recommendations for anime, TMDB's for movies and series (with
-// a key; without one, Cinemeta's best titles of the same genres), the store's own
-// tag-based list for games from Steam (no key needed), then RAWG's same-series and
-// same-genre games (with a key; without one, Wikidata's), Open Library's
-// most read works of the book's subject. Comics and music have no such data.
+// Similar titles per source: AniList (anime), TMDB→Cinemeta (film), Steam→RAWG→Wikidata (games), Open Library (books); no comics/music.
 
 export interface Recommendation {
 	title: string
 	year: number | null
 	cover: string | null
-	// The category kind the title would be added to.
 	type: ContentType
-	// Id for that kind's provider; a function when one more lookup is needed.
+	// Provider id, or a lazy lookup where one more call is needed.
 	sourceId: string | (() => Promise<string | null>)
 }
 
@@ -65,10 +59,7 @@ function yearOf(date: string | null | undefined): number | null {
 	return match ? Number(match[1]) : null
 }
 
-// `name` and `genres` (the note's genre labels) help where the source needs
-// a search or ranks by subject.
-// `series` tells a series note from a movie one. Titles whose id is in `known`
-// (already in the library) are left out.
+// `known` holds library ids; those titles are left out.
 export async function recommendationsFor(source: string, sourceId: string, name: string, genres: string[], keys: RecommendationKeys, series = false, known: Set<string> = new Set()): Promise<Recommendation[]> {
 	const recs = await pick(source, sourceId, name, genres, keys, series)
 	return recs.filter(r => typeof r.sourceId !== 'string' || !known.has(r.sourceId))
@@ -95,8 +86,7 @@ async function pick(source: string, sourceId: string, name: string, genres: stri
 	}
 }
 
-// A note added from MyAnimeList ("mal:" id) is found on AniList by that id,
-// and gets its suggestions as MyAnimeList titles where they have one.
+// "mal:" ids resolve via idMal; suggestions keep mal: ids where they have one.
 async function anilist(sourceId: string): Promise<Recommendation[]> {
 	const fromMal = sourceId.startsWith(MalProvider.PREFIX)
 	const id = Number(fromMal ? sourceId.slice(MalProvider.PREFIX.length) : sourceId)
@@ -138,7 +128,7 @@ async function tmdb(imdbId: string, key: string): Promise<Recommendation[]> {
 		year: yearOf(item.release_date ?? item.first_air_date),
 		cover: item.poster_path ? TMDB_IMG + item.poster_path : null,
 		type: kind === 'movie' ? 'movie' : 'series',
-		// Notes are keyed by IMDb id; TMDB gives it on request.
+		// Notes are keyed by IMDb id: TMDB gives it on a second call.
 		sourceId: async () => {
 			const ids = await getJson<{ imdb_id?: string | null }>(`${TMDB}/${kind}/${String(item.id)}/external_ids?${q}`)
 			return ids?.imdb_id ?? null
@@ -150,8 +140,6 @@ const CINEMETA = 'https://v3-cinemeta.strem.io'
 
 type CinemetaItem = { imdb_id?: string; id?: string; name?: string; poster?: string; year?: string; releaseInfo?: string; imdbRating?: string; genre?: string[] }
 
-// Without a TMDB key: the most popular and the best rated titles of the note's
-// first genre, ranked by how many of its genres they share, then by rating.
 async function cinemeta(imdbId: string, genres: string[], series: boolean): Promise<Recommendation[]> {
 	const genre = genres[0]
 	if (!genre) return []
@@ -185,7 +173,7 @@ type RawgGame = { id: number; name: string; released?: string | null; background
 async function rawg(sourceId: string, name: string, genre: string, key: string): Promise<Recommendation[]> {
 	const q = `key=${encodeURIComponent(key)}`
 	let id = sourceId
-	// Steam games are known to RAWG under their own id; the name finds it.
+	// RAWG knows Steam games by its own id: the name finds it.
 	if (id.startsWith('steam:')) {
 		const hit = name ? await getJson<{ results?: RawgGame[] }>(`${RAWG}/games?${q}&page_size=1&search=${encodeURIComponent(name)}`) : null
 		const found = hit?.results?.[0]
@@ -208,8 +196,6 @@ async function rawg(sourceId: string, name: string, genre: string, key: string):
 	}))
 }
 
-// The store's own "more like this": the titles whose player tags overlap the
-// note's, in the store's order, with the store's capsules as covers.
 async function steamSimilar(appId: string, ownName: string): Promise<Recommendation[]> {
 	const html = await getText(`${STEAM_MORE}/${encodeURIComponent(appId)}/?l=english`)
 	if (!html) return []
@@ -240,9 +226,7 @@ async function steamSimilar(appId: string, ownName: string): Promise<Recommendat
 
 const VIDEO_GAME = 'haswbstatement:P31=Q7889'
 
-// Without a RAWG key: the other games of the series, then well-known Steam
-// games of the same genre, both from Wikidata. The game's own item is found
-// by its Q-number, its Steam app id or, for a RAWG note, its name.
+// Keyless fallback: Wikidata games of the same series, then same genre with a Steam id.
 async function wikidataGames(sourceId: string, name: string): Promise<Recommendation[]> {
 	const item = /^Q\d+$/.test(sourceId) ? sourceId
 		: sourceId.startsWith(SteamProvider.PREFIX)
@@ -275,12 +259,11 @@ async function wikidataGames(sourceId: string, name: string): Promise<Recommenda
 	})
 }
 
-// Library bookkeeping Open Library files as subjects, not what a book is about.
+// Open Library files these as subjects; they say nothing about the book.
 const SHELF_SUBJECT = /^(accessible book|protected daisy|in library|large type|lending library|open library|overdrive|reading level)|:/i
 const LATIN = /^[\x20-\x7e]+$/
 
-// The most read books sharing the note's first two genres (a single subject
-// is too broad), else the work's first two real subjects.
+// First two genres (one is too broad), else the work's own subjects.
 async function openLibrary(sourceId: string, name: string, genres: string[]): Promise<Recommendation[]> {
 	let subjects = genres.filter(g => LATIN.test(g)).slice(0, 2)
 	if (subjects.length === 0 && sourceId.startsWith('/works/')) {

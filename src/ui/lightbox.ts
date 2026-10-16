@@ -1,7 +1,3 @@
-// Shows a gallery still the way the browser did — one picture, large, on a
-// near-black backdrop — but as a plain overlay inside Obsidian, with no modal
-// chrome: the arrow keys flip through the rest of the gallery, Escape or a
-// click anywhere brings the note back.
 export class Lightbox {
 	private caption: string
 	private images: string[]
