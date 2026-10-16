@@ -147,6 +147,37 @@
 	flex-grow: 1;
 }
 
+/* Up next's category buttons in its toolbar: the same quiet buttons as the
+sort trigger, the chosen one in the accent colour. */
+.library-filter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.library-filter .library-filter-item {
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	font-size: 0.75em;
+	padding: 3px 10px;
+	border-radius: 4px;
+	transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.library-filter .library-filter-item:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.library-filter .library-filter-item.is-active {
+	color: var(--text-on-accent);
+	background-color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
 .library-collapse-btn {
 	background: none;
 	border: none;

@@ -61,9 +61,9 @@ const TIME_COLORS: Record<string, string> = {
 	game: 'color-mix(in srgb, var(--interactive-accent) 80%, var(--text-normal))'
 }
 
-type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played'
+type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played' | 'unstarted'
 
-const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played']
+const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played', 'unstarted']
 
 interface SortChoice {
 	key: SortKey
@@ -515,24 +515,54 @@ export class LibraryView extends ItemView {
 		}
 
 		// At the end of the page: everything not started yet, from every
-		// category, newest first.
-		const upNext: CardData[] = []
-		for (const { cards } of sections) {
-			for (const card of cards) if (notStarted(card.fm, card.kind)) upNext.push(card)
+		// category, newest first; a row of category buttons narrows it to one.
+		const upNext: { category: string, card: CardData }[] = []
+		for (const { category, cards } of sections) {
+			for (const card of cards) if (notStarted(card.fm, card.kind)) upNext.push({ category: category.name, card })
 		}
 		if (settings.showUpNext && upNext.length > 0) {
+			const names: string[] = []
+			for (const item of upNext) if (names.indexOf(item.category) < 0) names.push(item.category)
+			// A category that has nothing left to start falls back to all of them.
+			const chosen = names.indexOf(settings.upNextCategory) >= 0 ? settings.upNextCategory : ''
+			const shown = upNext.filter(item => !chosen || item.category === chosen).map(item => item.card)
 			const upNextEl = this.renderSection(root, {
 				title: tr('upNext.title'),
 				sortId: UP_NEXT_SORT,
 				defaultSort: { key: 'date', asc: false },
 				collapsed: settings.upNextCollapsed,
 				setCollapsed: (collapsed) => { settings.upNextCollapsed = collapsed }
-			}, upNext)
+			}, shown)
 			upNextEl.addClass('library-up-next')
+			// One category alone needs no choosing.
+			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen)
 			rendered++
 		}
 		if (rendered === 0) root.createEl('p', { text: tr('view.empty') })
 		root.scrollTop = scrollTop
+	}
+
+	// Up next's category buttons in its toolbar, between the count and the
+	// sort: All, then each category that has something not started, in the
+	// library's order.
+	private upNextFilter(section: HTMLElement, names: string[], chosen: string): void {
+		const row = createDiv({ cls: 'library-filter', attr: { role: 'group', 'aria-label': tr('upNext.title') } })
+		for (const name of ['', ...names]) {
+			const button = row.createEl('button', {
+				cls: 'library-filter-item',
+				text: name || tr('upNext.all'),
+				attr: { 'aria-pressed': name === chosen ? 'true' : 'false' }
+			})
+			if (name === chosen) button.addClass('is-active')
+			button.addEventListener('click', () => {
+				if (name === this.plugin.settings.upNextCategory) return
+				this.plugin.settings.upNextCategory = name
+				void this.plugin.persistSettings()
+				this.render()
+			})
+		}
+		const toolbar = section.querySelector('.library-toolbar')
+		toolbar?.insertBefore(row, toolbar.querySelector('.library-toolbar-spacer'))
 	}
 
 	// Beside the fold button: the number of titles, and for movies, series,
@@ -589,10 +619,16 @@ export class LibraryView extends ItemView {
 			// Any category: when the note file was last edited on disk.
 			{ label: tr('sort.modified'), key: 'modified' },
 			// Games only: when it was last played, newest first.
-			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : [])
+			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : []),
+			// Titles not started yet first, by name within each half; only where
+			// the section holds some, as Up next can take them all away.
+			...(spec.sortId !== UP_NEXT_SORT && cards.some(card => notStarted(card.fm, card.kind))
+				? [{ label: tr('sort.unstarted'), key: 'unstarted' as SortKey }] : [])
 		]
 
-		const savedSort = this.readSort(spec.sortId, spec.defaultSort)
+		// A saved choice the section no longer offers falls back to the default.
+		const restored = this.readSort(spec.sortId, spec.defaultSort)
+		const savedSort = sortOptions.some(o => o.key === restored.key) ? restored : spec.defaultSort
 		let currentSort: SortKey = savedSort.key
 		let sortAsc = savedSort.asc
 
@@ -612,6 +648,11 @@ export class LibraryView extends ItemView {
 					case 'date': cmp = a.date - b.date; break
 					case 'modified': cmp = a.file.stat.mtime - b.file.stat.mtime; break
 					case 'played': cmp = parseDate(a.fm['Last Played']) - parseDate(b.fm['Last Played']); break
+					case 'unstarted':
+						cmp = Number(notStarted(b.fm, b.kind)) - Number(notStarted(a.fm, a.kind))
+						// Within each half the names stay in order whichever way the halves go.
+						if (cmp === 0) return a.name.localeCompare(b.name)
+						break
 				}
 				return sortAsc ? cmp : -cmp
 			})
@@ -628,7 +669,7 @@ export class LibraryView extends ItemView {
 					sortAsc = !sortAsc
 				} else {
 					currentSort = opt.key
-					sortAsc = opt.key === 'name'
+					sortAsc = opt.key === 'name' || opt.key === 'unstarted'
 				}
 				sortMenu.querySelectorAll('.library-sort-menu-item').forEach(b => b.removeClass('active'))
 				item.addClass('active')

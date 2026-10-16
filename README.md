@@ -24,7 +24,7 @@
 
 - Movies, series, anime, games, books, comics, and music, with ratings, stills, cast, and trailers where the source has them; movies, series, games, and comics also match a title in any language.
 - Tick episodes or chapters and score them; `Progress` and `My Rating` follow. A movie is watched or not.
-- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Unstarted titles show an eye icon and gather in Up next.
+- Categories and folders (Library/Movies, Library/Books) appear as you add titles. Unstarted titles show an eye icon and gather in Up next, which narrows to one category at a time; a category can also sort its unstarted titles first.
 - Similar titles under movie, series, anime, game, and book notes.
 - Connect AniList, MyAnimeList, PlayStation, and Steam in settings: lists, played games, playtime, trophies, and achievements import as notes; anime and PlayStation lists re-import once a day on desktop.
 - Categories count their titles and time spent; statistics compare those hours with "In the same time" facts like trips to the Moon or marathons run.
