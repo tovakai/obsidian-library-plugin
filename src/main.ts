@@ -2274,6 +2274,8 @@ export default class LibraryPlugin extends Plugin {
 
 		const genres = toStrArray(fm.Genre).map(linkLabel)
 		if (genres.length > 0) addRow(tr('header.genre'), genres.join(', '))
+		const countries = toStrArray(fm.Country)
+		if (countries.length > 0) addRow(tr('filter.country'), countries.join(', '))
 
 		const runtime = runtimeMinutes(fm.Runtime)
 		if (runtime !== null) addRow(tr('header.runtime'), formatRuntime(totalRuntimeMinutes(fm, runtime, kind)))
