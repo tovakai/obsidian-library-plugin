@@ -1,6 +1,7 @@
 import {
 	App,
 	Notice,
+	Platform,
 	PluginSettingTab,
 	requireApiVersion,
 	Setting,
@@ -14,8 +15,8 @@ import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
 import { isContentType, type ContentType } from "./providers/types";
 import { TYPE_DEFAULTS, addCategoryTop, cleanFolder, isDefaultTypeValue, newCategory } from "./categories";
 import { tr } from "./i18n";
-import { aniListViewer, anilistAuthUrl } from "./anilistSync";
-import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malViewer } from "./malSync";
+import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, tokenFromInput } from "./anilistSync";
+import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malClientPair } from "./malSync";
 import { PromptModal } from "./ui/promptModal";
 import { platformMark } from "./ui/platformIcons";
 
@@ -35,12 +36,6 @@ type TextKey =
 	| "comicVineApiKey"
 	| "coverProperty"
 	| "skipFields"
-	| "anilistClientId"
-	| "anilistToken"
-	| "malClientId"
-	| "malClientSecret"
-	| "steamApiKey"
-	| "steamId"
 	| "twitchClientId"
 	| "twitchClientSecret";
 
@@ -149,7 +144,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 
 	// Rows were added or removed. The version stays a literal: the Obsidian
 	// lint recognises requireApiVersion("1.13.0") as the guard for 1.13 APIs.
-	private refresh(): void {
+	refresh(): void {
 		if (requireApiVersion("1.13.0")) this.update();
 		else this.draw();
 	}
@@ -259,29 +254,21 @@ export class LibrarySettingTab extends PluginSettingTab {
 					this.textRow("settings.twitchId", "twitchClientId", tr("settings.rawg.placeholder")),
 					this.textRow("settings.twitchSecret", "twitchClientSecret", tr("settings.rawg.placeholder")),
 					this.textRow("settings.comicvine", "comicVineApiKey", tr("settings.comicvine.placeholder")),
-					this.textRow("settings.steamKey", "steamApiKey", tr("settings.rawg.placeholder")),
-					this.textRow("settings.steamId", "steamId", "76561198000000000"),
 				],
 			},
 			{
-				heading: tr("settings.section.anilist"),
+				heading: tr("settings.section.anime"),
 				rows: [
-					note(tr("settings.anilist.desc")),
-					{ name: tr("settings.anilist.clientId"), render: (row) => this.anilistClientId(row) },
-					{ name: tr("settings.anilist.token"), render: (row) => this.anilistToken(row) },
-				],
-			},
-			{
-				heading: tr("settings.section.mal"),
-				rows: [
-					note(tr("settings.mal.desc")),
-					{ name: tr("settings.mal.clientId"), render: (row) => this.malClientId(row) },
-					{ name: tr("settings.mal.clientSecret"), render: (row) => this.malClientSecret(row) },
+					{ name: tr("anilist.name"), desc: tr("settings.anilist.desc"), render: (row) => this.anilistAccount(row) },
+					{ name: tr("mal.name"), desc: tr("settings.mal.desc"), render: (row) => this.malAccount(row) },
 				],
 			},
 			{
 				heading: tr("settings.section.games"),
-				rows: [note(tr("settings.games.desc")), { name: "PlayStation", desc: tr("settings.psn.desc"), render: (row) => this.psnAccount(row) }],
+				rows: [
+					{ name: "PlayStation", desc: tr("settings.psn.desc"), render: (row) => this.psnAccount(row) },
+					{ name: "Steam", desc: tr("settings.steam.desc"), render: (row) => this.steamAccount(row) },
+				],
 			},
 			...categories,
 			{ heading: tr("stats.title"), rows: statsRows },
@@ -342,69 +329,104 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 	}
 
-	private anilistClientId(row: Setting): void {
-		this.textInput(row, "anilistClientId", tr("settings.anilist.clientId.placeholder"));
-		row.addButton((button) =>
-			button.setButtonText(tr("settings.anilist.connect")).onClick(() => {
-				const id = this.plugin.settings.anilistClientId.trim();
-				if (!id) {
-					new Notice(tr("settings.anilist.needClientId"));
-					return;
+	// Connected or not, and the one button that changes it. Desktop signs in
+	// inside a modal window; on mobile the browser opens and the token the
+	// redirect page shows is pasted back.
+	private anilistAccount(row: Setting): void {
+		const connected = this.plugin.settings.anilistToken.trim() !== "";
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-anilist" });
+		icon.appendChild(platformMark("anilist"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.anilistToken = "";
+					await this.plugin.saveSettings();
+					this.refresh();
+				} else if (Platform.isDesktopApp) {
+					await this.plugin.connectAnilist();
+					this.refresh();
+				} else {
+					window.open(anilistAuthUrl(ANILIST_CLIENT_ID), "_blank");
+					new PromptModal(
+						this.app,
+						"https://anilist.co/api/v2/oauth/pin#access_token=…",
+						(value) => void this.anilistConnect(tokenFromInput(value)),
+						tr("modal.anilist.title"),
+						tr("settings.connect"),
+					).open();
 				}
-				window.open(anilistAuthUrl(id), "_blank");
-			}),
-		);
+			});
+		});
 	}
 
-	private anilistToken(row: Setting): void {
-		this.textInput(row, "anilistToken", tr("settings.anilist.token.placeholder"), true);
-		row.addButton((button) =>
-			button.setButtonText(tr("settings.anilist.test")).onClick(async () => {
-				const token = this.plugin.settings.anilistToken.trim();
-				const viewer = token ? await aniListViewer(token) : null;
-				new Notice(
-					viewer
-						? tr("settings.anilist.connected", { name: viewer.name })
-						: tr("settings.anilist.invalidToken"),
-				);
-			}),
-		);
+	private async anilistConnect(token: string): Promise<void> {
+		const viewer = token ? await aniListViewer(token) : null;
+		if (!viewer) {
+			new Notice(tr("settings.anilist.invalidToken"));
+			return;
+		}
+		this.plugin.settings.anilistToken = token;
+		await this.plugin.saveSettings();
+		new Notice(tr("settings.anilist.connected", { name: viewer.name }));
+		this.refresh();
+		void this.plugin.anilistImport(true);
 	}
 
-	// Connect opens MAL's consent page and asks for the address the browser lands
-	// on; the verifier lives only as long as that prompt.
-	private malClientId(row: Setting): void {
-		this.textInput(row, "malClientId", tr("settings.anilist.clientId.placeholder"));
-		row.addButton((button) =>
-			button.setButtonText(tr("settings.anilist.connect")).onClick(() => {
-				const id = this.plugin.settings.malClientId.trim();
-				if (!id) {
-					new Notice(tr("settings.mal.needClientId"));
-					return;
+	// Connected or not, and the one button that changes it. Desktop signs in
+	// inside a modal window; on mobile the browser opens and the address it
+	// lands on is pasted back.
+	private malAccount(row: Setting): void {
+		const connected = this.plugin.settings.malTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-mal" });
+		icon.appendChild(platformMark("myanimelist"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.malTokens = null;
+					await this.plugin.saveSettings();
+					this.refresh();
+				} else if (Platform.isDesktopApp) {
+					await this.plugin.connectMal();
+					this.refresh();
+				} else {
+					const verifier = makeVerifier();
+					const { id, secret } = malClientPair(this.plugin.settings);
+					window.open(malAuthUrl(id, verifier), "_blank");
+					new PromptModal(
+						this.app,
+						"http://localhost/?code=…",
+						(value) => void this.malConnect(id, secret, codeFromInput(value), verifier),
+						tr("modal.mal.title"),
+						tr("settings.connect"),
+					).open();
 				}
-				const verifier = makeVerifier();
-				window.open(malAuthUrl(id, verifier), "_blank");
-				new PromptModal(
-					this.app,
-					"http://localhost/?code=…",
-					(value) => void this.malConnect(id, codeFromInput(value), verifier),
-					tr("modal.mal.title"),
-					tr("settings.anilist.connect"),
-				).open();
-			}),
-		);
+			});
+		});
 	}
 
-	private async malConnect(id: string, code: string, verifier: string): Promise<void> {
-		const tokens = await exchangeCode(id, this.plugin.settings.malClientSecret.trim(), code, verifier);
+	private async malConnect(id: string, secret: string, code: string, verifier: string): Promise<void> {
+		const tokens = await exchangeCode(id, secret, code, verifier);
 		if (!tokens) {
 			new Notice(tr("notice.mal.connectFailed"));
 			return;
 		}
 		this.plugin.settings.malTokens = tokens;
 		await this.plugin.saveSettings();
-		const viewer = await malViewer(tokens.access);
-		new Notice(viewer ? tr("settings.anilist.connected", { name: viewer.name }) : tr("notice.mal.connectFailed"));
+		new Notice(tr("notice.mal.connected"));
+		this.refresh();
+		void this.plugin.malImport(true);
 	}
 
 	// Connected or not, and the one button that changes it.
@@ -415,9 +437,9 @@ export class LibrarySettingTab extends PluginSettingTab {
 		icon.appendChild(platformMark("playstation"));
 		row.nameEl.prepend(icon);
 		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
-		status.setText(tr(connected ? "settings.psn.connected" : "settings.psn.notConnected"));
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
 		row.addButton((button) => {
-			button.setButtonText(tr(connected ? "settings.psn.disconnect" : "settings.psn.connect"));
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
 			if (!connected) button.setCta();
 			button.onClick(async () => {
 				if (connected) {
@@ -431,19 +453,30 @@ export class LibrarySettingTab extends PluginSettingTab {
 		});
 	}
 
-		private malClientSecret(row: Setting): void {
-		this.textInput(row, "malClientSecret", "", true);
-		row.addButton((button) =>
-			button.setButtonText(tr("settings.anilist.test")).onClick(async () => {
-				const token = await this.plugin.malToken();
-				const viewer = token ? await malViewer(token) : null;
-				new Notice(
-					viewer
-						? tr("settings.anilist.connected", { name: viewer.name })
-						: tr("settings.anilist.invalidToken"),
-				);
-			}),
-		);
+	// Connected or not, and the one button that changes it. Signing in opens
+	// Steam's own window; the session it leaves behind is what the import reads
+	// the library with.
+	private steamAccount(row: Setting): void {
+		const connected = this.plugin.settings.steamId.trim() !== "";
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-steam" });
+		icon.appendChild(platformMark("steam"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.steamId = "";
+					await this.plugin.saveSettings();
+				} else {
+					await this.plugin.connectSteam();
+				}
+				this.refresh();
+			});
+		});
 	}
 
 	// A category is its name and source; the Type value, the folder and the
@@ -684,6 +717,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 		}
 		// A connected platform's own totals: chosen here, never shown unasked.
 		if (this.plugin.settings.psnStats) offer(tr("settings.stats.groupPlatforms"), tr("stats.psn"), { kind: "platform", key: "playstation" });
+		if (this.plugin.settings.malStats) offer(tr("settings.stats.groupPlatforms"), tr("stats.mal"), { kind: "platform", key: "myanimelist" });
 		for (const property of rankableProperties(this.libraryFrontmatter(), this.plugin.settings.coverProperty)) {
 			offer(tr("settings.stats.groupProperties"), property, { kind: "property", key: property });
 		}

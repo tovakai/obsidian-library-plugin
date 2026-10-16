@@ -22,7 +22,12 @@ export class PsnLoginModal extends Modal {
 		// macOS brings the whole app down on a Touch ID passkey prompt inside a
 		// webview. Sony then signs in with the password. The attributes are set
 		// before the element joins the page, since a webview fixes them then.
-		const view = createEl('webview' as keyof HTMLElementTagNameMap, {
+		// The window is made by the window the modal opens in: settings have a
+		// window of their own since Obsidian 1.13, and a webview made by the main
+		// window draws in settings yet sends every click and scroll to the main
+		// window, so the form takes no input.
+		const win = this.contentEl.ownerDocument.win as Window & { createEl: typeof createEl }
+		const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
 			cls: 'library-psn-webview',
 			attr: { partition: 'persist:library-psn', disableblinkfeatures: 'WebAuth', src: psnAuthUrl() },
 		})

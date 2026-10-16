@@ -108,7 +108,6 @@ export class AnimeProvider implements ContentProvider {
 				URL: media.siteUrl ?? `https://anilist.co/anime/${media.id}`
 			}
 			if (typeof media.averageScore === 'number') fields['Rating AniList'] = media.averageScore / 10
-			if (media.status) fields['Status'] = media.status
 			// AniList reports the length of one episode; the note contract keeps
 			// `Runtime` per episode for anything episodic.
 			if (typeof media.duration === 'number' && media.duration > 0) fields.Runtime = media.duration

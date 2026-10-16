@@ -1148,12 +1148,24 @@
 	background-color: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
 }
 
-/* Sony's sign-in page inside Obsidian. */
-.library-psn-modal {
+/* A sign-in page inside Obsidian. */
+.library-psn-modal, .library-auth-modal {
 	width: min(560px, 92vw);
 }
 
-.library-psn-webview {
+/* The window the Steam import reads the account through: it must be laid out
+   for its scripts to run, yet never seen or clicked. */
+.library-steam-probe {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 2px;
+	height: 2px;
+	opacity: 0.01;
+	pointer-events: none;
+}
+
+.library-psn-webview, .library-auth-webview {
 	display: flex;
 	width: 100%;
 	height: min(680px, 75vh);
@@ -1305,8 +1317,19 @@
 	height: 28px;
 	border-radius: 6px;
 	color: #ffffff;
-	background-color: #0070d1;
 	flex-shrink: 0;
+}
+
+.library-platform-row-icon.is-playstation {
+	background-color: #0070d1;
+}
+
+.library-platform-row-icon.is-mal {
+	background-color: #2e51a2;
+}
+
+.library-platform-row-icon.is-anilist {
+	background-color: #02a9ff;
 }
 
 .library-platform-row-icon svg {
