@@ -89,6 +89,9 @@ export class WikidataGameProvider implements ContentProvider {
 	// Wikidata's country of origin, found by the Steam app id when there is
 	// one, else by the title, which then has to match an English label.
 	async countryOf(name: string, steamAppId: string | null): Promise<string[]> {
+		// The id comes from a note's Source ID, which anyone can edit: only
+		// digits go into the search, anything else falls back to the title.
+		if (steamAppId !== null && !/^\d+$/.test(steamAppId)) steamAppId = null
 		try {
 			const ids = steamAppId
 				? await searchItems('', `haswbstatement:P1733=${steamAppId}`, 1)
