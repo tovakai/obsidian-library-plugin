@@ -128,6 +128,8 @@ export function isExpired(tokens: MalTokens, now: number = Date.now()): boolean 
 }
 
 async function api<T>(token: string, path: string, method = 'GET', body?: string): Promise<T | null> {
+	// A paging link comes from the answer: the token goes to MAL's API only.
+	if (path.startsWith('http') && !path.startsWith(API + '/')) return null
 	try {
 		const resp = await requestUrl({
 			url: path.startsWith('http') ? path : API + path,

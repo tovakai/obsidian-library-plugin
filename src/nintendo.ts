@@ -75,7 +75,8 @@ export async function nintendoAuth(): Promise<NintendoAuth> {
 
 // session_token_code from the npf…://auth fragment.
 export function codeFromRedirect(url: string): string | null {
-	if (!url.startsWith(NINTENDO_REDIRECT)) return null
+	// The host must be exactly `auth`, not a longer name that starts with it.
+	if (!url.startsWith(NINTENDO_REDIRECT) || !/^(?:[/?#]|$)/.test(url.slice(NINTENDO_REDIRECT.length))) return null
 	const match = /[?&#]session_token_code=([^&#]+)/.exec(url)
 	return match?.[1] ? decodeURIComponent(match[1]) : null
 }

@@ -229,7 +229,7 @@ const VIDEO_GAME = 'haswbstatement:P31=Q7889'
 // Keyless fallback: Wikidata games of the same series, then same genre with a Steam id.
 async function wikidataGames(sourceId: string, name: string): Promise<Recommendation[]> {
 	const item = /^Q\d+$/.test(sourceId) ? sourceId
-		: sourceId.startsWith(SteamProvider.PREFIX)
+		: /^\d+$/.test(sourceId.slice(SteamProvider.PREFIX.length)) && sourceId.startsWith(SteamProvider.PREFIX)
 			? (await searchItems('', `haswbstatement:P1733=${sourceId.slice(SteamProvider.PREFIX.length)}`, 1))[0]
 			: name ? (await searchItems(name, VIDEO_GAME, 1))[0] : undefined
 	if (!item) return []

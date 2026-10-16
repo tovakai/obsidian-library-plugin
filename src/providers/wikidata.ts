@@ -100,6 +100,7 @@ function qualifierValues(claim: WikidataClaim, property: string): unknown[] {
 // Tomatometer from Wikidata (P444); OMDb lacks it for recent or keyless films.
 export class RottenTomatoesEnricher implements MetadataEnricher {
 	async enrich(imdbId: string): Promise<Record<string, unknown>> {
+		if (!/^tt\d+$/.test(imdbId)) return {}
 		const [item] = await searchItems('', `haswbstatement:P345=${imdbId}`, 1)
 		if (!item) return {}
 		const json = await api<{ claims?: Record<string, WikidataClaim[]> }>({ action: 'wbgetclaims', entity: item, property: 'P444' })

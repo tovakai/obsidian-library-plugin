@@ -37,7 +37,7 @@ export class AuthModal extends Modal {
 		;(window as unknown as Record<string, unknown>).__authTrail = trail
 		const arrive = (url: string): void => {
 			if (!url) return
-			const safe = url.replace(/([?#&](?:access_token|code)=)[^&\s]*/g, '$1…')
+			const safe = url.replace(/([?#&]\w*(?:token|code|challenge|verifier)\w*=)[^&#\s]*/gi, '$1…')
 			if (trail[trail.length - 1] !== safe) trail.push(safe)
 			const result = this.opts.extract(url)
 			if (result) this.finish(result)
@@ -63,6 +63,7 @@ export class AuthModal extends Modal {
 		if (this.poll && this.timerWin) this.timerWin.clearInterval(this.poll)
 		this.poll = 0
 		this.timerWin = null
+		delete (window as unknown as Record<string, unknown>).__authTrail
 		this.contentEl.empty()
 		this.finish(null)
 	}

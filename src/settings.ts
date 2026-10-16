@@ -499,6 +499,8 @@ export class LibrarySettingTab extends PluginSettingTab {
 							.setPlaceholder(tr("settings.category.type.placeholder"))
 							.setValue(cat.typeValue)
 							.onChange(async (value) => {
+								// An empty Type would claim every note that has none.
+								if (!value.trim()) return;
 								this.retypeCategory(cat, value.trim());
 								await this.plugin.saveSettings();
 							}),

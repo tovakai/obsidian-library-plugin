@@ -19,9 +19,10 @@ export function isDefaultTypeValue(value: string): boolean {
 	return Object.values(TYPE_DEFAULTS).includes(value)
 }
 
-// As stored: trimmed, no surrounding slashes; '' is the vault root.
+// As stored: no empty, '.' or '..' segments, so a hand-edited settings file
+// cannot point outside the vault; '' is the vault root.
 export function cleanFolder(folder: string): string {
-	return folder.trim().replace(/^\/+|\/+$/g, '')
+	return folder.split(/[\\/]/).map(part => part.trim()).filter(part => part && part !== '.' && part !== '..').join('/')
 }
 
 export function joinFolder(parent: string, name: string): string {

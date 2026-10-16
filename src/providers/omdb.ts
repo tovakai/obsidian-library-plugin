@@ -409,7 +409,9 @@ export class OmdbProvider implements ContentProvider {
 
 	private async countEpisodes(imdbId: string, totalSeasons: number): Promise<number> {
 		let total = 0
-		for (let season = 1; season <= totalSeasons; season++) {
+		// The count comes from the answer; the longest soaps run about 60 seasons.
+		const last = Math.min(totalSeasons, 80)
+		for (let season = 1; season <= last; season++) {
 			try {
 				const resp = await requestUrl({ url: this.url({ i: imdbId, Season: String(season) }), throw: false })
 				if (this.unavailable(resp.status, jsonOf(resp))) return 0
@@ -419,7 +421,7 @@ export class OmdbProvider implements ContentProvider {
 			} catch (e) {
 				console.error('Library: OMDb season fetch error', e)
 			}
-			if (season < totalSeasons) await delay(150)
+			if (season < last) await delay(150)
 		}
 		return total
 	}

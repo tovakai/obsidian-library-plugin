@@ -119,6 +119,8 @@ export async function steamSession(steamId: string): Promise<SteamSession | null
 	return {
 		token,
 		stats: async (appId: number): Promise<SteamStats | null> => {
+			// The id comes from Steam's answer and goes into script run in the page.
+			if (!Number.isSafeInteger(appId) || appId <= 0) return null
 			const match = /^(\d+)\/(\d+)$/.exec(await read(page(appId)))
 			if (!match) return null
 			const achieved = Number(match[1])

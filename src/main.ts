@@ -7,7 +7,6 @@ import {
 	setIcon,
 	setTooltip,
 	Platform,
-	type TFolder
 } from 'obsidian'
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
@@ -1819,7 +1818,7 @@ export default class LibraryPlugin extends Plugin {
 		let current = path
 		while (current) {
 			const folder = this.app.vault.getFolderByPath(current)
-			if (!folder || this.holdsFiles(folder)) return
+			if (!folder || await this.holdsFiles(current)) return
 			try {
 				await this.app.fileManager.trashFile(folder)
 			} catch (e) {
@@ -1830,15 +1829,17 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
-	private holdsFiles(folder: TFolder): boolean {
-		return folder.children.some((child) => {
-			const sub = this.app.vault.getFolderByPath(child.path)
-			return sub ? this.holdsFiles(sub) : true
-		})
+	// Asks the disk, not the vault index: the index leaves out hidden files,
+	// and those would go to the trash with the folder.
+	private async holdsFiles(path: string): Promise<boolean> {
+		const listed = await this.app.vault.adapter.list(path)
+		if (listed.files.some(file => !file.endsWith('/.DS_Store'))) return true
+		for (const sub of listed.folders) if (await this.holdsFiles(sub)) return true
+		return false
 	}
 
 	private async uniqueNotePath(title: string, categoryFolder: string): Promise<string> {
-		const folder = categoryFolder.trim()
+		const folder = cleanFolder(categoryFolder)
 		const base = sanitizeFilename(title)
 		const dir = folder ? normalizePath(folder) : ''
 		await this.ensureFolder(dir)
@@ -2625,7 +2626,9 @@ export default class LibraryPlugin extends Plugin {
 			if (cat.contentType === 'googlebook') cat.contentType = 'book'
 			if ((cat.contentType as string) === 'steam') cat.contentType = 'game'
 			if (!isContentType(cat.contentType)) cat.contentType = inferContentType(cat.typeValue)
-			if (typeof cat.folder !== 'string') cat.folder = ''
+			cat.folder = typeof cat.folder === 'string' ? cleanFolder(cat.folder) : ''
+			// An empty Type would claim every note that has none.
+			if (typeof cat.typeValue !== 'string' || !cat.typeValue.trim()) cat.typeValue = TYPE_DEFAULTS[cat.contentType] ?? 'Manual'
 			const legacy = cat as ICategory & { showTop?: unknown; showRated?: unknown; stats?: { rating?: unknown } }
 			if (legacy.showTop === false || legacy.showRated === false || legacy.stats?.rating === false) unrated.add(cat.typeValue)
 			delete legacy.showTop
