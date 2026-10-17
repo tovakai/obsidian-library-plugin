@@ -1,0 +1,356 @@
+// IMDb and Netflix have no API for a member's own history: the sign-in window
+// keeps the session, and a hidden webview on its partition reads the site as
+// the user did. Settings keep the connected flag, last-import time and score echoes.
+const PARTITION = 'persist:library-auth'
+
+export type WatchSite = 'imdb' | 'netflix'
+
+export interface ImdbEcho {
+	r: number
+	l?: boolean
+	e?: Record<string, number>
+}
+
+export const SITE_SIGN_IN: Record<WatchSite, string> = {
+	imdb: 'https://www.imdb.com/registration/signin',
+	netflix: 'https://www.netflix.com/login',
+}
+
+// Signed in once the window lands on the site's home: the sign-in pages live on
+// the same hosts, so the path decides.
+export function signedInAt(site: WatchSite, url: string): string | null {
+	let parsed: URL
+	try {
+		parsed = new URL(url)
+	} catch {
+		return null
+	}
+	if (parsed.protocol !== 'https:') return null
+	if (site === 'imdb') return parsed.hostname === 'www.imdb.com' && (parsed.pathname === '/' || parsed.pathname === '') ? 'ok' : null
+	return parsed.hostname === 'www.netflix.com' && /^\/(browse|[a-z]{2}(-[a-z]{2})?\/browse)(\/|$)/.test(parsed.pathname) ? 'ok' : null
+}
+
+// Runs `code` in a hidden webview opened at `url` on the sign-in partition and
+// returns its string answer; '' when the page does not load in time.
+export async function readPage(url: string, code: string, timeout = 30000): Promise<string> {
+	const doc = activeDocument
+	const win = doc.win as Window & { createEl: typeof createEl }
+	const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
+		cls: 'library-steam-probe',
+		attr: { partition: PARTITION, src: url },
+	})
+	doc.body.appendChild(view)
+	const guest = view as unknown as { executeJavaScript: (code: string) => Promise<unknown> }
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const timer = window.setTimeout(() => reject(new Error('timeout')), timeout)
+			view.addEventListener('dom-ready', () => { window.clearTimeout(timer); resolve() }, { once: true })
+		})
+		let timer = 0
+		const answer = await Promise.race([
+			guest.executeJavaScript(code).catch(() => null),
+			new Promise<null>(resolve => { timer = window.setTimeout(() => resolve(null), timeout) }),
+		])
+		window.clearTimeout(timer)
+		return typeof answer === 'string' ? answer : ''
+	} catch {
+		return ''
+	} finally {
+		view.remove()
+	}
+}
+
+export interface WatchedTitle {
+	// IMDb id when the site knows it; Netflix gives no IMDb id, only its own.
+	id: string
+	name: string
+	kind: 'movie' | 'series'
+	year: number | null
+	// The member's own score, 1 to 10.
+	rating: number | null
+	// ISO date of the rating, the viewing or the watchlist entry.
+	when: string
+	// Rated or viewed; a watchlist entry is not.
+	watched: boolean
+	netflixId?: number
+	listed?: boolean
+}
+
+const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']
+const IMDB_SERIES = ['tvSeries', 'tvMiniSeries']
+
+interface ImdbNode {
+	id?: string
+	titleText?: { text?: string }
+	titleType?: { id?: string }
+	releaseYear?: { year?: number }
+	userRating?: { value?: number; date?: string } | null
+	series?: { series?: ImdbNode; episodeNumber?: { seasonNumber?: number; episodeNumber?: number } } | null
+}
+
+// A rated episode, filed under its series note.
+export interface EpisodeRating {
+	series: WatchedTitle
+	season: number
+	episode: number
+	rating: number
+}
+
+export function imdbEpisodes(rated: ImdbNode[]): EpisodeRating[] {
+	const out: EpisodeRating[] = []
+	for (const node of rated) {
+		if (node.titleType?.id !== 'tvEpisode') continue
+		const series = node.series?.series
+		const season = node.series?.episodeNumber?.seasonNumber
+		const episode = node.series?.episodeNumber?.episodeNumber
+		const rating = node.userRating?.value
+		if (!series?.id || !/^tt\d+$/.test(series.id) || !season || !episode || typeof rating !== 'number') continue
+		out.push({
+			series: { id: series.id, name: series.titleText?.text ?? series.id, kind: 'series', year: series.releaseYear?.year ?? null, rating: null, when: node.userRating?.date ?? '', watched: true },
+			season,
+			episode,
+			rating,
+		})
+	}
+	return out
+}
+
+// The note's season for an IMDb season number: the one named with that number,
+// else by position when no name has a digit ("Limited Series"), else none.
+export function seasonIndex(names: string[], season: number): number {
+	const named = names.findIndex(name => Number(/\d+/.exec(name)?.[0]) === season)
+	if (named >= 0) return named
+	return names.some(name => /\d/.test(name)) ? -1 : season - 1
+}
+
+export function imdbTitles(rated: ImdbNode[], listed: { title: ImdbNode; added: string }[]): WatchedTitle[] {
+	const out = new Map<string, WatchedTitle>()
+	const add = (node: ImdbNode, when: string, watched: boolean): void => {
+		const id = node.id ?? ''
+		const type = node.titleType?.id ?? ''
+		const kind = IMDB_MOVIE.indexOf(type) >= 0 ? 'movie' : IMDB_SERIES.indexOf(type) >= 0 ? 'series' : null
+		const known = out.get(id)
+		if (known && !watched) known.listed = true
+		if (!/^tt\d+$/.test(id) || !kind || known) return
+		const value = node.userRating?.value
+		out.set(id, {
+			id,
+			name: node.titleText?.text ?? id,
+			kind,
+			year: node.releaseYear?.year ?? null,
+			rating: typeof value === 'number' && value >= 1 && value <= 10 ? value : null,
+			when,
+			watched,
+			listed: !watched,
+		})
+	}
+	for (const node of rated) add(node, node.userRating?.date ?? '', true)
+	for (const item of listed) add(item.title, item.added, false)
+	return [...out.values()]
+}
+
+// The page's own GraphQL endpoint with the member's cookies; the member id is in
+// the home page data. 'signed-out' when the session is gone.
+const IMDB_READ = `(async () => {
+	const data = document.getElementById('__NEXT_DATA__')?.textContent ?? '';
+	const user = /"userId":"(ur\\d+)"/.exec(data)?.[1];
+	if (!user) return 'signed-out';
+	const ask = async (query) => {
+		const r = await window.fetch('https://api.graphql.imdb.com/', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
+		if (!r.ok) throw new Error(String(r.status));
+		return (await r.json()).data;
+	};
+	const fields = 'id titleText { text } titleType { id } releaseYear { year } userRating { value date } series { series { id titleText { text } releaseYear { year } } episodeNumber { seasonNumber episodeNumber } }';
+	const rated = [];
+	for (let after = null, more = true, n = 0; more && n < 40; n++) {
+		const d = await ask('{ advancedTitleSearch(first: 250' + (after ? ', after: ' + JSON.stringify(after) : '') + ', constraints: {singleUserRatingConstraint: {filterType: INCLUDE, userId: "' + user + '"}}, sort: {sortBy: SINGLE_USER_RATING_DATE, sortOrder: DESC}) { pageInfo { hasNextPage endCursor } edges { node { title { ' + fields + ' } } } } }');
+		const s = d.advancedTitleSearch;
+		for (const e of s.edges) rated.push(e.node.title);
+		more = s.pageInfo.hasNextPage; after = s.pageInfo.endCursor;
+	}
+	const listed = [];
+	for (let after = null, more = true, n = 0; more && n < 40; n++) {
+		const d = await ask('{ predefinedList(classType: WATCH_LIST) { items(first: 250' + (after ? ', after: ' + JSON.stringify(after) : '') + ') { pageInfo { hasNextPage endCursor } edges { node { createdDate listItem { ... on Title { ' + fields + ' } } } } } } }');
+		const s = d.predefinedList.items;
+		for (const e of s.edges) if (e.node.listItem) listed.push({ title: e.node.listItem, added: e.node.createdDate ?? '' });
+		more = s.pageInfo.hasNextPage; after = s.pageInfo.endCursor;
+	}
+	return JSON.stringify({ rated, listed });
+})().catch(() => '')`
+
+export interface WatchHistory {
+	titles: WatchedTitle[]
+	episodes: EpisodeRating[]
+}
+
+// Rated titles, rated episodes and the watchlist; null when the site does not answer.
+export async function imdbHistory(): Promise<WatchHistory | 'signed-out' | null> {
+	const answer = await readPage('https://www.imdb.com/', IMDB_READ, 120000)
+	if (answer === 'signed-out') return answer
+	try {
+		const data = JSON.parse(answer) as { rated?: ImdbNode[]; listed?: { title: ImdbNode; added: string }[] }
+		return { titles: imdbTitles(data.rated ?? [], data.listed ?? []), episodes: imdbEpisodes(data.rated ?? []) }
+	} catch {
+		return null
+	}
+}
+
+// One GraphQL request as the signed-in member; null on any failure.
+async function imdbAsk<T>(query: string): Promise<T | null> {
+	const code = `window.fetch('https://api.graphql.imdb.com/', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: ${JSON.stringify(JSON.stringify({ query }))} }).then(r => r.ok ? r.text() : '').catch(() => '')`
+	try {
+		// Any page of the site carries the cookies; robots.txt loads fastest.
+		const answer = JSON.parse(await readPage('https://www.imdb.com/robots.txt', code)) as { data?: T; errors?: unknown[] }
+		return answer.errors?.length ? null : answer.data ?? null
+	} catch {
+		return null
+	}
+}
+
+const IMDB_ID = /^tt\d+$/
+
+export async function imdbRate(id: string, rating: number): Promise<boolean> {
+	const value = Math.round(rating)
+	if (!IMDB_ID.test(id) || value < 1 || value > 10) return false
+	return (await imdbAsk(`mutation { rateTitle(input: {rating: ${String(value)}, titleId: "${id}"}) { __typename } }`)) !== null
+}
+
+export async function imdbWatchlistRemove(id: string): Promise<boolean> {
+	if (!IMDB_ID.test(id)) return false
+	return (await imdbAsk(`mutation { removeElementFromPredefinedList(input: {classType: WATCH_LIST, itemElementId: "${id}"}) { __typename } }`)) !== null
+}
+
+export async function imdbWatchlistAdd(id: string): Promise<boolean> {
+	if (!IMDB_ID.test(id)) return false
+	return (await imdbAsk(`mutation { addItemToPredefinedList(input: {classType: WATCH_LIST, item: {itemElementId: "${id}"}}) { __typename } }`)) !== null
+}
+
+// Episode ids of one season, by episode number.
+export async function imdbSeason(seriesId: string, season: number): Promise<Map<number, string>> {
+	const ids = new Map<number, string>()
+	if (!IMDB_ID.test(seriesId) || !Number.isSafeInteger(season)) return ids
+	type Answer = { title?: { episodes?: { episodes?: { edges?: { node?: { id?: string; series?: { episodeNumber?: { episodeNumber?: number } } } }[] } } } }
+	const data = await imdbAsk<Answer>(`{ title(id: "${seriesId}") { episodes { episodes(first: 250, filter: {includeSeasons: ["${String(season)}"]}) { edges { node { id series { episodeNumber { episodeNumber } } } } } } } }`)
+	for (const edge of data?.title?.episodes?.episodes?.edges ?? []) {
+		const id = edge.node?.id
+		const number = edge.node?.series?.episodeNumber?.episodeNumber
+		if (id && IMDB_ID.test(id) && number) ids.set(number, id)
+	}
+	return ids
+}
+
+// A watched Netflix episode, by name: Netflix knows no IMDb ids.
+export interface NetflixEpisode {
+	series: WatchedTitle
+	season: number
+	// Netflix cuts a long name short with "...": a prefix then.
+	title: string
+}
+
+export interface NetflixHistory {
+	titles: WatchedTitle[]
+	episodes: NetflixEpisode[]
+}
+
+export interface NetflixViewed {
+	movieID?: number
+	date?: number
+	title?: string
+	episodeTitle?: string
+	seasonDescriptor?: string
+	series?: number
+	seriesTitle?: string
+}
+
+export interface NetflixRated {
+	movieID?: number
+	title?: string
+	reactionRatings?: { thumbs?: string }
+}
+
+// Netflix thumbs as library scores and back.
+export const THUMB_SCORE: Record<string, number> = { THUMBS_DOWN: 3, THUMBS_UP: 7, THUMBS_WAY_UP: 9 }
+export function thumbOf(score: number): 'THUMBS_DOWN' | 'THUMBS_UP' | 'THUMBS_WAY_UP' {
+	return score >= 8 ? 'THUMBS_WAY_UP' : score >= 5 ? 'THUMBS_UP' : 'THUMBS_DOWN'
+}
+
+const SEASON_NUMBER = /(\d+)/
+
+// Newest first: the last date seen for a title is when it was first watched.
+export function netflixTitles(viewed: NetflixViewed[], rated: NetflixRated[]): NetflixHistory {
+	const titles = new Map<number, WatchedTitle>()
+	const episodes: NetflixEpisode[] = []
+	const iso = (ms?: number): string => (ms ? new Date(ms).toISOString() : '')
+	for (const item of viewed) {
+		const series = item.series && item.seriesTitle ? item.series : null
+		const id = series ?? item.movieID
+		const name = series ? item.seriesTitle : item.title
+		if (!id || !name) continue
+		const known = titles.get(id)
+		if (known) known.when = iso(item.date) || known.when
+		else titles.set(id, { id: '', netflixId: id, name, kind: series ? 'series' : 'movie', year: null, rating: null, when: iso(item.date), watched: true })
+		const title = titles.get(id)
+		if (series && title && item.episodeTitle) {
+			const season = Number(SEASON_NUMBER.exec(item.seasonDescriptor ?? '')?.[1] ?? 1)
+			episodes.push({ series: title, season, title: item.episodeTitle })
+		}
+	}
+	for (const item of rated) {
+		const score = THUMB_SCORE[item.reactionRatings?.thumbs ?? '']
+		if (!item.movieID || !score) continue
+		const known = titles.get(item.movieID)
+		if (known) known.rating = score
+		// rated without a viewing in the history: kind unknown, a movie is the safer guess
+		else if (item.title) titles.set(item.movieID, { id: '', netflixId: item.movieID, name: item.title, kind: 'movie', year: null, rating: score, when: '', watched: true })
+	}
+	return { titles: [...titles.values()], episodes }
+}
+
+// The account pages' Falcor endpoint, paged; the profile is the signed-in one.
+const NETFLIX_READ = `(async () => {
+	const user = window.netflix?.reactContext?.models?.userInfo?.data;
+	if (!user?.guid) return 'signed-out';
+	const call = async (path) => {
+		const query = new URLSearchParams({ falcor_server: '0.1.0', method: 'call', callPath: JSON.stringify(path) });
+		const body = new URLSearchParams({ param: JSON.stringify({ guid: user.guid }), authURL: user.authURL || '' });
+		const r = await window.fetch('/api/aui/pathEvaluator/web/%5E2.0.0?' + query, { method: 'POST', credentials: 'include', body,
+			headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-netflix.request.routing': JSON.stringify({ path: '/nq/aui/endpoint/%5E1.0.0-web/pathEvaluator', control_tag: 'auinqweb' }) } });
+		if (!r.ok) throw new Error(String(r.status));
+		return (await r.json()).jsonGraph.aui[path[1]].value;
+	};
+	const all = async (name, field) => {
+		const items = [];
+		for (let page = 0; page < 100; page++) {
+			const v = await call(['aui', name, page, 100]);
+			const got = v[field] || [];
+			items.push(...got);
+			if (got.length < 100) break;
+		}
+		return items;
+	};
+	return JSON.stringify({ viewed: await all('viewingActivity', 'viewedItems'), rated: await all('ratingHistory', 'ratingItems') });
+})().catch(() => '')`
+
+export async function netflixHistory(): Promise<NetflixHistory | 'signed-out' | null> {
+	const answer = await readPage('https://www.netflix.com/viewingactivity', NETFLIX_READ, 90000)
+	if (answer === 'signed-out') return answer
+	try {
+		const data = JSON.parse(answer) as { viewed?: NetflixViewed[]; rated?: NetflixRated[] }
+		return netflixTitles(data.viewed ?? [], data.rated ?? [])
+	} catch {
+		return null
+	}
+}
+
+// A thumb on the title (a show's id for a series), by the page's safelisted mutation.
+export async function netflixRate(netflixId: number, score: number): Promise<boolean> {
+	if (!Number.isSafeInteger(netflixId) || score < 1 || score > 10) return false
+	const body = JSON.stringify({ operationName: 'SetEntityThumbRating', variables: { entityId: String(netflixId), rating: thumbOf(score), trackId: null }, extensions: { persistedQuery: { id: '699dce5b-9632-493d-9b6a-5b2713c4769a', version: 102 } } })
+	const code = `window.fetch('/graphql', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: ${JSON.stringify(body)} }).then(r => r.ok ? r.text() : '').catch(() => '')`
+	try {
+		const answer = JSON.parse(await readPage('https://www.netflix.com/robots.txt', code)) as { data?: unknown; errors?: unknown[] }
+		return !answer.errors?.length && !!answer.data
+	} catch {
+		return false
+	}
+}

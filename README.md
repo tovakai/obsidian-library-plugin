@@ -36,7 +36,7 @@
 2. Open the Library tab from the ribbon, press +, pick what you are adding, and search. The first title of each kind creates its category and folder.
 3. For movies and series, add a year after the title to pick between films that share a name: `dune 1984`.
 
-Categories in the Library settings tab reorder by dragging, rename and move folders, taking the notes inside.
+Categories in the Library settings tab reorder by dragging; editing a category's folder renames or moves it, taking the notes inside.
 
 ## Sources
 
@@ -101,6 +101,8 @@ Your library is plain notes that open offline; covers load from the web. The plu
 | `www.googleapis.com`, `books.google.com` | Book search with a key, its covers | Title, key |
 | `api.rawg.io`, `media.rawg.io` | Games, with a key | Title or id, genre, key |
 | `store.steampowered.com`, `steamcommunity.com`, `cdn.cloudflare.steamstatic.com`, `video.akamai.steamstatic.com`, `shared.akamai.steamstatic.com`, `shared.fastly.steamstatic.com`, `api.steampowered.com` | Games, trailers, Steam import | Title or app id; sign-in and your library on import |
+| `www.imdb.com`, `api.graphql.imdb.com` | IMDb connector | Sign-in; your ratings and watchlist are read, and scores and new titles from your notes are sent back |
+| `www.netflix.com` | Netflix connector | Sign-in; your viewing activity and thumbs are read, and scores from your notes are sent back as thumbs |
 | `id.twitch.tv`, `api.igdb.com` | Game trailers, with Twitch keys | Twitch ID and secret, game |
 | `api.deezer.com`, `cdn-images.dzcdn.net` | Music search, covers | Album or artist |
 | `graphql.anilist.co`, `anilist.co`, `s4.anilist.co`, streaming services' image hosts | Anime, manga, sync | Title or ids; your token, progress, status, score |

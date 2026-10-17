@@ -14,6 +14,7 @@ import type LibraryPlugin from "./main";
 import type { ICategory, IStatsTop } from "./constants";
 import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
 import { isContentType, type ContentType } from "./providers/types";
+import type { WatchSite } from "./watchSites";
 import { TYPE_DEFAULTS, addCategoryTop, cleanFolder, isDefaultTypeValue, newCategory } from "./categories";
 import { tr } from "./i18n";
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, tokenFromInput } from "./anilistSync";
@@ -248,6 +249,13 @@ export class LibrarySettingTab extends PluginSettingTab {
 				],
 			},
 			{
+				heading: `${tr("settings.default.movie")} · ${tr("settings.default.series")}`,
+				rows: [
+					{ name: "IMDb", desc: tr("settings.imdb.desc"), render: (row) => this.siteAccount(row, "imdb") },
+					{ name: "Netflix", desc: tr("settings.netflix.desc"), render: (row) => this.siteAccount(row, "netflix") },
+				],
+			},
+			{
 				heading: tr("settings.section.anime"),
 				rows: [
 					{ name: tr("anilist.name"), desc: tr("settings.anilist.desc"), render: (row) => this.anilistAccount(row) },
@@ -456,6 +464,29 @@ export class LibrarySettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				} else {
 					await this.plugin.connectSteam();
+				}
+				this.refresh();
+			});
+		});
+	}
+
+	private siteAccount(row: Setting, site: WatchSite): void {
+		const state = this.plugin.settings.watchSites[site];
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: `library-platform-row-icon is-${site}` });
+		icon.appendChild(platformMark(site));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${state.connected ? " is-connected" : ""}` });
+		status.setText(tr(state.connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(state.connected ? "settings.disconnect" : "settings.connect"));
+			if (!state.connected) button.setCta();
+			button.onClick(async () => {
+				if (state.connected) {
+					state.connected = false;
+					await this.plugin.saveSettings();
+				} else {
+					await this.plugin.connectSite(site);
 				}
 				this.refresh();
 			});

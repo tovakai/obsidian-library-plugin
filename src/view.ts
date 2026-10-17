@@ -68,11 +68,11 @@ interface SortChoice {
 
 type Facet = 'year' | 'genre' | 'country' | 'platform'
 
-const FACETS: { facet: Facet, label: string, games?: boolean }[] = [
+const FACETS: { facet: Facet, label: string }[] = [
 	{ facet: 'year', label: 'sort.year' },
 	{ facet: 'genre', label: 'header.genre' },
 	{ facet: 'country', label: 'filter.country' },
-	{ facet: 'platform', label: 'settings.stats.groupPlatforms', games: true },
+	{ facet: 'platform', label: 'settings.stats.groupPlatforms' },
 ]
 
 function facetValues(card: CardData, facet: Facet): string[] {
@@ -581,8 +581,7 @@ export class LibraryView extends ItemView {
 
 	// Only values some card has; a filter shows with 2+ values or a chosen one.
 	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>, kind?: ContentType): void {
-		for (const { facet, label, games } of FACETS) {
-			if (games && kind !== 'game') continue
+		for (const { facet, label } of FACETS) {
 			const counts = new Map<string, number>()
 			for (const card of filters.all) {
 				for (const value of facetValues(card, facet)) counts.set(value, (counts.get(value) ?? 0) + 1)

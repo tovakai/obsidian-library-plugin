@@ -1365,6 +1365,11 @@ sort trigger, the chosen one in the accent colour. */
 	background-color: #e60012;
 }
 
+.library-platform-label.is-netflix {
+	background-color: #000000;
+	color: #e50914;
+}
+
 /* A platform account in settings: its mark, its name and whether it is connected. */
 .library-platform-row .setting-item-name {
 	display: flex;
@@ -1401,6 +1406,16 @@ sort trigger, the chosen one in the accent colour. */
 
 .library-platform-row-icon.is-nintendo {
 	background-color: #e60012;
+}
+
+.library-platform-row-icon.is-imdb {
+	background-color: #f5c518;
+	color: #000000;
+}
+
+.library-platform-row-icon.is-netflix {
+	background-color: #000000;
+	color: #e50914;
 }
 
 .library-platform-row-icon svg {
