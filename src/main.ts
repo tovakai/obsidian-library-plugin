@@ -44,6 +44,7 @@ import { DuplicateRemovalModal, type DuplicateGroup } from './ui/duplicateModal'
 import { ShareModal, shareTargetFromFile } from './ui/shareModal'
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
+import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
 import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSession, type SteamSession } from './steamLibrary'
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
@@ -106,6 +107,11 @@ const SOURCE_SCORES = ['Rating IMDB', 'Rating RT', 'Rating MC', 'Rating RAWG', '
 // a category, or a medium whose category is created with its first note
 type Target = ICategory | ContentType
 
+// A library score as a Netflix thumb: 1 down, 2 up, 3 way up.
+function thumbRank(score: number): number {
+	return ({ THUMBS_DOWN: 1, THUMBS_UP: 2, THUMBS_WAY_UP: 3 } as const)[thumbOf(score)]
+}
+
 function typeOf(target: Target): ContentType {
 	return typeof target === 'string' ? target : target.contentType
 }
@@ -148,6 +154,9 @@ export default class LibraryPlugin extends Plugin {
 	private nintendoImporting = false
 	private lookingUp = false
 	private psnImporting = false
+	private watchImporting = false
+	// Notes an import just found or made, before the metadata cache knows the new ones
+	private watchNotes = new Map<string, TFile>()
 	private malImporting = false
 	private anilistImporting = false
 	// our own MAL write coming back: no echo push
@@ -162,6 +171,8 @@ export default class LibraryPlugin extends Plugin {
 	private syncingLinks = new Set<string>()
 	private linkTimers = new Map<string, number>()
 	private malPushTimers = new Map<string, number>()
+	private imdbPushTimers = new Map<string, number>()
+	private watchPushing = false
 	private enrichTimer: number | null = null
 	private enrichSleepTimer: number | null = null
 	private enrichWait: (() => void) | null = null
@@ -240,6 +251,7 @@ export default class LibraryPlugin extends Plugin {
 						this.malPushTimers.delete(file.path)
 						void this.malPush(file)
 					}, 800))
+					this.armImdbPush(file)
 				})
 			)
 			this.refreshBanner()
@@ -249,6 +261,8 @@ export default class LibraryPlugin extends Plugin {
 			this.registerInterval(window.setInterval(() => this.syncTick(), 3600000))
 			// PSN, Steam, Nintendo in turn: each finds the notes the others wrote
 			this.registerInterval(window.setTimeout(() => this.gameSyncTick(), 60000))
+			this.registerInterval(window.setTimeout(() => this.watchSyncTick(), 60000))
+			this.registerInterval(window.setInterval(() => this.watchSyncTick(), 3600000))
 			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
@@ -394,10 +408,12 @@ export default class LibraryPlugin extends Plugin {
 		if (this.bannerTimer) window.clearTimeout(this.bannerTimer)
 		for (const timer of this.linkTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.malPushTimers.values()) window.clearTimeout(timer)
+		for (const timer of this.imdbPushTimers.values()) window.clearTimeout(timer)
 		this.refreshTimer = null
 		this.bannerTimer = null
 		this.linkTimers.clear()
 		this.malPushTimers.clear()
+		this.imdbPushTimers.clear()
 		this.refreshCooldowns.clear()
 		if (this.enrichTimer) window.clearTimeout(this.enrichTimer)
 		if (this.enrichSleepTimer) window.clearTimeout(this.enrichSleepTimer)
@@ -1022,6 +1038,335 @@ export default class LibraryPlugin extends Plugin {
 		})
 	}
 
+	// IMDb, Netflix: the window keeps the session the import later reads the site with
+	connectSite(site: WatchSite): Promise<boolean> {
+		if (!Platform.isDesktopApp) {
+			new Notice(tr('notice.site.desktopOnly', { site: site === 'imdb' ? 'IMDb' : 'Netflix' }))
+			return Promise.resolve(false)
+		}
+		return new Promise<boolean>((resolve) => {
+			new AuthModal(this.app, SITE_SIGN_IN[site], (answer) => {
+				void (async () => {
+					if (answer) {
+						this.settings.watchSites[site].connected = true
+						await this.saveSettings()
+					}
+					resolve(answer !== null)
+					if (answer) void this.watchImport(site, true)
+				})()
+			}, { title: tr(`site.${site}.loginTitle`), extract: (url) => signedInAt(site, url) }).open()
+		})
+	}
+
+	// IMDb ratings, watchlist and episode scores; Netflix viewing history and thumbs into Movies and Series.
+	// A note found by its IMDb id, Netflix id or name only gains what it lacks; a wrong Netflix id is replaced, your edits win.
+	async watchImport(site: WatchSite, loud: boolean): Promise<void> {
+		if (this.watchImporting || !Platform.isDesktopApp || !this.settings.watchSites[site].connected) return
+		this.watchImporting = true
+		const name = site === 'imdb' ? 'IMDb' : 'Netflix'
+		try {
+			if (loud) new Notice(tr('notice.site.importing', { site: name }))
+			const titles = site === 'imdb' ? await imdbHistory() : await netflixHistory()
+			if (titles === 'signed-out') {
+				this.settings.watchSites[site].connected = false
+				await this.saveSettings()
+				new Notice(tr('notice.site.signedOut', { site: name }))
+				return
+			}
+			if (!titles) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
+			let created = 0
+			let updated = 0
+			for (const title of titles.titles) {
+				if (this.unloaded) return
+				try {
+					const result = await this.importWatched(title)
+					if (result === 'created') created++
+					else if (result === 'updated') updated++
+				} catch (e) {
+					console.error('Library: watch import error', title.name, e)
+				}
+			}
+			for (const episode of titles.episodes as Array<EpisodeRating | NetflixEpisode>) {
+				if (this.unloaded) return
+				try {
+					const result = 'rating' in episode ? await this.importEpisode(episode) : await this.importViewedEpisode(episode)
+					if (result === 'created') created++
+					else if (result === 'updated') updated++
+				} catch (e) {
+					console.error('Library: episode import error', episode.series.name, e)
+				}
+			}
+			this.settings.watchSites[site].lastImport = Date.now()
+			await this.saveSettings()
+			if (loud || created > 0 || updated > 0) new Notice(tr('notice.site.imported', { site: name, created, updated }))
+		} finally {
+			this.watchImporting = false
+			this.watchNotes.clear()
+		}
+		void (site === 'imdb' ? this.imdbBackfill() : this.netflixBackfill())
+	}
+
+	// A rated episode ticks and scores the matching episode in its series note, made if missing.
+	private async importEpisode(rated: EpisodeRating): Promise<'created' | 'updated' | null> {
+		let file = this.noteOfImdb(rated.series.id, 'series')
+		const made = !file && await this.importWatched(rated.series) === 'created'
+		file = file ?? this.watchNotes.get(`series:${rated.series.id}`) ?? null
+		if (!file) return null
+		let changed = false
+		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+			const seasons = seasonsOf(fm)
+			const index = seasonIndex(seasons.map(s => s.name), rated.season)
+			const episode = seasons[index]?.episodes[rated.episode - 1]
+			if (!episode) return
+			if (!episode.watched) { applyEpisodeChange(fm, { season: index, episode: rated.episode - 1, watched: true }); changed = true }
+			if (episode.rating === null) { applyEpisodeChange(fm, { season: index, episode: rated.episode - 1, rating: rated.rating }); changed = true }
+			const echo = this.settings.imdbEcho[rated.series.id] ?? (this.settings.imdbEcho[rated.series.id] = { r: 0 })
+			echo.e = { ...echo.e, [`${String(rated.season)}:${String(rated.episode)}`]: Math.round(rated.rating) }
+		})
+		return made ? 'created' : changed ? 'updated' : null
+	}
+
+	// A Netflix viewing ticks the episode of that name in its season.
+	private async importViewedEpisode(viewed: NetflixEpisode): Promise<'updated' | null> {
+		const typeValues = this.settings.categories.filter(c => c.contentType === 'series').map(c => c.typeValue)
+		const file = this.watchNotes.get(`series:${viewed.series.name.toLowerCase()}`) ?? this.app.vault.getMarkdownFiles().find(f => {
+			const fm = this.app.metadataCache.getFileCache(f)?.frontmatter
+			return !!fm && !isTemplateFile(f.path) && typeValues.indexOf(toStr(fm.Type)) >= 0 && sameTitle(toStr(fm.Name) || f.basename, viewed.series.name)
+		})
+		if (!file) return null
+		const plain = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+		let changed = false
+		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+			const seasons = seasonsOf(fm)
+			const index = seasonIndex(seasons.map(s => s.name), viewed.season)
+			const cut = viewed.title.endsWith('...') || viewed.title.endsWith('…')
+			const wanted = plain(viewed.title.replace(/(\.\.\.|…)$/, ''))
+			const at = seasons[index]?.episodes.findIndex(e => cut ? plain(e.title).startsWith(wanted) : plain(e.title) === wanted) ?? -1
+			if (at < 0 || seasons[index]?.episodes[at]?.watched) return
+			applyEpisodeChange(fm, { season: index, episode: at, watched: true })
+			changed = true
+		})
+		return changed ? 'updated' : null
+	}
+
+	private noteOfImdb(id: string, kind: 'movie' | 'series'): TFile | null {
+		const url = `https://www.imdb.com/title/${id}/`
+		const typeValues = this.settings.categories.filter(c => c.contentType === kind).map(c => c.typeValue)
+		return this.app.vault.getMarkdownFiles().find(file => {
+			if (isTemplateFile(file.path)) return false
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			return !!fm && typeValues.indexOf(toStr(fm.Type)) >= 0 && (toStr(fm['Source ID']) === id || toStr(fm.URL) === url)
+		}) ?? null
+	}
+
+	// The IMDb id of a movie or series note: its Source ID or its IMDb link.
+	private imdbIdOf(fm: Record<string, unknown>): string | null {
+		const kind = this.kindOf(fm)
+		if (kind !== 'movie' && kind !== 'series') return null
+		const own = toStr(fm['Source ID'])
+		if (/^tt\d+$/.test(own)) return own
+		return /^https:\/\/www\.imdb\.com\/title\/(tt\d+)\//.exec(toStr(fm.URL))?.[1] ?? null
+	}
+
+	// What the note says IMDb should hold.
+	private imdbWanted(fm: Record<string, unknown>): ImdbEcho {
+		const rating = Number(toStr(fm['My Rating']))
+		const r = Number.isFinite(rating) && rating >= 1 && rating <= 10 ? Math.round(rating) : 0
+		const e: Record<string, number> = {}
+		if (this.kindOf(fm) === 'series') {
+			const seasons = seasonsOf(fm)
+			const names = seasons.map(s => s.name)
+			seasons.forEach((season, index) => {
+				const numbered = Number(/\d+/.exec(season.name)?.[0])
+				const number = seasonIndex(names, numbered) === index ? numbered : index + 1
+				season.episodes.forEach((episode, at) => {
+					if (episode.rating !== null) e[`${String(number)}:${String(at + 1)}`] = Math.round(episode.rating)
+				})
+			})
+		}
+		return { r, e, l: !this.isStarted(fm) }
+	}
+
+	private armImdbPush(file: TFile): void {
+		if (this.unloaded || !Platform.isDesktopApp || (!this.settings.watchSites.imdb.connected && !this.settings.watchSites.netflix.connected)) return
+		const existing = this.imdbPushTimers.get(file.path)
+		if (existing) window.clearTimeout(existing)
+		this.imdbPushTimers.set(file.path, window.setTimeout(() => {
+			this.imdbPushTimers.delete(file.path)
+			void this.imdbPush(file).then(() => this.netflixPush(file))
+		}, 1500))
+	}
+
+	// Library to Netflix: the note's score as a thumb on the title its Netflix ID names.
+	private async netflixPush(file: TFile): Promise<void> {
+		if (!this.settings.watchSites.netflix.connected) return
+		if (this.watchImporting || this.watchPushing) { this.armImdbPush(file); return }
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const id = Number(toStr(fm?.['Netflix ID']))
+		const rating = Number(toStr(fm?.['My Rating']))
+		if (!fm || !Number.isSafeInteger(id) || id <= 0 || !(rating >= 1 && rating <= 10)) return
+		const rank = thumbRank(rating)
+		if (this.settings.netflixEcho[String(id)] === rank) return
+		this.watchPushing = true
+		try {
+			if (await netflixRate(id, rating)) {
+				this.settings.netflixEcho[String(id)] = rank
+				await this.persistSettings()
+			}
+		} finally {
+			this.watchPushing = false
+		}
+	}
+
+	// Older rated notes reach Netflix one at a time in the background.
+	private async netflixBackfill(): Promise<void> {
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (this.unloaded || !this.settings.watchSites.netflix.connected) return
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			const id = toStr(fm?.['Netflix ID'])
+			const rating = Number(toStr(fm?.['My Rating']))
+			if (!id || !(rating >= 1 && rating <= 10) || this.settings.netflixEcho[id] === thumbRank(rating)) continue
+			await this.netflixPush(file)
+			await new Promise<void>(resolve => { window.setTimeout(resolve, 3000) })
+		}
+	}
+
+	// Library to IMDb: a new score, a new unwatched title (watchlist), episode scores.
+	// Nothing is taken off IMDb when a score is cleared here.
+	private async imdbPush(file: TFile): Promise<boolean> {
+		if (!this.settings.watchSites.imdb.connected) return false
+		// an import or another push in flight: try again shortly
+		if (this.watchImporting || this.watchPushing) {
+			this.armImdbPush(file)
+			return false
+		}
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const id = fm ? this.imdbIdOf(fm) : null
+		if (!fm || !id) return false
+		const want = this.imdbWanted(fm)
+		const had: ImdbEcho = this.settings.imdbEcho[id] ?? { r: 0 }
+		const sent: ImdbEcho = { r: had.r, l: had.l, e: { ...had.e } }
+		this.watchPushing = true
+		try {
+			if (want.r > 0 && want.r !== had.r && await imdbRate(id, want.r)) sent.r = want.r
+			if (want.l && !had.l && had.r === 0 && await imdbWatchlistAdd(id)) sent.l = true
+			if (!want.l && had.l && await imdbWatchlistRemove(id)) sent.l = false
+			const episodes = Object.keys(want.e ?? {}).filter(key => want.e?.[key] !== had.e?.[key])
+			const bySeason = new Map<number, Map<number, string>>()
+			for (const key of episodes) {
+				const season = Number(key.split(':')[0])
+				const episode = Number(key.split(':')[1])
+				if (!bySeason.has(season)) bySeason.set(season, await imdbSeason(id, season))
+				const episodeId = bySeason.get(season)?.get(episode)
+				const value = want.e?.[key]
+				if (episodeId && value && await imdbRate(episodeId, value) && sent.e) sent.e[key] = value
+			}
+		} finally {
+			this.watchPushing = false
+		}
+		this.settings.imdbEcho[id] = sent
+		await this.persistSettings()
+		return true
+	}
+
+	// Older notes reach IMDb one at a time in the background.
+	private async imdbBackfill(): Promise<void> {
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (this.unloaded || !this.settings.watchSites.imdb.connected) return
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			const id = fm && !isTemplateFile(file.path) ? this.imdbIdOf(fm) : null
+			if (!id || this.settings.imdbEcho[id]) continue
+			await this.imdbPush(file)
+			await new Promise<void>(resolve => { window.setTimeout(resolve, 3000) })
+		}
+	}
+
+	private async importWatched(title: WatchedTitle): Promise<'created' | 'updated' | null> {
+		const url = title.id ? `https://www.imdb.com/title/${title.id}/` : ''
+		const typeValues = this.settings.categories.filter(c => c.contentType === title.kind).map(c => c.typeValue)
+		const existing = this.app.vault.getMarkdownFiles().find(file => {
+			if (isTemplateFile(file.path)) return false
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (!fm || typeValues.indexOf(toStr(fm.Type)) < 0) return false
+			if (title.id) return toStr(fm['Source ID']) === title.id || toStr(fm.URL) === url
+			if (title.netflixId && toStr(fm['Netflix ID']) === String(title.netflixId)) return true
+			return sameTitle(toStr(fm.Name) || file.basename, title.name)
+		})
+		const watched = title.watched
+		const key = `${title.kind}:${title.id || title.name.toLowerCase()}`
+		if (existing) {
+			this.watchNotes.set(key, existing)
+			const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
+			const rate = title.rating !== null && isEmptyValue(fm?.['My Rating'])
+			const finish = title.kind === 'movie' && watched && fm?.Complete !== true
+			const link = !!title.netflixId && (toStr(fm?.['Netflix ID']) !== String(title.netflixId) || toStrArray(fm?.Platforms).indexOf('Netflix') < 0)
+			this.noteImdbHas(title)
+			if (title.listed && (title.watched || (fm && this.isStarted(fm))) && await imdbWatchlistRemove(title.id)) {
+				const echo = this.settings.imdbEcho[title.id]
+				if (echo) echo.l = false
+			}
+			if (!rate && !finish && !link) return null
+			await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
+				if (rate) current['My Rating'] = title.rating
+				if (finish) current.Complete = true
+				if (link) {
+					current['Netflix ID'] = title.netflixId
+					addPlatform(current, 'Netflix', null)
+				}
+			})
+			return 'updated'
+		}
+		const provider = this.registry.forType(title.kind)
+		if (!provider) return null
+		// Netflix gives only a name: the source's best match for it, else a bare note
+		const sourceId = title.id || (await provider.search(title.name, title.kind))[0]?.sourceId || ''
+		const meta = sourceId ? await provider.fetch(sourceId, title.kind) : null
+		const category = await this.categoryFor(title.kind)
+		const extra: Record<string, unknown> = {}
+		if (title.rating !== null) extra['My Rating'] = title.rating
+		if (title.netflixId) {
+			extra['Netflix ID'] = title.netflixId
+			extra.Platforms = ['Netflix']
+		}
+		if (title.kind === 'movie' && watched) extra.Complete = true
+		const when = title.when ? dmyOf(title.when) : ''
+		if (when) extra.Date = when
+		const name = toStr(meta?.fields.Name) || title.name
+		const file = await this.newNote(category, provider.id, sourceId, name, meta ?? { fields: { Name: title.name, Year: title.year }, progressTotal: null, imdbId: null }, extra)
+		this.watchNotes.set(key, file)
+		this.noteImdbHas(title)
+		if (title.listed && title.watched && await imdbWatchlistRemove(title.id)) {
+			const echo = this.settings.imdbEcho[title.id]
+			if (echo) echo.l = false
+		}
+		return 'created'
+	}
+
+	// What came from a site need not go back to it.
+	private noteImdbHas(title: WatchedTitle): void {
+		if (title.netflixId && title.rating !== null) this.settings.netflixEcho[String(title.netflixId)] = thumbRank(title.rating)
+		if (!/^tt\d+$/.test(title.id)) return
+		const echo = this.settings.imdbEcho[title.id] ?? (this.settings.imdbEcho[title.id] = { r: 0 })
+		if (title.rating !== null) echo.r = Math.round(title.rating)
+		if (title.listed) echo.l = true
+	}
+
+	private isStarted(fm: Record<string, unknown>): boolean {
+		const kind = this.kindOf(fm) ?? 'movie'
+		const rating = Number(toStr(fm['My Rating']))
+		return isFinished(fm, kind) || fm.Complete === true || parseWatched(fm.Progress) > 0 || (rating >= 1 && rating <= 10)
+	}
+
+	private async watchSyncIfDue(site: WatchSite): Promise<void> {
+		const state = this.settings.watchSites[site]
+		if (!Platform.isDesktopApp || !state.connected || Date.now() - state.lastImport < 24 * 3600000) return
+		await this.watchImport(site, false)
+	}
+
+	private watchSyncTick(): void {
+		void this.watchSyncIfDue('imdb').then(() => this.watchSyncIfDue('netflix')).catch((e: unknown) => console.error('Library: watch sync error', e))
+	}
+
 	// Nintendo: consent first — a third-party signing service carries the requests
 	async connectNintendo(): Promise<boolean> {
 		if (!Platform.isDesktopApp) {
@@ -1562,6 +1907,7 @@ export default class LibraryPlugin extends Plugin {
 		if (this.settings.psnTokens) await this.psnImport(true)
 		if (this.settings.steamId.trim()) await this.steamImport(true)
 		if (this.settings.nintendoTokens) await this.nintendoImport(true)
+		for (const site of ['imdb', 'netflix'] as const) if (this.settings.watchSites[site].connected) await this.watchImport(site, true)
 	}
 
 	private pruneEcho(): void {
@@ -1569,6 +1915,19 @@ export default class LibraryPlugin extends Plugin {
 		for (const path of Object.keys(this.settings.malEcho)) {
 			if (!paths.has(path)) delete this.settings.malEcho[path]
 		}
+		if (this.watchImporting) return
+		const imdb = new Set<string>()
+		const netflix = new Set<string>()
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (!fm) continue
+			const id = this.imdbIdOf(fm)
+			if (id) imdb.add(id)
+			const netflixId = toStr(fm['Netflix ID'])
+			if (netflixId) netflix.add(netflixId)
+		}
+		for (const id of Object.keys(this.settings.imdbEcho)) if (!imdb.has(id)) delete this.settings.imdbEcho[id]
+		for (const id of Object.keys(this.settings.netflixEcho)) if (!netflix.has(id)) delete this.settings.netflixEcho[id]
 	}
 
 	private async importMalEntries(entries: MalEntry[], kind: 'anime' | 'manga'): Promise<{ created: number; updated: number }> {
@@ -2631,6 +2990,14 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
 		if (!this.settings.nintendoTokens || typeof this.settings.nintendoTokens !== 'object') this.settings.nintendoTokens = null
 		if (typeof this.settings.nintendoLastImport !== 'number') this.settings.nintendoLastImport = 0
+		if (!this.settings.imdbEcho || typeof this.settings.imdbEcho !== 'object') this.settings.imdbEcho = {}
+		if (!this.settings.netflixEcho || typeof this.settings.netflixEcho !== 'object') this.settings.netflixEcho = {}
+		const sites = (this.settings.watchSites && typeof this.settings.watchSites === 'object' ? this.settings.watchSites : {}) as Partial<ILibrarySettings['watchSites']>
+		this.settings.watchSites = { imdb: { connected: false, lastImport: 0 }, netflix: { connected: false, lastImport: 0 } }
+		for (const site of ['imdb', 'netflix'] as const) {
+			const saved = sites[site]
+			if (saved && typeof saved === 'object') this.settings.watchSites[site] = { connected: saved.connected === true, lastImport: typeof saved.lastImport === 'number' ? saved.lastImport : 0 }
+		}
 		if (typeof this.settings.upNextInCategories !== 'boolean') this.settings.upNextInCategories = true
 		if (typeof this.settings.skipFields !== 'string') this.settings.skipFields = ''
 		if (!this.settings.psnTokens || typeof this.settings.psnTokens !== 'object') this.settings.psnTokens = null
