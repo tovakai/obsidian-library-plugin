@@ -1,0 +1,56 @@
+name: Publish wiki
+
+# The wiki is written in docs/wiki and published from main: each file is a
+# page, named as the file without .md. Edits made on the wiki site itself
+# are overwritten by the next publish.
+# A merge by the Auto-merge workflow pushes to main with the Actions token,
+# which starts no push workflow; "Delete merged branches" finishes after
+# that merge, so its completion publishes too. A publish with nothing new
+# does nothing.
+on:
+    push:
+        branches: [main]
+        paths: [docs/wiki/**]
+    workflow_run:
+        workflows: [Delete merged branches]
+        types: [completed]
+    workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+    group: wiki
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        if: github.repository == 'venvk/obsidian-library-plugin'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: main
+
+            - name: Publish docs/wiki
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git" "$RUNNER_TEMP/wiki"
+                  # The wiki becomes exactly docs/wiki: pages removed there go too.
+                  find "$RUNNER_TEMP/wiki" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+                  cp -R docs/wiki/. "$RUNNER_TEMP/wiki/"
+                  cd "$RUNNER_TEMP/wiki"
+                  git add -A
+                  if git diff --cached --quiet; then
+                      echo "The wiki already matches docs/wiki."
+                      exit 0
+                  fi
+                  git status --short
+                  sha="$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)"
+                  git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+                      commit -q -m "docs: wiki from ${sha}" -m "https://github.com/${REPO}/tree/${sha}/docs/wiki"
+                  git push -q origin HEAD
