@@ -37,7 +37,7 @@ import { isContentType } from './providers/types'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './providers/types'
 import { PickTypeModal, type AddChoice } from './ui/pickTypeModal'
 import { ConfirmModal } from './ui/confirmModal'
-import { MEDIA, TYPE_DEFAULTS, addCategoryTop, cleanFolder, inferLibraryFolder, isInside, joinFolder, newCategory, parentFolder } from './categories'
+import { MEDIA, TYPE_DEFAULTS, addCategoryTop, isBuiltInCategory, cleanFolder, inferLibraryFolder, isInside, joinFolder, newCategory, parentFolder } from './categories'
 import { AddContentModal } from './ui/addContentModal'
 import { LibrarySearchModal } from './ui/librarySearchModal'
 import { PromptModal } from './ui/promptModal'
@@ -3428,6 +3428,7 @@ export default class LibraryPlugin extends Plugin {
 			delete legacy.showRated
 			delete legacy.stats
 			if (cat.collapsed !== true) delete cat.collapsed
+			if (isBuiltInCategory(cat)) delete cat.template
 		}
 		this.settings.stats = this.loadStats(data?.stats, defaults.stats, unrated)
 		// Settings from before the library folder: the parent its categories share.

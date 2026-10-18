@@ -15,7 +15,7 @@ import type { ICategory, IStatsTop } from "./constants";
 import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
 import { isContentType, type ContentType } from "./providers/types";
 import type { WatchSite } from "./watchSites";
-import { TYPE_DEFAULTS, addCategoryTop, cleanFolder, isDefaultTypeValue, newCategory } from "./categories";
+import { TYPE_DEFAULTS, addCategoryTop, cleanFolder, isBuiltInCategory, isDefaultTypeValue, newCategory } from "./categories";
 import { tr } from "./i18n";
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, tokenFromInput } from "./anilistSync";
 import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malClientPair } from "./malSync";
@@ -557,11 +557,12 @@ export class LibrarySettingTab extends PluginSettingTab {
 	private categoryRows(cat: ICategory, index: number): Row[] {
 		const label = (): string => cat.name || tr("settings.category.name", { index: index + 1 });
 		const unfolded = (): boolean => this.expanded.has(cat);
-		return [
+		const builtIn = isBuiltInCategory(cat);
+		const rows: Row[] = [
 			{ name: label(), render: (row) => this.categoryControls(row, cat, label) },
 			{
 				name: tr("settings.category.type"),
-				visible: unfolded,
+				visible: () => !builtIn && unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
 					row.addText((text) =>
@@ -579,7 +580,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			},
 			{
 				name: tr("settings.category.folder"),
-				visible: unfolded,
+				visible: () => builtIn || unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
 					row.addText((text) => {
@@ -598,7 +599,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			{
 				name: tr("settings.category.template"),
 				desc: tr("settings.category.template.desc"),
-				visible: unfolded,
+				visible: () => !builtIn && unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
 					row.addText((text) =>
@@ -615,11 +616,13 @@ export class LibrarySettingTab extends PluginSettingTab {
 				},
 			},
 		];
+		return rows;
 	}
 
 	private categoryControls(row: Setting, cat: ICategory, label: () => string): void {
 		const settings = this.plugin.settings;
-		row.addText((text) =>
+		const builtIn = isBuiltInCategory(cat);
+		if (!builtIn) row.addText((text) =>
 			text
 				.setPlaceholder(tr("settings.category.name.placeholder"))
 				.setValue(cat.name)
@@ -629,7 +632,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}),
 		);
-		row.addDropdown((dropdown) => {
+		if (!builtIn) row.addDropdown((dropdown) => {
 			this.addSourceOptions(dropdown);
 			dropdown.setValue(cat.contentType).onChange(async (value) => {
 				if (!isContentType(value)) return;
@@ -685,7 +688,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			if (at > 0) row.addExtraButton((button) => button.setIcon("arrow-up").setTooltip(tr("settings.category.up")).onClick(() => place(cat, at - 1)));
 			if (at < list.length - 1) row.addExtraButton((button) => button.setIcon("arrow-down").setTooltip(tr("settings.category.down")).onClick(() => place(cat, at + 1)));
 		}
-		row.addExtraButton((button) => {
+		if (!builtIn) row.addExtraButton((button) => {
 			const setIcon = (): void => {
 				button.setIcon(this.expanded.has(cat) ? "chevron-up" : "chevron-down");
 			};
