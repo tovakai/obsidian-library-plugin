@@ -42,16 +42,14 @@ Same name, different films? Add the year: `dune 1984`.
 
 Connect an account in the plugin settings. Your lists arrive as notes, and anime progress and scores stay in sync.
 
-| | Service | What comes in | What goes back |
-| :-: | --- | --- | --- |
-| <img src="assets/connectors/anilist.svg" width="24" alt=""> | **AniList** | Anime and manga lists, progress, scores | Progress and score, with the Push command |
-| <img src="assets/connectors/myanimelist.svg" width="24" alt=""> | **MyAnimeList** | Anime and manga lists, progress, scores | Progress and score, on save |
-| <img src="assets/connectors/kitsu.svg" width="24" alt=""> | **Kitsu** | Anime list, progress, ratings | Progress and rating, on save |
-| <img src="assets/connectors/imdb.svg" width="24" alt=""> | **IMDb** | Ratings, episode ratings, watchlist | Scores and new watchlist titles |
-| <img src="assets/connectors/netflix.svg" width="24" alt=""> | **Netflix** | Viewing history and thumbs up or down | Scores, as thumbs |
-| <img src="assets/connectors/playstation.svg" width="24" alt=""> | **PlayStation** | Played games, playtime, trophies with icons and dates | Nothing |
-| <img src="assets/connectors/steam.svg" width="24" alt=""> | **Steam** | Library, playtime, achievements with icons and dates | Nothing |
-| <img src="assets/connectors/nintendo.svg" width="24" alt=""> | **Nintendo Switch** | Played games and playtime | Nothing |
+- <img src="assets/connectors/anilist.svg" width="18" height="18" alt=""> **AniList**: anime and manga lists, progress and scores; changes go back with the Push command
+- <img src="assets/connectors/myanimelist.svg" width="18" height="18" alt=""> **MyAnimeList**: anime and manga lists, progress and scores; changes go back on save
+- <img src="assets/connectors/kitsu.svg" width="18" height="18" alt=""> **Kitsu**: anime list, progress and ratings; changes go back on save
+- <img src="assets/connectors/imdb.svg" width="18" height="18" alt=""> **IMDb**: ratings, episode ratings and watchlist; scores and new watchlist titles go back
+- <img src="assets/connectors/netflix.svg" width="18" height="18" alt=""> **Netflix**: viewing history and thumbs; scores go back as thumbs
+- <img src="assets/connectors/playstation.svg" width="18" height="18" alt=""> **PlayStation**: played games, playtime and trophies
+- <img src="assets/connectors/steam.svg" width="18" height="18" alt=""> **Steam**: library, playtime and achievements
+- <img src="assets/connectors/nintendo.svg" width="18" height="18" alt=""> **Nintendo Switch**: played games and playtime
 
 Imports run once a day on desktop. Your own scores are never overwritten, and progress never moves backwards. IMDb, Netflix, PlayStation, Steam and Nintendo work on desktop only.
 
