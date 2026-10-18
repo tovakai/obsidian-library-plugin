@@ -395,6 +395,8 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'filter.title': 'Filter',
 		'filter.clear': 'Clear filters',
 		'header.nextEpisode': 'Next episode',
+		'settings.localCovers.name': 'Keep covers in the vault',
+		'settings.localCovers.desc': 'Downloads cover images into a Covers folder in the library folder, so the library shows them offline. The note then links the file.',
 		'settings.comingSoon.name': 'Soon',
 		'settings.comingSoon.desc': 'Next episodes of the series and anime you are watching, with their air dates.',
 		'card.notStarted': 'Not started yet',
@@ -28790,6 +28792,7 @@ export interface ILibrarySettings {
 	showRecommendations: boolean
 	showUpNext: boolean
 	showComingSoon: boolean
+	localCovers: boolean
 	comingSoonCollapsed: boolean
 	airing: Record<string, Airing[]>
 	airingChecked: number
@@ -28844,6 +28847,7 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	showRecommendations: true,
 	showUpNext: true,
 	showComingSoon: true,
+	localCovers: false,
 	comingSoonCollapsed: false,
 	airing: {},
 	airingChecked: 0,

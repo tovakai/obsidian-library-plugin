@@ -8,6 +8,7 @@ import {
 	setTooltip,
 	Platform,
 	getLanguage,
+	requestUrl,
 } from 'obsidian'
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
@@ -95,7 +96,10 @@ import {
 	SEARCH_BUDGET_MS,
 	safeUrl,
 	linkLabel,
-	toLinks
+	toLinks,
+	coverKey,
+	imageExtension,
+	publicHttpsUrl
 } from './util'
 
 // Genre, Creator and Cast hold [[links]]: each linked note lists the title as a
@@ -194,6 +198,9 @@ export default class LibraryPlugin extends Plugin {
 	private lightbox: Lightbox | null = null
 	// unfolded seasons per note; screen state only
 	private openSeasons = new Map<string, Set<number>>()
+	private coverQueue = new Set<string>()
+	private coverWorking = false
+	private coverFailed = new Set<string>()
 	private trophyLists = new Map<string, { trophies: PsnTrophy[]; total: number } | null>()
 	private openTrophies = new Set<string>()
 	private chapterLookups = new Set<string>()
@@ -283,6 +290,7 @@ export default class LibraryPlugin extends Plugin {
 			this.registerInterval(window.setTimeout(() => this.watchSyncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.watchSyncTick(), 3600000))
 			this.registerInterval(window.setTimeout(() => void this.airingIfDue(), 30000))
+			this.registerInterval(window.setTimeout(() => this.coverSweep(), 20000))
 			this.registerInterval(window.setInterval(() => void this.airingIfDue(), 3600000))
 			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
@@ -819,6 +827,7 @@ export default class LibraryPlugin extends Plugin {
 		try {
 			await this.syncTracking(file, fm)
 			await this.syncLinkFields(file, fm)
+			this.queueCover(file)
 		} catch (e) {
 			console.error('Library: note sync error', file.path, e)
 		}
@@ -1677,6 +1686,8 @@ export default class LibraryPlugin extends Plugin {
 						await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
 							for (const key of Object.keys(fields)) {
 								if (key === 'Complete' && current.Complete === true) continue
+								// a cover kept in the vault stays
+								if (key === this.fieldTarget('Cover') && !isEmptyValue(current[key]) && !/^https?:/i.test(toStr(current[key]))) continue
 								current[key] = fields[key]
 							}
 							if (!touched.has(existing.path)) dropPlatforms(current, isPlayStation)
@@ -2491,6 +2502,63 @@ export default class LibraryPlugin extends Plugin {
 			const target = this.fieldTarget(key)
 			if (!isEmptyValue(fm[target])) continue
 			fm[target] = LINK_FIELDS.indexOf(key) >= 0 ? toLinks(value) : value
+		}
+	}
+
+	// Covers into <library>/Covers, one note at a time; the note then links the file.
+	coverSweep(): void {
+		if (!this.settings.localCovers) return
+		for (const file of this.app.vault.getMarkdownFiles()) this.queueCover(file)
+	}
+
+	private queueCover(file: TFile): void {
+		if (!this.settings.localCovers || this.unloaded) return
+		this.coverQueue.add(file.path)
+		void this.coverWork()
+	}
+
+	private async coverWork(): Promise<void> {
+		if (this.coverWorking) return
+		this.coverWorking = true
+		try {
+			for (const path of this.coverQueue) {
+				this.coverQueue.delete(path)
+				if (this.unloaded || !this.settings.localCovers) break
+				const file = this.app.vault.getFileByPath(path)
+				if (file) await this.localizeCover(file)
+			}
+		} finally {
+			this.coverWorking = false
+		}
+	}
+
+	private async localizeCover(file: TFile): Promise<void> {
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		if (!fm || isTemplateFile(file.path) || !this.settings.categories.some(c => c.typeValue === toStr(fm.Type))) return
+		const key = coverKey(fm, this.coverProperty())
+		const remote = key ? toStr(fm[key]) : ''
+		const url = publicHttpsUrl(remote)
+		if (!key || !url || this.coverFailed.has(url)) return
+		try {
+			const resp = await requestUrl({ url, throw: false })
+			const type = Object.keys(resp.headers).find(name => name.toLowerCase() === 'content-type')
+			const ext = imageExtension(type ? resp.headers[type] ?? '' : '')
+			if (resp.status !== 200 || !ext || resp.arrayBuffer.byteLength === 0) {
+				this.coverFailed.add(url)
+				return
+			}
+			const dir = joinFolder(this.settings.libraryFolder, 'Covers')
+			await this.ensureFolder(dir)
+			const base = sanitizeFilename(file.basename) || 'Cover'
+			let path = `${dir}/${base}.${ext}`
+			for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) path = `${dir}/${base} ${String(n)}.${ext}`
+			await this.app.vault.createBinary(path, resp.arrayBuffer)
+			await this.app.fileManager.processFrontMatter(file, (current: Record<string, unknown>) => {
+				if (toStr(current[key]) === remote) current[key] = `[[${path}]]`
+			})
+		} catch (e) {
+			this.coverFailed.add(url)
+			console.error('Library: cover download error', file.path, e)
 		}
 	}
 
@@ -3484,6 +3552,7 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.showComingSoon !== 'boolean') this.settings.showComingSoon = true
+		if (typeof this.settings.localCovers !== 'boolean') this.settings.localCovers = false
 		if (typeof this.settings.comingSoonCollapsed !== 'boolean') this.settings.comingSoonCollapsed = false
 		if (!this.settings.airing || typeof this.settings.airing !== 'object' || Object.values(this.settings.airing).some(value => !Array.isArray(value))) {
 			this.settings.airing = {}

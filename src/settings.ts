@@ -235,6 +235,19 @@ export class LibrarySettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: tr("settings.localCovers.name"),
+						desc: tr("settings.localCovers.desc"),
+						render: (row) => {
+							row.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.localCovers).onChange(async (value) => {
+									this.plugin.settings.localCovers = value;
+									await this.plugin.saveSettings();
+									this.plugin.coverSweep();
+								}),
+							);
+						},
+					},
+					{
 						name: tr("settings.upNextInCategories.name"),
 						desc: tr("settings.upNextInCategories.desc"),
 						render: (row) => {
