@@ -16,6 +16,8 @@ import {
 	linkLabel,
 	notStarted,
 	shownProgress,
+	isFinished,
+	parseProgress,
 	coverSrc,
 	coverValue,
 	runtimeMinutes,
@@ -59,9 +61,9 @@ const TIME_COLORS: Record<string, string> = {
 	game: 'color-mix(in srgb, var(--interactive-accent) 80%, var(--text-normal))'
 }
 
-type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played' | 'unstarted'
+type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played' | 'unstarted' | 'progress'
 
-const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played', 'unstarted']
+const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played', 'unstarted', 'progress']
 
 interface SortChoice {
 	key: SortKey
@@ -697,6 +699,7 @@ export class LibraryView extends ItemView {
 			{ label: tr('sort.rating'), key: 'rating' },
 			{ label: tr('sort.date'), key: 'date' },
 			{ label: tr('sort.modified'), key: 'modified' },
+			{ label: tr('sort.progress'), key: 'progress' },
 			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : []),
 			// Only where some exist: Up next can take them all away.
 			...(spec.sortId !== UP_NEXT_SORT && cards.some(card => notStarted(card.fm, card.kind))
@@ -713,6 +716,8 @@ export class LibraryView extends ItemView {
 			sortTrigger.setText((opt?.label ?? '') + ' ' + (sortAsc ? '↑' : '↓'))
 		}
 
+		// finished counts as full even without a Progress value
+		const progressOf = (card: CardData): number => isFinished(card.fm, card.kind) ? 100 : Math.min(100, parseProgress(card.fm.Progress))
 		const renderGrid = (): void => {
 			const sorted = [...cards].sort((a, b) => {
 				let cmp = 0
@@ -723,6 +728,7 @@ export class LibraryView extends ItemView {
 					case 'date': cmp = a.date - b.date; break
 					case 'modified': cmp = a.file.stat.mtime - b.file.stat.mtime; break
 					case 'played': cmp = parseDate(a.fm['Last Played']) - parseDate(b.fm['Last Played']); break
+					case 'progress': cmp = progressOf(a) - progressOf(b) || a.name.localeCompare(b.name); break
 					case 'unstarted':
 						cmp = Number(notStarted(b.fm, b.kind)) - Number(notStarted(a.fm, a.kind))
 						// Named order within each half, whichever way the halves go.

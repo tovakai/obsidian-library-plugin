@@ -150,6 +150,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'sort.rating': 'Rating',
 		'sort.date': 'Date',
 		'sort.modified': 'Last modified',
+		'sort.progress': 'Progress',
 		'header.creator': 'Creator',
 		'header.cast': 'Cast',
 		'header.years': 'Years',
