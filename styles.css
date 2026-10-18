@@ -1475,6 +1475,10 @@ sort trigger, the chosen one in the accent colour. */
 	background-color: #e60012;
 }
 
+.library-platform-row-icon.is-kitsu {
+	background-color: #f75239;
+}
+
 .library-platform-row-icon.is-imdb {
 	background-color: #f5c518;
 	color: #000000;
