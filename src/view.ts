@@ -621,9 +621,9 @@ export class LibraryView extends ItemView {
 		}
 	}
 
-	private sectionMeta(toolbar: HTMLElement, cards: CardData[], kind?: ContentType): void {
+	private sectionMeta(row: HTMLElement, cards: CardData[], kind?: ContentType): void {
 		const count = formatNumber(cards.length)
-		toolbar.createSpan({
+		row.createSpan({
 			cls: 'library-section-count',
 			text: count,
 			attr: { 'aria-label': `${count} ${trCount('stats.works', cards.length)}` }
@@ -632,7 +632,7 @@ export class LibraryView extends ItemView {
 		let minutes = 0
 		for (const card of cards) minutes += spentMinutes(card.fm, card.kind)
 		if (minutes <= 0) return
-		const time = toolbar.createSpan({ cls: 'library-section-time' })
+		const time = row.createSpan({ cls: 'library-section-time' })
 		setTooltip(time, exactHours(minutes), { placement: 'top' })
 		setIcon(time.createSpan({ cls: 'library-section-time-icon' }), 'clock')
 		time.createSpan({ text: spentTime(minutes) })
@@ -649,7 +649,7 @@ export class LibraryView extends ItemView {
 			text: '▼',
 			attr: { 'aria-label': spec.title, 'aria-expanded': 'true' }
 		})
-		this.sectionMeta(toolbar, cards, spec.kind)
+		this.sectionMeta(heading, cards, spec.kind)
 		if (spec.filters) this.sectionFilters(toolbar, spec.filters, spec.kind)
 		toolbar.createDiv({ cls: 'library-toolbar-spacer' })
 
