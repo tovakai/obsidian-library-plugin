@@ -506,7 +506,7 @@ export class LibraryView extends ItemView {
 
 		// Not-started may live in Up next alone only while that block is on.
 		const settings = this.plugin.settings
-		if (settings.showComingSoon) this.renderComingSoon(root, sections.flatMap(section => section.cards))
+		if (settings.showComingSoon) this.renderComingSoon(root, sections.reduce((all, section) => all.concat(section.cards), [] as CardData[]))
 		const upNextOnly = settings.showUpNext && !settings.upNextInCategories
 		let rendered = 0
 		for (const { category, cards } of sections) {

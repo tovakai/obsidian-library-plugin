@@ -6,12 +6,12 @@
 
 <p align="center">
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?logo=TypeScript&logoColor=FFF&style=flat-square" alt="TypeScript"></a>
-  <a href="https://community.obsidian.md/plugins/library"><img src="https://img.shields.io/badge/Obsidian-Community%20Plugin-7C3AED?style=flat-square&logo=obsidian&logoColor=white" alt="Community Plugin"></a>
   <a href="https://obsidian.md/"><img src="https://img.shields.io/badge/Obsidian-v1.8.7+-7C3AED?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian v1.8.7+"></a>
+  <a href="https://community.obsidian.md/plugins/library"><img src="https://img.shields.io/badge/Community%20Plugin-Published-7C3AED?style=flat-square&logo=obsidian&logoColor=white" alt="Community Plugin"></a>
   <a href="https://github.com/venvk/obsidian-library-plugin/releases"><img src="https://img.shields.io/github/v/release/venvk/obsidian-library-plugin?style=flat-square&label=version&color=blue" alt="Version"></a>
-  <a href="https://github.com/venvk/obsidian-library-plugin/stargazers"><img src="https://img.shields.io/github/stars/venvk/obsidian-library-plugin?style=flat-square&label=stars&color=yellow" alt="Stars"></a>
   <a href="https://github.com/venvk/obsidian-library-plugin/releases"><img src="https://img.shields.io/github/downloads/venvk/obsidian-library-plugin/total?style=flat-square&color=brightgreen" alt="Downloads"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/venvk/obsidian-library-plugin?style=flat-square&color=orange" alt="License"></a>
+  <a href="https://github.com/venvk/obsidian-library-plugin/stargazers"><img src="https://img.shields.io/github/stars/venvk/obsidian-library-plugin?style=flat-square&logo=github&color=f1c40f" alt="Stars"></a>
+  <a href="https://github.com/venvk/obsidian-library-plugin/blob/main/LICENSE"><img src="https://img.shields.io/github/license/venvk/obsidian-library-plugin?style=flat-square&color=orange" alt="License"></a>
 </p>
 
 <p align="center">
@@ -42,16 +42,14 @@ Same name, different films? Add the year: `dune 1984`.
 
 Connect an account in the plugin settings. Your lists arrive as notes, and anime progress and scores stay in sync.
 
-| | Service | What comes in | What goes back |
-| :-: | --- | --- | --- |
-| <img src="assets/connectors/anilist.svg" width="24" alt=""> | **AniList** | Anime and manga lists, progress, scores | Progress and score, with the Push command |
-| <img src="assets/connectors/myanimelist.svg" width="24" alt=""> | **MyAnimeList** | Anime and manga lists, progress, scores | Progress and score, on save |
-| <img src="assets/connectors/kitsu.svg" width="24" alt=""> | **Kitsu** | Anime list, progress, ratings | Progress and rating, on save |
-| <img src="assets/connectors/imdb.svg" width="24" alt=""> | **IMDb** | Ratings, episode ratings, watchlist | Scores and new watchlist titles |
-| <img src="assets/connectors/netflix.svg" width="24" alt=""> | **Netflix** | Viewing history and thumbs up or down | Scores, as thumbs |
-| <img src="assets/connectors/playstation.svg" width="24" alt=""> | **PlayStation** | Played games, playtime, trophies with icons and dates | Nothing |
-| <img src="assets/connectors/steam.svg" width="24" alt=""> | **Steam** | Library, playtime, achievements with icons and dates | Nothing |
-| <img src="assets/connectors/nintendo.svg" width="24" alt=""> | **Nintendo Switch** | Played games and playtime | Nothing |
+- <img src="assets/connectors/anilist.svg" width="18" height="18" alt=""> **AniList**: anime and manga lists, progress and scores; changes go back with the Push command
+- <img src="assets/connectors/myanimelist.svg" width="18" height="18" alt=""> **MyAnimeList**: anime and manga lists, progress and scores; changes go back on save
+- <img src="assets/connectors/kitsu.svg" width="18" height="18" alt=""> **Kitsu**: anime list, progress and ratings; changes go back on save
+- <img src="assets/connectors/imdb.svg" width="18" height="18" alt=""> **IMDb**: ratings, episode ratings and watchlist; scores and new watchlist titles go back
+- <img src="assets/connectors/netflix.svg" width="18" height="18" alt=""> **Netflix**: viewing history and thumbs; scores go back as thumbs
+- <img src="assets/connectors/playstation.svg" width="18" height="18" alt=""> **PlayStation**: played games, playtime and trophies
+- <img src="assets/connectors/steam.svg" width="18" height="18" alt=""> **Steam**: library, playtime and achievements
+- <img src="assets/connectors/nintendo.svg" width="18" height="18" alt=""> **Nintendo Switch**: played games and playtime
 
 Imports run once a day on desktop. Your own scores are never overwritten, and progress never moves backwards. IMDb, Netflix, PlayStation, Steam and Nintendo work on desktop only.
 
@@ -68,7 +66,7 @@ Each category searches open sources. An API key adds richer data, and its servic
 | Comics | Wikidata, AniList | [Comic Vine](https://comicvine.gamespot.com/api/) |
 | Music | Deezer | None |
 
-Anything that doesn't fit goes into a custom category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
+Anything that doesn't fit goes into a Manual category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
 **Example note**
 
@@ -77,12 +75,9 @@ Anything that doesn't fit goes into a custom category with your own fields. More
 Type: Series
 Name: Stranger Things
 Year: 2016
-Genre: ["[[Drama]]", "[[Horror]]"]
-Creator: ["[[The Duffer Brothers]]"]
-Cast: ["[[Winona Ryder]]"]
 Rating IMDB: 8.7
 My Rating: 9
-Cover: https://m.media-amazon.com/images/...
+Cover: https://images.metahub.space/poster/medium/tt4574334/img
 Progress: 8/42
 Date: 01.03.2026
 Source: omdb
@@ -90,7 +85,7 @@ Source ID: tt4574334
 ---
 ```
 
-`Progress: 8/42` means 8 of 42 episodes watched; `[[Drama]]` is a link to your Drama note. Refreshing a note fills in empty fields and updates ratings from the source. It never overwrites your own rating or progress.
+`Progress: 8/42` means 8 of 42 episodes watched. Genre, creator and cast are written as links to their own notes. Refreshing a note fills in empty fields and updates ratings from the source. It never overwrites your own rating or progress.
 
 <details>
 <summary><b>Commands</b></summary>
