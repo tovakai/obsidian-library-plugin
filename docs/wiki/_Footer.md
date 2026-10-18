@@ -1,0 +1,1 @@
+[Install](https://community.obsidian.md/plugins/library) · [Releases](https://github.com/venvk/obsidian-library-plugin/releases) · [Report a bug or idea](https://github.com/venvk/obsidian-library-plugin/issues/new/choose) · [Ask in Discussions](https://github.com/venvk/obsidian-library-plugin/discussions) · [Buy me a coffee](https://buymeacoffee.com/venvk)
