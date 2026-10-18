@@ -1,7 +1,7 @@
 import { App, requestUrl, TFile } from 'obsidian'
 import { RATING_RT_ICON } from './constants'
 import { tr } from './i18n'
-import { coverValue, linkLabel, sanitizeFilename, toStr, toStrArray } from './util'
+import { coverValue, linkLabel, publicHttpsUrl, sanitizeFilename, toStr, toStrArray } from './util'
 
 const W = 1200
 const H = 630
@@ -16,7 +16,9 @@ async function loadCoverBytes(app: App, rawCover: unknown): Promise<ArrayBuffer 
 	const s = toStr(rawCover).trim()
 	if (!s) return null
 	if (/^https?:\/\//i.test(s)) {
-		const resp = await requestUrl({ url: s, throw: false })
+		const url = publicHttpsUrl(s)
+		if (!url) return null
+		const resp = await requestUrl({ url, throw: false })
 		return resp.status === 200 ? resp.arrayBuffer : null
 	}
 	const match = s.match(/\[\[([^\]|]+)/)

@@ -7,6 +7,7 @@ import {
 	setIcon,
 	setTooltip,
 	Platform,
+	getLanguage,
 } from 'obsidian'
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
@@ -24,6 +25,7 @@ import { GameTrailerFinder } from './providers/gameTrailer'
 import { DeezerProvider } from './providers/deezer'
 import { AnimeProvider } from './providers/anime'
 import { MalProvider } from './providers/mal'
+import { KitsuProvider } from './providers/kitsu'
 import { ComicsProvider } from './providers/comics'
 import { ComicsAggregatorProvider } from './providers/comicsAggregator'
 import { WikidataComicProvider } from './providers/wikidataComics'
@@ -36,7 +38,7 @@ import { isContentType } from './providers/types'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './providers/types'
 import { PickTypeModal, type AddChoice } from './ui/pickTypeModal'
 import { ConfirmModal } from './ui/confirmModal'
-import { MEDIA, TYPE_DEFAULTS, addCategoryTop, cleanFolder, inferLibraryFolder, isInside, joinFolder, newCategory, parentFolder } from './categories'
+import { MEDIA, TYPE_DEFAULTS, addCategoryTop, categoryLabel, isBuiltInCategory, cleanFolder, inferLibraryFolder, isInside, joinFolder, newCategory, parentFolder } from './categories'
 import { AddContentModal } from './ui/addContentModal'
 import { LibrarySearchModal } from './ui/librarySearchModal'
 import { PromptModal } from './ui/promptModal'
@@ -45,14 +47,17 @@ import { ShareModal, shareTargetFromFile } from './ui/shareModal'
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
 import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
-import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSession, type SteamSession } from './steamLibrary'
+import { earnedAchievements, gameAchievements, ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamLanguage, steamSession, type SteamSession } from './steamLibrary'
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
+import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
-import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
-import { PsnLoginModal } from './ui/psnLoginModal'
+import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
+import { cleanPsnName, exchangePsnCode, psnEarnedTrophies, psnExpired, psnLanguage, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophy, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
+import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
+import { KitsuLoginModal } from './ui/kitsuLoginModal'
 import { AuthModal } from './ui/authModal'
 import { SIGNER_PROJECT, codeFromRedirect as nintendoCode, exchangeNintendoCode, nintendoAuth, nintendoPlayLog, type NintendoPlayedGame } from './nintendo'
-import { renderTrophies } from './ui/trophyIcons'
+import { renderTrophies, TROPHY_GRADES, trophyIcon } from './ui/trophyIcons'
 import { renderPlatformLabels } from './ui/platformIcons'
 import { createEmbedPlayer, toEmbed } from './trailer'
 import { applyEpisodeChange, followProgress, hasChapters, mergeSeasons, seasonsOf, setChapters, type EpisodeChange, type TrackKind } from './episodes'
@@ -161,17 +166,23 @@ export default class LibraryPlugin extends Plugin {
 	private anilistImporting = false
 	// our own MAL write coming back: no echo push
 	private malPushing = false
-	private psnTimer: number | null = null
 	// The sign-in ran out: said once a session, not on every attempt.
 	private psnExpiredSaid = false
+	private psnRenewAfter = 0
 	// keyed Source:Source ID, fetched once a session
 	private recommendations = new Map<string, Promise<Recommendation[]>>()
-	private steamTimer: number | null = null
+	// sleeps between import steps; unload wakes them so their finally blocks run
+	private pauses = new Map<number, () => void>()
 	private refreshCooldowns = new Map<string, number>()
 	private syncingLinks = new Set<string>()
 	private linkTimers = new Map<string, number>()
 	private malPushTimers = new Map<string, number>()
 	private imdbPushTimers = new Map<string, number>()
+	private kitsuPushTimers = new Map<string, number>()
+	private kitsuImporting = false
+	// our own Kitsu write coming back: no echo push
+	private kitsuPushing = false
+	private kitsuRefreshing: Promise<string | null> | null = null
 	private watchPushing = false
 	private enrichTimer: number | null = null
 	private enrichSleepTimer: number | null = null
@@ -183,6 +194,8 @@ export default class LibraryPlugin extends Plugin {
 	private lightbox: Lightbox | null = null
 	// unfolded seasons per note; screen state only
 	private openSeasons = new Map<string, Set<number>>()
+	private trophyLists = new Map<string, { trophies: PsnTrophy[]; total: number } | null>()
+	private openTrophies = new Set<string>()
 	private chapterLookups = new Set<string>()
 
 	async onload(): Promise<void> {
@@ -202,7 +215,7 @@ export default class LibraryPlugin extends Plugin {
 			new WikidataGameProvider()
 		))
 		this.registry.register(new DeezerProvider())
-		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => MAL_CLIENT_ID)))
+		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => MAL_CLIENT_ID), new KitsuProvider()))
 		this.registry.register(new ComicsAggregatorProvider(
 			new ComicsProvider(() => this.settings.comicVineApiKey),
 			new WikidataComicProvider(),
@@ -251,6 +264,12 @@ export default class LibraryPlugin extends Plugin {
 						this.malPushTimers.delete(file.path)
 						void this.malPush(file)
 					}, 800))
+					const existingKitsu = this.kitsuPushTimers.get(file.path)
+					if (existingKitsu) window.clearTimeout(existingKitsu)
+					this.kitsuPushTimers.set(file.path, window.setTimeout(() => {
+						this.kitsuPushTimers.delete(file.path)
+						void this.kitsuPush(file)
+					}, 800))
 					this.armImdbPush(file)
 				})
 			)
@@ -263,6 +282,8 @@ export default class LibraryPlugin extends Plugin {
 			this.registerInterval(window.setTimeout(() => this.gameSyncTick(), 60000))
 			this.registerInterval(window.setTimeout(() => this.watchSyncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.watchSyncTick(), 3600000))
+			this.registerInterval(window.setTimeout(() => void this.airingIfDue(), 30000))
+			this.registerInterval(window.setInterval(() => void this.airingIfDue(), 3600000))
 			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
@@ -385,6 +406,30 @@ export default class LibraryPlugin extends Plugin {
 		})
 
 		this.addCommand({
+			id: 'kitsu-push',
+			name: tr('cmd.kitsuPush'),
+			checkCallback: (checking: boolean) => {
+				const file = this.app.workspace.getActiveFile()
+				const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined
+				if (!fm || toStr(fm.Source) !== 'anilist' || !toStr(fm['Source ID'])) return false
+				if (!checking) void this.kitsuPushCurrent()
+				return true
+			}
+		})
+
+		this.addCommand({
+			id: 'kitsu-pull',
+			name: tr('cmd.kitsuPull'),
+			callback: () => { void this.kitsuPull() }
+		})
+
+		this.addCommand({
+			id: 'kitsu-import',
+			name: tr('cmd.kitsuImport'),
+			callback: () => { void this.kitsuImport(true) }
+		})
+
+		this.addCommand({
 			id: 'steam-import',
 			name: tr('cmd.steamImport'),
 			callback: () => { void this.steamImport(true) }
@@ -409,18 +454,21 @@ export default class LibraryPlugin extends Plugin {
 		for (const timer of this.linkTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.malPushTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.imdbPushTimers.values()) window.clearTimeout(timer)
+		for (const timer of this.kitsuPushTimers.values()) window.clearTimeout(timer)
 		this.refreshTimer = null
 		this.bannerTimer = null
 		this.linkTimers.clear()
 		this.malPushTimers.clear()
 		this.imdbPushTimers.clear()
+		this.kitsuPushTimers.clear()
 		this.refreshCooldowns.clear()
 		if (this.enrichTimer) window.clearTimeout(this.enrichTimer)
 		if (this.enrichSleepTimer) window.clearTimeout(this.enrichSleepTimer)
-		if (this.steamTimer) window.clearTimeout(this.steamTimer)
-		this.steamTimer = null
-		if (this.psnTimer) window.clearTimeout(this.psnTimer)
-		this.psnTimer = null
+		for (const [id, wake] of this.pauses) {
+			window.clearTimeout(id)
+			wake()
+		}
+		this.pauses.clear()
 		this.recommendations.clear()
 		this.enrichTimer = null
 		this.enrichSleepTimer = null
@@ -531,7 +579,7 @@ export default class LibraryPlugin extends Plugin {
 		this.settings.categories.push(category)
 		addCategoryTop(this.settings, category.typeValue)
 		await this.saveSettings()
-		new Notice(tr('notice.categoryCreated', { name: category.name }))
+		new Notice(tr('notice.categoryCreated', { name: categoryLabel(category) }))
 		return category
 	}
 
@@ -709,7 +757,7 @@ export default class LibraryPlugin extends Plugin {
 					byUrl.set(url, file)
 					gameNotes.push(file)
 					created++
-					await new Promise<void>(resolve => { this.steamTimer = window.setTimeout(resolve, 1500) })
+					await this.pause(1500)
 				} catch (e) {
 					console.error('Library: Steam import error', game.appId, e)
 				}
@@ -720,7 +768,6 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			session?.close()
 			this.steamImporting = false
-			this.steamTimer = null
 		}
 	}
 
@@ -931,8 +978,11 @@ export default class LibraryPlugin extends Plugin {
 			const match = toStr(fm.Progress).match(progressPattern)
 			const noteTotal = match ? Number(match[2]) : 0
 			const localWatched = parseWatched(fm.Progress)
+			// the note's episode list caps it: ticks past the list would be dropped and pulled again each sync
+			const listed = seasonsOf(fm, 'anime').reduce((n, season) => n + season.episodes.length, 0)
 			const pulled = Math.max(localWatched, entry.progress)
-			const newWatched = entry.complete ? Math.max(pulled, noteTotal) : pulled
+			const reached = entry.complete ? Math.max(pulled, noteTotal) : pulled
+			const newWatched = listed > 0 ? Math.max(localWatched, Math.min(reached, listed)) : reached
 			if (newWatched === localWatched && !('Complete' in fm)) continue
 			// keep the note's own total: Progress stays watched/total, never "15/12"
 			const total = String(Math.max(noteTotal, newWatched, 1))
@@ -1227,7 +1277,7 @@ export default class LibraryPlugin extends Plugin {
 			const rating = Number(toStr(fm?.['My Rating']))
 			if (!id || !(rating >= 1 && rating <= 10) || this.settings.netflixEcho[id] === thumbRank(rating)) continue
 			await this.netflixPush(file)
-			await new Promise<void>(resolve => { window.setTimeout(resolve, 3000) })
+			await this.pause(3000)
 		}
 	}
 
@@ -1277,7 +1327,7 @@ export default class LibraryPlugin extends Plugin {
 			const id = fm && !isTemplateFile(file.path) ? this.imdbIdOf(fm) : null
 			if (!id || this.settings.imdbEcho[id]) continue
 			await this.imdbPush(file)
-			await new Promise<void>(resolve => { window.setTimeout(resolve, 3000) })
+			await this.pause(3000)
 		}
 	}
 
@@ -1297,7 +1347,9 @@ export default class LibraryPlugin extends Plugin {
 		if (existing) {
 			this.watchNotes.set(key, existing)
 			const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
-			const rate = title.rating !== null && isEmptyValue(fm?.['My Rating'])
+			const seen = this.settings.imdbEcho[title.id]
+			const rerated = !!seen && seen.r > 0 && title.rating !== null && Math.round(title.rating) !== seen.r && Math.round(Number(toStr(fm?.['My Rating']))) === seen.r
+			const rate = title.rating !== null && (isEmptyValue(fm?.['My Rating']) || rerated)
 			const finish = title.kind === 'movie' && watched && fm?.Complete !== true
 			const link = !!title.netflixId && (toStr(fm?.['Netflix ID']) !== String(title.netflixId) || toStrArray(fm?.Platforms).indexOf('Netflix') < 0)
 			this.noteImdbHas(title)
@@ -1319,7 +1371,7 @@ export default class LibraryPlugin extends Plugin {
 		const provider = this.registry.forType(title.kind)
 		if (!provider) return null
 		// Netflix gives only a name: the source's best match for it, else a bare note
-		const sourceId = title.id || (await provider.search(title.name, title.kind))[0]?.sourceId || ''
+		const sourceId = title.id || (await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[]))[0]?.sourceId || ''
 		const meta = sourceId ? await provider.fetch(sourceId, title.kind) : null
 		const category = await this.categoryFor(title.kind)
 		const extra: Record<string, unknown> = {}
@@ -1355,6 +1407,65 @@ export default class LibraryPlugin extends Plugin {
 		const kind = this.kindOf(fm) ?? 'movie'
 		const rating = Number(toStr(fm['My Rating']))
 		return isFinished(fm, kind) || fm.Complete === true || parseWatched(fm.Progress) > 0 || (rating >= 1 && rating <= 10)
+	}
+
+	private airingKey(fm: Record<string, unknown>): string | null {
+		const kind = this.kindOf(fm)
+		if (kind === 'series') return this.imdbIdOf(fm)
+		if (kind !== 'anime' || toStr(fm.Source) !== 'anilist') return null
+		const ids = animeIds(toStr(fm['Source ID']))
+		if (!ids) return null
+		return ids.anilist !== null ? `anilist:${String(ids.anilist)}` : `mal:${String(ids.mal)}`
+	}
+
+	airingDates(fm: Record<string, unknown>): Airing[] {
+		const key = this.airingKey(fm)
+		const now = Date.now()
+		const yearEnd = new Date(new Date(now).getFullYear() + 1, 0, 1).getTime()
+		return (key ? this.settings.airing[key] ?? [] : []).filter(airing => airing.at > now && airing.at < yearEnd)
+	}
+
+	airingFor(fm: Record<string, unknown>): Airing | null {
+		return this.airingDates(fm)[0] ?? null
+	}
+
+	private airingWatched(fm: Record<string, unknown>): boolean {
+		if (parseWatched(fm.Progress) <= 0) return false
+		return this.kindOf(fm) !== 'series' || !toStr(fm['End Year']).trim()
+	}
+
+	private async airingIfDue(): Promise<void> {
+		if (this.unloaded || Date.now() - this.settings.airingChecked < 12 * 3600000) return
+		const next: Record<string, Airing[]> = {}
+		const anilist: number[] = []
+		const mal: number[] = []
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (!fm || isTemplateFile(file.path) || !this.airingWatched(fm)) continue
+			const key = this.airingKey(fm)
+			if (!key || next[key]) continue
+			if (key.startsWith('anilist:')) anilist.push(Number(key.slice(8)))
+			else if (key.startsWith('mal:')) mal.push(Number(key.slice(4)))
+			else {
+				if (this.unloaded) return
+				const found = await seriesSchedule(key)
+				const kept = found === undefined ? this.settings.airing[key] : found
+				if (kept && kept.length > 0) next[key] = kept
+			}
+		}
+		const anime = await animeSchedules({ anilist, mal })
+		if (this.unloaded) return
+		if (anime) {
+			for (const [id, airing] of anime.anilist) next[`anilist:${String(id)}`] = airing
+			for (const [id, airing] of anime.mal) next[`mal:${String(id)}`] = airing
+		} else {
+			for (const [key, airing] of Object.entries(this.settings.airing)) if (/^(anilist|mal):/.test(key)) next[key] = airing
+		}
+		this.settings.airing = next
+		this.settings.airingChecked = Date.now()
+		await this.persistSettings()
+		this.refreshViews()
+		this.refreshBanner()
 	}
 
 	private async watchSyncIfDue(site: WatchSite): Promise<void> {
@@ -1653,7 +1764,7 @@ export default class LibraryPlugin extends Plugin {
 			} catch (e) {
 				console.error('Library: game look-up error', file.path, e)
 			}
-			await new Promise<void>(resolve => { this.psnTimer = window.setTimeout(resolve, 1500) })
+			await this.pause(1500)
 		}
 	}
 
@@ -1672,20 +1783,26 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private malSyncIfDue(): Promise<void> {
-		if (!Platform.isDesktopApp || !this.settings.malTokens || this.malImporting || this.anilistImporting) return Promise.resolve()
+		if (!Platform.isDesktopApp || !this.settings.malTokens || this.malImporting || this.anilistImporting || this.kitsuImporting) return Promise.resolve()
 		if (Date.now() - this.settings.malLastImport < 24 * 3600000) return Promise.resolve()
 		return this.malImport(false)
 	}
 
 	private anilistSyncIfDue(): Promise<void> {
-		if (!Platform.isDesktopApp || !this.settings.anilistToken.trim() || this.anilistImporting || this.malImporting) return Promise.resolve()
+		if (!Platform.isDesktopApp || !this.settings.anilistToken.trim() || this.anilistImporting || this.malImporting || this.kitsuImporting) return Promise.resolve()
 		if (Date.now() - this.settings.anilistLastImport < 24 * 3600000) return Promise.resolve()
 		return this.anilistImport(false)
 	}
 
-	// MAL first, AniList after: interleaved runs could create the same note twice
+	private kitsuSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.kitsuTokens || this.kitsuImporting || this.malImporting || this.anilistImporting) return Promise.resolve()
+		if (Date.now() - this.settings.kitsuLastImport < 24 * 3600000) return Promise.resolve()
+		return this.kitsuImport(false)
+	}
+
+	// MAL first, AniList after, Kitsu last: interleaved runs could create the same note twice
 	private syncTick(): void {
-		void this.malSyncIfDue().then(() => this.anilistSyncIfDue())
+		void this.malSyncIfDue().then(() => this.anilistSyncIfDue()).then(() => this.kitsuSyncIfDue())
 	}
 
 	private gameSyncTick(): void {
@@ -1697,11 +1814,18 @@ export default class LibraryPlugin extends Plugin {
 	async psnToken(): Promise<string | null> {
 		const tokens = this.settings.psnTokens
 		if (!tokens) return null
-		if (!psnExpired(tokens)) return tokens.access
+		const renew = Platform.isDesktopApp && tokens.refreshExpiresAt > 0 && Date.now() > tokens.refreshExpiresAt - 3 * 86400000 && Date.now() > this.psnRenewAfter
+		if (!psnExpired(tokens) && !renew) return tokens.access
 		if (!this.psnRefreshing) {
 			this.psnRefreshing = (async () => {
 				try {
-					const next = await refreshPsnTokens(tokens.refresh)
+					let next = renew ? null : await refreshPsnTokens(tokens.refresh)
+					if (!next && Platform.isDesktopApp && Date.now() > this.psnRenewAfter) {
+						const code = await psnSilentCode()
+						next = code ? await exchangePsnCode(code) : null
+						if (!next) this.psnRenewAfter = Date.now() + 3600000
+					}
+					if (!next && !psnExpired(tokens)) return tokens.access
 					if (!next) {
 						if (!this.psnExpiredSaid) new Notice(tr('notice.psn.expired'))
 						this.psnExpiredSaid = true
@@ -1737,6 +1861,231 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			this.malRefreshing = null
 		}
+	}
+
+	async kitsuToken(): Promise<string | null> {
+		const tokens = this.settings.kitsuTokens
+		if (!tokens) return null
+		if (!isKitsuExpired(tokens)) return tokens.access
+		if (!this.kitsuRefreshing) this.kitsuRefreshing = this.refreshKitsuToken(tokens.refresh)
+		return this.kitsuRefreshing
+	}
+
+	private async refreshKitsuToken(refresh: string): Promise<string | null> {
+		try {
+			const next = await kitsuRefreshGrant(refresh)
+			if (!next) return null
+			this.settings.kitsuTokens = next
+			await this.saveSettings()
+			return next.access
+		} finally {
+			this.kitsuRefreshing = null
+		}
+	}
+
+	// Kitsu runs the password grant only (no OAuth apps), so desktop signs in on
+	// the real site inside the auth window and the session is read back from its
+	// storage; mobile keeps the plain form — no webview there.
+	connectKitsu(): Promise<boolean> {
+		if (Platform.isDesktopApp) {
+			return new Promise<boolean>((resolve) => {
+				new AuthModal(this.app, 'https://kitsu.app/', (answer) => {
+					void (async () => {
+						const tokens = answer ? tokensFromKitsuSession(answer) : null
+						if (!tokens) {
+							if (answer) new Notice(tr('notice.kitsu.connectFailed'))
+							resolve(false)
+							return
+						}
+						resolve(await this.kitsuFinishConnect(tokens))
+					})()
+				}, { title: tr('kitsu.loginTitle'), extract: () => null, pageProbe: KITSU_SESSION_PROBE }).open()
+			})
+		}
+		return new Promise((resolve) => {
+			new KitsuLoginModal(this.app, (username, password) => {
+				void this.kitsuConnect(username, password, resolve)
+			}).open()
+		})
+	}
+
+	private async kitsuConnect(username: string, password: string, done: (ok: boolean) => void): Promise<void> {
+		const tokens = await kitsuPasswordGrant(username, password)
+		if (!tokens) {
+			new Notice(tr('notice.kitsu.connectFailed'))
+			done(false)
+			return
+		}
+		done(await this.kitsuFinishConnect(tokens))
+	}
+
+	private async kitsuFinishConnect(tokens: KitsuTokens): Promise<boolean> {
+		try {
+			// A session read back from the webview may already be past its date;
+			// the refresh saves the new tokens itself, the fresh path saves here.
+			const expired = isKitsuExpired(tokens)
+			const access = expired ? await this.refreshKitsuToken(tokens.refresh) : tokens.access
+			if (!access) {
+				new Notice(tr('notice.kitsu.connectFailed'))
+				return false
+			}
+			const viewer = await kitsuViewer(access)
+			if (!viewer) {
+				new Notice(tr('notice.kitsu.connectFailed'))
+				return false
+			}
+			if (!expired) {
+				this.settings.kitsuTokens = tokens
+				await this.saveSettings()
+			}
+			new Notice(tr('notice.kitsu.connected', { name: viewer.name }))
+			void this.kitsuImport(true)
+			return true
+		} catch (e) {
+			console.error('Library: Kitsu connect error', e)
+			new Notice(tr('notice.kitsu.connectFailed'))
+			return false
+		}
+	}
+
+	// The note's Kitsu id: its own side first, the other side via mappings.
+	private async kitsuIdFor(ids: { anilist: number | null; mal: number | null }): Promise<number | null> {
+		if (ids.anilist !== null) {
+			const map = await kitsuIdsFor('anilist', [ids.anilist])
+			const id = map?.get(ids.anilist) ?? null
+			if (id !== null) return id
+		}
+		if (ids.mal !== null) {
+			const map = await kitsuIdsFor('mal', [ids.mal])
+			return map?.get(ids.mal) ?? null
+		}
+		return null
+	}
+
+	// one note → Kitsu: progress, status and score, creating the entry when new
+	private async kitsuPushNote(file: TFile, loud: boolean, sendProgress = true): Promise<boolean> {
+		const token = await this.kitsuToken()
+		const name = tr('kitsu.name')
+		if (!token) {
+			if (loud) new Notice(tr('notice.site.signedOut', { site: name }))
+			return false
+		}
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const note = fm && toStr(fm.Source) === 'anilist' ? animeIds(toStr(fm['Source ID'])) : null
+		if (!fm || !note) {
+			if (loud) new Notice(tr('notice.anilist.notAnime'))
+			return false
+		}
+		const viewer = await kitsuViewer(token)
+		if (!viewer) {
+			if (loud) new Notice(tr('notice.kitsu.pushFailed'))
+			return false
+		}
+		const kitsuId = await this.kitsuIdFor(note)
+		if (kitsuId === null) {
+			if (loud) new Notice(tr('notice.kitsu.noId'))
+			return false
+		}
+		const watched = parseWatched(fm.Progress)
+		const rating = Number(toStr(fm['My Rating']))
+		const score = Number.isFinite(rating) && rating > 0 ? rating : 0
+		const finished = isFinished(fm, this.kindOf(fm) ?? 'anime')
+		const existing = await findKitsuEntry(token, viewer.id, kitsuId)
+		// an existing entry only gets a status when the note is finished: never downgrade
+		const status = existing ? (finished ? 'completed' : null) : kitsuStatus(finished, watched)
+		const ok = await pushKitsuEntry(token,
+			{ entryId: existing?.entryId ?? null, kitsuId, userId: viewer.id },
+			{ progress: sendProgress ? watched : null, status, rating: score > 0 ? score : null })
+		if (loud) {
+			new Notice(ok
+				? tr('notice.kitsu.pushed', { name: toStr(fm.Name) || file.basename })
+				: tr('notice.kitsu.pushFailed'))
+		}
+		return ok
+	}
+
+	private async kitsuPushCurrent(): Promise<void> {
+		const file = this.app.workspace.getActiveFile()
+		const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined
+		if (!file || !fm || toStr(fm.Source) !== 'anilist' || !toStr(fm['Source ID'])) {
+			new Notice(tr('notice.anilist.notAnime'))
+			return
+		}
+		await this.kitsuPushNote(file, true)
+	}
+
+	// send progress and rating to Kitsu unless they match what we last pushed (the echo)
+	private async kitsuPush(file: TFile): Promise<void> {
+		// a push or import in flight would drop this edit: re-arm the debounce
+		if (this.kitsuImporting || this.kitsuPushing) {
+			this.kitsuPushTimers.set(file.path, window.setTimeout(() => {
+				this.kitsuPushTimers.delete(file.path)
+				void this.kitsuPush(file)
+			}, 800))
+			return
+		}
+		if (!this.settings.kitsuTokens) return
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		if (!fm || toStr(fm.Source) !== 'anilist') return
+		const progress = toStr(fm.Progress)
+		const rating = Number(toStr(fm['My Rating']))
+		const score = Number.isFinite(rating) && rating > 0 ? rating : 0
+		const echo = this.settings.kitsuEcho[file.path]
+		if (echo && echo.p === progress && echo.r === score) return
+		this.kitsuPushing = true
+		try {
+			// a score edit alone must not send back a progress Kitsu may have moved past
+			const ok = await this.kitsuPushNote(file, false, !echo || echo.p !== progress)
+			if (ok) {
+				this.settings.kitsuEcho[file.path] = { p: progress, r: score }
+				await this.saveSettings()
+			}
+		} catch (e) {
+			console.error('Library: Kitsu push error', file.path, e)
+		} finally {
+			this.kitsuPushing = false
+		}
+	}
+
+	private async kitsuPull(): Promise<void> {
+		const token = await this.kitsuToken()
+		const name = tr('kitsu.name')
+		if (!token) { new Notice(tr('notice.site.signedOut', { site: name })); return }
+		new Notice(tr('notice.kitsu.pulling'))
+		const viewer = await kitsuViewer(token)
+		const entries = viewer ? await fetchKitsuList(token, viewer.id) : null
+		const ids = entries && await this.kitsuIdsForNotes(this.animeNotes())
+		if (!entries || !ids) {
+			new Notice(tr('notice.kitsu.pullFailed'))
+			return
+		}
+		const byKitsu = new Map<number, KitsuEntry>()
+		for (const e of entries) byKitsu.set(e.kitsuId, e)
+		const updated = await this.applyPulled(ids, kitsuId => {
+			const entry = byKitsu.get(kitsuId)
+			return entry && { progress: entry.progress, complete: entry.status === 'completed' }
+		})
+		new Notice(tr('notice.kitsu.pulled', { count: updated }))
+	}
+
+	// each anime note's Kitsu id: an AniList id first, a MAL id as fallback
+	private async kitsuIdsForNotes(notes: AnimeNote[]): Promise<Map<TFile, number> | null> {
+		const anilistIds: number[] = []
+		const malIds: number[] = []
+		for (const note of notes) {
+			if (note.anilist !== null) anilistIds.push(note.anilist)
+			if (note.mal !== null) malIds.push(note.mal)
+		}
+		const fromAnilist = await kitsuIdsFor('anilist', anilistIds)
+		const fromMal = await kitsuIdsFor('mal', malIds)
+		if (!fromAnilist || !fromMal) return null
+		const out = new Map<TFile, number>()
+		for (const note of notes) {
+			let id = note.anilist !== null ? fromAnilist.get(note.anilist) : undefined
+			if (!id && note.mal !== null) id = fromMal.get(note.mal)
+			if (id) out.set(note.file, id)
+		}
+		return out
 	}
 
 	private async malPushCurrent(): Promise<void> {
@@ -1831,14 +2180,14 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async malImport(loud: boolean): Promise<void> {
-		if (this.malImporting || this.anilistImporting) {
+		if (this.malImporting || this.anilistImporting || this.kitsuImporting) {
 			if (loud) new Notice(tr('notice.mal.importing'))
 			return
 		}
-		const token = await this.malToken()
-		if (!token) { if (loud) new Notice(tr('notice.mal.noToken')); return }
 		this.malImporting = true
 		try {
+			const token = await this.malToken()
+			if (!token) { if (loud) new Notice(tr('notice.mal.noToken')); return }
 			if (loud) new Notice(tr('notice.mal.importing'))
 			const [anime, manga] = await Promise.all([fetchMalList(token), fetchMalList(token, 'manga')])
 			if (!anime || !manga) { if (loud) new Notice(tr('notice.mal.importFailed')); return }
@@ -1858,7 +2207,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async anilistImport(loud: boolean): Promise<void> {
-		if (this.anilistImporting || this.malImporting) {
+		if (this.anilistImporting || this.malImporting || this.kitsuImporting) {
 			if (loud) new Notice(tr('notice.mal.importing'))
 			return
 		}
@@ -1900,10 +2249,54 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
+	async kitsuImport(loud: boolean): Promise<void> {
+		const name = tr('kitsu.name')
+		if (this.kitsuImporting || this.malImporting || this.anilistImporting) {
+			if (loud) new Notice(tr('notice.site.importing', { site: name }))
+			return
+		}
+		this.kitsuImporting = true
+		try {
+			const token = await this.kitsuToken()
+			if (!token) { if (loud) new Notice(tr('notice.site.signedOut', { site: name })); return }
+			if (loud) new Notice(tr('notice.site.importing', { site: name }))
+			const viewer = await kitsuViewer(token)
+			const entries = viewer ? await fetchKitsuList(token, viewer.id) : null
+			if (!entries) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
+			// map Kitsu ids back to AniList's so rows land on the note's own Source ID
+			const anilistOf = await externalIdsFor(entries.map(e => e.kitsuId), 'anilist')
+			if (!anilistOf) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
+			const rows: ImportRow[] = entries.map((entry) => {
+				const anilist = anilistOf.get(entry.kitsuId) ?? null
+				return {
+					// an entry Kitsu knows alone still updates notes, matched by title
+					sourceId: anilist !== null ? String(anilist) : null,
+					altId: null,
+					title: entry.title,
+					total: entry.total,
+					progress: entry.progress,
+					score: Math.round(entry.rating),
+					complete: entry.status === 'completed'
+				}
+			})
+			const a = await this.importRows(rows, 'anime')
+			this.settings.kitsuLastImport = Date.now()
+			this.pruneEcho()
+			await this.saveSettings()
+			// new categories/notes may exist: refresh the open tab and walk for covers
+			this.settingTab?.refresh()
+			this.scheduleEnrich(ENRICH_STEP_DELAY)
+			if (loud || a.created + a.updated > 0) new Notice(tr('notice.site.imported', { site: name, created: a.created, updated: a.updated }))
+		} finally {
+			this.kitsuImporting = false
+		}
+	}
+
 	// Update: anime sites first, one after the other (they write the same notes), then games
 	async updateAll(): Promise<void> {
 		if (this.settings.malTokens) await this.malImport(true)
 		if (this.settings.anilistToken.trim()) await this.anilistImport(true)
+		if (this.settings.kitsuTokens) await this.kitsuImport(true)
 		if (this.settings.psnTokens) await this.psnImport(true)
 		if (this.settings.steamId.trim()) await this.steamImport(true)
 		if (this.settings.nintendoTokens) await this.nintendoImport(true)
@@ -1914,6 +2307,9 @@ export default class LibraryPlugin extends Plugin {
 		const paths = new Set(this.app.vault.getMarkdownFiles().map((file) => file.path))
 		for (const path of Object.keys(this.settings.malEcho)) {
 			if (!paths.has(path)) delete this.settings.malEcho[path]
+		}
+		for (const path of Object.keys(this.settings.kitsuEcho)) {
+			if (!paths.has(path)) delete this.settings.kitsuEcho[path]
 		}
 		if (this.watchImporting) return
 		const imdb = new Set<string>()
@@ -1970,7 +2366,7 @@ export default class LibraryPlugin extends Plugin {
 				this.settings.categories.push(category)
 				addCategoryTop(this.settings, category.typeValue)
 				await this.saveSettings()
-				new Notice(tr('notice.categoryCreated', { name: category.name }))
+				new Notice(tr('notice.categoryCreated', { name: categoryLabel(category) }))
 			}
 		}
 		const notes = this.app.vault.getMarkdownFiles().filter(file =>
@@ -2339,6 +2735,16 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
+	private pause(ms: number): Promise<void> {
+		return new Promise<void>(resolve => {
+			const id = window.setTimeout(() => {
+				this.pauses.delete(id)
+				resolve()
+			}, ms)
+			this.pauses.set(id, resolve)
+		})
+	}
+
 	// its own timer: sharing the walk's would let a key change cancel this sleep and hang the walk
 	private enrichSleep(ms: number): Promise<void> {
 		return new Promise<void>(resolve => {
@@ -2435,7 +2841,7 @@ export default class LibraryPlugin extends Plugin {
 	): Promise<void> {
 		const name = toStr(fm.Name) || file.basename
 		const year = Number(fm.Year) || 0
-		const results = await provider.search(name, category.contentType)
+		const results = await within(provider.search(name, category.contentType), SEARCH_BUDGET_MS * 2, [] as SearchResult[])
 		// one unambiguous hit only: a remake shares the title ("Dune" 1984/2021)
 		const matches = results.filter(result =>
 			sameTitle(result.title, name) && (!year || result.year === null || result.year === year)
@@ -2504,6 +2910,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private refreshBanner(): void {
+		if (this.unloaded) return
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view || !view.file) return
 		const sizer = view.containerEl.querySelector('.markdown-preview-sizer')
@@ -2624,6 +3031,8 @@ export default class LibraryPlugin extends Plugin {
 		const yearsStr = year + (endYear ? '–' + endYear : '')
 		if (yearsStr) addRow(tr('header.years'), yearsStr)
 		if (season) addRow(tr('header.seasons'), season)
+		const airing = this.airingFor(fm)
+		if (airing) addRow(tr('header.nextEpisode'), airingLabel(airing))
 
 		const genres = toStrArray(fm.Genre).map(linkLabel)
 		if (genres.length > 0) addRow(tr('header.genre'), genres.join(', '))
@@ -2675,6 +3084,7 @@ export default class LibraryPlugin extends Plugin {
 		wrap.appendChild(header)
 		this.buildMediaBlock(wrap, fm, name)
 		this.buildSeasonsBlock(wrap, fm, file)
+		this.buildTrophiesBlock(wrap, fm, file)
 		this.buildRecommendations(wrap, fm)
 		return wrap
 	}
@@ -2806,7 +3216,7 @@ export default class LibraryPlugin extends Plugin {
 			if (!this.chapterLookups.has(file.path)) {
 				this.chapterLookups.add(file.path)
 				void this.lookUpChapters(file, fm).then((titles) => {
-					if (titles.length > 0) void this.addChapters(file, titles)
+					if (titles.length > 0 && !this.unloaded) void this.addChapters(file, titles)
 				})
 			}
 			const add = createEl('button')
@@ -2822,6 +3232,14 @@ export default class LibraryPlugin extends Plugin {
 		if (seasons.length === 0) return
 		const open = this.openSeasons.get(file.path) ?? new Set<number>()
 		this.openSeasons.set(file.path, open)
+		const airs = new Map<string, number>()
+		if (!book) {
+			const names = seasons.map(season => season.name)
+			for (const airing of this.airingDates(fm)) {
+				const index = airing.s === null ? (seasons.length === 1 ? 0 : -1) : seasonIndex(names, airing.s)
+				if (index >= 0) airs.set(`${String(index)}:${String(airing.e - 1)}`, airing.at)
+			}
+		}
 		const change = (c: EpisodeChange): void => { if (kind) void this.changeEpisodes(file, c, kind) }
 
 		const block = createDiv()
@@ -2895,12 +3313,91 @@ export default class LibraryPlugin extends Plugin {
 				const number = String(e + 1)
 				label.setText(episode.title ? `${number}. ${episode.title}` : tr(book ? 'header.chapter' : 'header.episode', { number }))
 				item.appendChild(label)
+				const at = airs.get(`${String(index)}:${String(e)}`)
+				if (at !== undefined) {
+					item.classList.add('is-upcoming')
+					item.createDiv({ cls: 'note-header-episode-date', text: airingDate(at) })
+				}
 				item.appendChild(this.ratingInput(episode.rating, false, (rating) => change({ season: index, episode: e, rating })))
 				list.appendChild(item)
 			})
 			block.appendChild(list)
 		})
 		wrap.appendChild(block)
+	}
+
+	// A PlayStation or Steam game lists what was earned, fetched on open once a session.
+	private buildTrophiesBlock(wrap: HTMLElement, fm: Record<string, unknown>, file: TFile): void {
+		if (isTemplateFile(file.path)) return
+		const psnId = toStr(fm['PSN ID'])
+		if (psnId && this.settings.psnTokens) {
+			this.awardsBlock(wrap, `psn:${psnId}`, tr('header.trophies'), async () => {
+				const token = await this.psnToken()
+				return token ? psnEarnedTrophies(token, psnId, psnLanguage(getLanguage())) : null
+			})
+		}
+		const appId = Number(/^steam:(\d+)$/.exec(toStr(fm['Source ID']))?.[1] ?? /store\.steampowered\.com\/app\/(\d+)/.exec(toStr(fm.URL))?.[1])
+		if (appId > 0 && Platform.isDesktopApp && this.settings.steamId.trim()) {
+			this.awardsBlock(wrap, `steam:${String(appId)}`, tr('header.achievements'), () => this.steamAwards(appId))
+		}
+	}
+
+	private async steamAwards(appId: number): Promise<{ trophies: PsnTrophy[]; total: number } | null> {
+		const session = await steamSession(this.settings.steamId.trim())
+		if (!session) return null
+		try {
+			const defs = await gameAchievements(session.token, appId, steamLanguage(getLanguage()))
+			const unlocks = defs ? await session.unlocks(appId) : null
+			if (!defs || !unlocks) return null
+			return { trophies: earnedAchievements(appId, defs, unlocks), total: defs.length }
+		} finally {
+			session.close()
+		}
+	}
+
+	private awardsBlock(wrap: HTMLElement, titleId: string, label: string, load: () => Promise<{ trophies: PsnTrophy[]; total: number } | null>): void {
+		if (!this.trophyLists.has(titleId)) {
+			this.trophyLists.set(titleId, null)
+			void load().catch((e: unknown) => {
+				console.error('Library: awards error', titleId, e)
+				return null
+			}).then(list => {
+				if (!list) { this.trophyLists.delete(titleId); return }
+				this.trophyLists.set(titleId, list)
+				if (list.trophies.length > 0) this.refreshBanner()
+			})
+		}
+		const list = this.trophyLists.get(titleId)
+		if (!list || list.trophies.length === 0) return
+		const open = this.openTrophies.has(titleId)
+		const block = wrap.createDiv({ cls: 'note-header-seasons note-header-trophy-list' })
+		const row = block.createDiv({ cls: 'note-header-season' })
+		row.createDiv({ cls: 'note-header-season-name', text: label })
+		row.createDiv({ cls: 'note-header-season-episodes', text: `${String(list.trophies.length)} / ${String(list.total)}` })
+		const toggle = row.createEl('button', { cls: 'note-header-season-toggle clickable-icon', attr: { 'aria-label': label, 'aria-expanded': open ? 'true' : 'false' } })
+		setIcon(toggle, open ? 'chevron-up' : 'chevron-down')
+		toggle.addEventListener('click', (e) => {
+			e.preventDefault()
+			if (open) this.openTrophies.delete(titleId)
+			else this.openTrophies.add(titleId)
+			this.refreshBanner()
+		})
+		if (!open) return
+		const items = block.createDiv({ cls: 'note-header-trophies-earned' })
+		for (const trophy of list.trophies) {
+			const grade = TROPHY_GRADES.find(g => g.key === trophy.grade)
+			const item = items.createDiv({ cls: 'note-header-trophy-item' })
+			const icon = safeUrl(trophy.iconUrl)
+			if (icon) item.createEl('img', { cls: 'note-header-trophy-image', attr: { src: icon, alt: '', loading: 'lazy' } })
+			const text = item.createDiv({ cls: 'note-header-trophy-text' })
+			const title = text.createDiv({ cls: 'note-header-trophy-name' })
+			if (grade) title.appendChild(trophyIcon(grade.color))
+			title.createSpan({ text: trophy.name })
+			if (trophy.detail) text.createDiv({ cls: 'note-header-trophy-detail', text: trophy.detail })
+			const side = item.createDiv({ cls: 'note-header-trophy-side' })
+			side.createDiv({ text: new Date(trophy.earnedAt).toLocaleDateString(getLanguage() + '-u-nu-latn', { day: 'numeric', month: 'short', year: 'numeric' }) })
+			if (trophy.rate !== null) side.createDiv({ cls: 'note-header-trophy-rate', text: tr('header.trophyRate', { rate: formatNumber(trophy.rate) }) })
+		}
 	}
 
 	private watchedBox(checked: boolean, onChange: (watched: boolean) => void): HTMLElement {
@@ -2946,7 +3443,7 @@ export default class LibraryPlugin extends Plugin {
 		const sourceId = toStr(fm['Source ID'])
 		return findChapters({
 			isbn: toStr(fm.ISBN),
-			work: sourceId.startsWith('/works/') ? sourceId : '',
+			work: /^\/works\/[\w.-]+$/.test(sourceId) ? sourceId : '',
 			title: toStr(fm.Name) || file.basename,
 			author: toStrArray(fm.Creator || fm.Author).map(linkLabel)[0] ?? ''
 		})
@@ -2986,6 +3483,13 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.statsCollapsed !== 'boolean') this.settings.statsCollapsed = false
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
+		if (typeof this.settings.showComingSoon !== 'boolean') this.settings.showComingSoon = true
+		if (typeof this.settings.comingSoonCollapsed !== 'boolean') this.settings.comingSoonCollapsed = false
+		if (!this.settings.airing || typeof this.settings.airing !== 'object' || Object.values(this.settings.airing).some(value => !Array.isArray(value))) {
+			this.settings.airing = {}
+			this.settings.airingChecked = 0
+		}
+		if (typeof this.settings.airingChecked !== 'number') this.settings.airingChecked = 0
 		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
 		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
 		if (!this.settings.nintendoTokens || typeof this.settings.nintendoTokens !== 'object') this.settings.nintendoTokens = null
@@ -3019,6 +3523,7 @@ export default class LibraryPlugin extends Plugin {
 			delete legacy.showRated
 			delete legacy.stats
 			if (cat.collapsed !== true) delete cat.collapsed
+			if (isBuiltInCategory(cat)) delete cat.template
 		}
 		this.settings.stats = this.loadStats(data?.stats, defaults.stats, unrated)
 		// Settings from before the library folder: the parent its categories share.

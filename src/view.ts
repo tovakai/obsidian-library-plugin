@@ -1,5 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian'
+import { airingLabel, type Airing } from './airing'
 import type LibraryPlugin from './main'
+import { categoryLabel } from './categories'
 import { RATING_RT_ICON, type ICategory, type IStatsTop } from './constants'
 import type { ContentType } from './providers/types'
 import { formatNumber, tr, trCount } from './i18n'
@@ -14,6 +16,8 @@ import {
 	linkLabel,
 	notStarted,
 	shownProgress,
+	isFinished,
+	parseProgress,
 	coverSrc,
 	coverValue,
 	runtimeMinutes,
@@ -57,9 +61,9 @@ const TIME_COLORS: Record<string, string> = {
 	game: 'color-mix(in srgb, var(--interactive-accent) 80%, var(--text-normal))'
 }
 
-type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played' | 'unstarted'
+type SortKey = 'name' | 'year' | 'rating' | 'date' | 'modified' | 'played' | 'unstarted' | 'progress'
 
-const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played', 'unstarted']
+const SORT_KEYS: SortKey[] = ['name', 'year', 'rating', 'date', 'modified', 'played', 'unstarted', 'progress']
 
 interface SortChoice {
 	key: SortKey
@@ -270,7 +274,7 @@ export class LibraryView extends ItemView {
 			const color = TIME_COLORS[cat.contentType]
 			if (!color) continue
 			const minutes = timeMinutes.get(cat.name) || 0
-			if (minutes > 0) time.push({ name: cat.name, minutes, color })
+			if (minutes > 0) time.push({ name: categoryLabel(cat), minutes, color })
 		}
 
 		return { columns, time, undated }
@@ -502,6 +506,7 @@ export class LibraryView extends ItemView {
 
 		// Not-started may live in Up next alone only while that block is on.
 		const settings = this.plugin.settings
+		if (settings.showComingSoon) this.renderComingSoon(root, sections.flatMap(section => section.cards))
 		const upNextOnly = settings.showUpNext && !settings.upNextInCategories
 		let rendered = 0
 		for (const { category, cards } of sections) {
@@ -510,7 +515,7 @@ export class LibraryView extends ItemView {
 			rendered++
 			const chosen = settings.filterState[category.name] ?? {}
 			this.renderSection(root, {
-				title: category.name,
+				title: categoryLabel(category),
 				sortId: category.name,
 				defaultSort: { key: 'name', asc: true },
 				kind: category.contentType,
@@ -552,19 +557,19 @@ export class LibraryView extends ItemView {
 				setCollapsed: (collapsed) => { settings.upNextCollapsed = collapsed }
 			}, shown)
 			upNextEl.addClass('library-up-next')
-			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen)
+			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen, name => { const cat = settings.categories.find(c => c.name === name); return cat ? categoryLabel(cat) : name })
 			rendered++
 		}
 		if (rendered === 0) root.createEl('p', { text: tr('view.empty') })
 		root.scrollTop = scrollTop
 	}
 
-	private upNextFilter(section: HTMLElement, names: string[], chosen: string): void {
+	private upNextFilter(section: HTMLElement, names: string[], chosen: string, label: (name: string) => string): void {
 		const row = createDiv({ cls: 'library-filter', attr: { role: 'group', 'aria-label': tr('upNext.title') } })
 		for (const name of ['', ...names]) {
 			const button = row.createEl('button', {
 				cls: 'library-filter-item',
-				text: name || tr('filter.all'),
+				text: name ? label(name) : tr('filter.all'),
 				attr: { 'aria-pressed': name === chosen ? 'true' : 'false' }
 			})
 			if (name === chosen) button.addClass('is-active')
@@ -580,48 +585,73 @@ export class LibraryView extends ItemView {
 	}
 
 	// Only values some card has; a filter shows with 2+ values or a chosen one.
-	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>, kind?: ContentType): void {
-		for (const { facet, label } of FACETS) {
+	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>): void {
+		const groups = FACETS.map(({ facet, label }) => {
 			const counts = new Map<string, number>()
 			for (const card of filters.all) {
 				for (const value of facetValues(card, facet)) counts.set(value, (counts.get(value) ?? 0) + 1)
 			}
-			const chosen = filters.chosen[facet] ?? ''
-			if (counts.size < 2 && !chosen) continue
 			const values = [...counts.keys()].sort((a, b) => facet === 'year' ? Number(b) - Number(a) : a.localeCompare(b))
-			const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
-			const trigger = dropdown.createEl('button', {
-				cls: 'library-sort-trigger',
-				text: (chosen || tr(label)) + ' ▾',
-				attr: { 'aria-label': tr(label), 'aria-haspopup': 'true', 'aria-expanded': 'false' }
+			return { facet, label, counts, values, chosen: filters.chosen[facet] ?? '' }
+		}).filter(group => group.counts.size >= 2 || group.chosen)
+		if (groups.length === 0) return
+		const active = groups.filter(group => group.chosen).length
+		const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
+		const trigger = dropdown.createEl('button', {
+			cls: 'library-sort-trigger library-filter-trigger',
+			attr: { 'aria-label': tr('filter.title'), 'aria-haspopup': 'true', 'aria-expanded': 'false' }
+		})
+		setIcon(trigger.createSpan({ cls: 'library-filter-icon' }), 'filter')
+		trigger.createSpan({ text: active > 0 ? `${tr('filter.title')} · ${formatNumber(active)}` : tr('filter.title') })
+		if (active > 0) trigger.addClass('is-active')
+		const menu = dropdown.createDiv({ cls: 'library-sort-menu library-filter-menu' })
+		if (active > 0) {
+			const clear = menu.createEl('button', { cls: 'library-sort-menu-item library-filter-clear', text: tr('filter.clear') })
+			clear.addEventListener('click', e => {
+				e.stopPropagation()
+				menu.removeClass('open')
+				for (const group of groups) if (group.chosen) filters.choose(group.facet, '')
 			})
-			if (chosen) trigger.addClass('is-active')
-			const menu = dropdown.createDiv({ cls: 'library-sort-menu library-filter-menu' })
-			for (const value of ['', ...values]) {
-				const item = menu.createEl('button', {
+		}
+		for (const group of groups) {
+			const head = menu.createEl('button', { cls: 'library-filter-group', attr: { 'aria-expanded': 'false' } })
+			head.createSpan({ cls: 'library-filter-group-name', text: tr(group.label) })
+			if (group.chosen) head.createSpan({ cls: 'library-filter-group-value', text: group.chosen })
+			const chevron = head.createSpan({ cls: 'library-filter-group-chevron' })
+			setIcon(chevron, 'chevron-right')
+			const list = menu.createDiv({ cls: 'library-filter-values' })
+			for (const value of ['', ...group.values]) {
+				const item = list.createEl('button', {
 					cls: 'library-sort-menu-item',
-					text: value ? `${value} · ${formatNumber(counts.get(value) ?? 0)}` : tr('filter.all')
+					text: value ? `${value} · ${formatNumber(group.counts.get(value) ?? 0)}` : tr('filter.all')
 				})
-				if (value === chosen) item.addClass('active')
+				if (value === group.chosen) item.addClass('active')
 				item.addEventListener('click', e => {
 					e.stopPropagation()
 					menu.removeClass('open')
-					if (value !== chosen) filters.choose(facet, value)
+					if (value !== group.chosen) filters.choose(group.facet, value)
 				})
 			}
-			trigger.addEventListener('click', e => {
+			head.addEventListener('click', e => {
 				e.stopPropagation()
-				const open = !menu.hasClass('open')
-				this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
-				menu.toggleClass('open', open)
-				trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
+				const open = !list.hasClass('open')
+				list.toggleClass('open', open)
+				head.setAttribute('aria-expanded', open ? 'true' : 'false')
+				setIcon(chevron, open ? 'chevron-down' : 'chevron-right')
 			})
 		}
+		trigger.addEventListener('click', e => {
+			e.stopPropagation()
+			const open = !menu.hasClass('open')
+			this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
+			menu.toggleClass('open', open)
+			trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
+		})
 	}
 
-	private sectionMeta(toolbar: HTMLElement, cards: CardData[], kind?: ContentType): void {
+	private sectionMeta(row: HTMLElement, cards: CardData[], kind?: ContentType): void {
 		const count = formatNumber(cards.length)
-		toolbar.createSpan({
+		row.createSpan({
 			cls: 'library-section-count',
 			text: count,
 			attr: { 'aria-label': `${count} ${trCount('stats.works', cards.length)}` }
@@ -630,7 +660,7 @@ export class LibraryView extends ItemView {
 		let minutes = 0
 		for (const card of cards) minutes += spentMinutes(card.fm, card.kind)
 		if (minutes <= 0) return
-		const time = toolbar.createSpan({ cls: 'library-section-time' })
+		const time = row.createSpan({ cls: 'library-section-time' })
 		setTooltip(time, exactHours(minutes), { placement: 'top' })
 		setIcon(time.createSpan({ cls: 'library-section-time-icon' }), 'clock')
 		time.createSpan({ text: spentTime(minutes) })
@@ -638,16 +668,15 @@ export class LibraryView extends ItemView {
 
 	private renderSection(root: HTMLElement, spec: SectionSpec, cards: CardData[]): HTMLElement {
 		const section = root.createDiv({ cls: 'library-section' })
-		section.createEl('h2', { text: spec.title })
-
-		const toolbar = section.createDiv({ cls: 'library-toolbar' })
+		const toolbar = section.createDiv({ cls: 'library-section-heading library-toolbar' })
+		toolbar.createEl('h2', { text: spec.title })
 		const collapseBtn = toolbar.createEl('button', {
 			cls: 'library-collapse-btn',
 			text: '▼',
 			attr: { 'aria-label': spec.title, 'aria-expanded': 'true' }
 		})
 		this.sectionMeta(toolbar, cards, spec.kind)
-		if (spec.filters) this.sectionFilters(toolbar, spec.filters, spec.kind)
+		if (spec.filters) this.sectionFilters(toolbar, spec.filters)
 		toolbar.createDiv({ cls: 'library-toolbar-spacer' })
 
 		const sortDropdown = toolbar.createDiv({ cls: 'library-sort-dropdown' })
@@ -670,6 +699,7 @@ export class LibraryView extends ItemView {
 			{ label: tr('sort.rating'), key: 'rating' },
 			{ label: tr('sort.date'), key: 'date' },
 			{ label: tr('sort.modified'), key: 'modified' },
+			{ label: tr('sort.progress'), key: 'progress' },
 			...(spec.kind === 'game' ? [{ label: tr('sort.played'), key: 'played' as SortKey }] : []),
 			// Only where some exist: Up next can take them all away.
 			...(spec.sortId !== UP_NEXT_SORT && cards.some(card => notStarted(card.fm, card.kind))
@@ -686,6 +716,8 @@ export class LibraryView extends ItemView {
 			sortTrigger.setText((opt?.label ?? '') + ' ' + (sortAsc ? '↑' : '↓'))
 		}
 
+		// finished counts as full even without a Progress value
+		const progressOf = (card: CardData): number => isFinished(card.fm, card.kind) ? 100 : Math.min(100, parseProgress(card.fm.Progress))
 		const renderGrid = (): void => {
 			const sorted = [...cards].sort((a, b) => {
 				let cmp = 0
@@ -696,6 +728,7 @@ export class LibraryView extends ItemView {
 					case 'date': cmp = a.date - b.date; break
 					case 'modified': cmp = a.file.stat.mtime - b.file.stat.mtime; break
 					case 'played': cmp = parseDate(a.fm['Last Played']) - parseDate(b.fm['Last Played']); break
+					case 'progress': cmp = progressOf(a) - progressOf(b) || a.name.localeCompare(b.name); break
 					case 'unstarted':
 						cmp = Number(notStarted(b.fm, b.kind)) - Number(notStarted(a.fm, a.kind))
 						// Named order within each half, whichever way the halves go.
@@ -753,6 +786,41 @@ export class LibraryView extends ItemView {
 		renderGrid()
 		if (spec.collapsed) applyCollapsed(true)
 		return section
+	}
+
+	private renderComingSoon(root: HTMLElement, cards: CardData[]): void {
+		const soon = cards
+			.map(card => ({ card, airing: this.plugin.airingFor(card.fm) }))
+			.filter((item): item is { card: CardData; airing: Airing } => item.airing !== null)
+			.sort((a, b) => a.airing.at - b.airing.at)
+			.slice(0, 20)
+		if (soon.length === 0) return
+		const settings = this.plugin.settings
+		const section = root.createDiv({ cls: 'library-section library-coming-soon' })
+		const heading = section.createDiv({ cls: 'library-section-heading' })
+		heading.createEl('h2', { text: tr('soon.title') })
+		const collapseBtn = heading.createEl('button', { cls: 'library-collapse-btn', text: '▼', attr: { 'aria-label': tr('soon.title'), 'aria-expanded': 'true' } })
+		const list = section.createDiv({ cls: 'library-soon-list' })
+		for (const { card, airing } of soon) {
+			const row = list.createDiv({ cls: 'library-soon-row' })
+			const src = coverSrc(this.app, coverValue(card.fm, settings.coverProperty))
+			if (src) row.createEl('img', { cls: 'library-soon-cover', attr: { src } })
+			const text = row.createDiv({ cls: 'library-soon-text' })
+			text.createDiv({ cls: 'library-soon-name', text: card.name })
+			text.createDiv({ cls: 'library-soon-when', text: airingLabel(airing) })
+			row.addEventListener('click', () => { void this.app.workspace.getLeaf(false).openFile(card.file) })
+		}
+		const applyCollapsed = (collapsed: boolean): void => {
+			list.toggleClass('collapsed', collapsed)
+			collapseBtn.setText(collapsed ? '▶' : '▼')
+			collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
+		}
+		collapseBtn.addEventListener('click', () => {
+			settings.comingSoonCollapsed = !list.hasClass('collapsed')
+			applyCollapsed(settings.comingSoonCollapsed)
+			void this.plugin.persistSettings()
+		})
+		if (settings.comingSoonCollapsed) applyCollapsed(true)
 	}
 
 	private renderCard(grid: HTMLElement, card: CardData): void {

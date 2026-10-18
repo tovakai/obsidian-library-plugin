@@ -43,7 +43,7 @@ export class BookAggregatorProvider implements ContentProvider {
 			const creator = meta.fields.Creator
 			const titles = await findChapters({
 				isbn: text(meta.fields.ISBN),
-				work: sourceId.startsWith('/works/') ? sourceId : '',
+				work: /^\/works\/[\w.-]+$/.test(sourceId) ? sourceId : '',
 				title: text(meta.fields.Name),
 				author: text(Array.isArray(creator) ? creator[0] : creator)
 			})

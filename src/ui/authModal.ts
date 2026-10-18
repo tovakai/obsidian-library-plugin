@@ -6,6 +6,9 @@ export interface AuthModalOptions {
 	extract: (url: string) => string | null
 	// Nintendo serves a wide layout unless it sees a phone.
 	userAgent?: string
+	// Some sites keep the token in page storage instead of the redirect URL;
+	// poll this expression in the guest page and take a truthy result as the answer.
+	pageProbe?: string
 }
 
 export class AuthModal extends Modal {
@@ -53,8 +56,24 @@ export class AuthModal extends Modal {
 		view.addEventListener('render-process-gone', () => trail.push('webview crashed'))
 		this.timerWin = win
 		this.poll = win.setInterval(() => {
-			const guest = view as unknown as { getURL?: () => string }
+			const guest = view as unknown as {
+				getURL?: () => string
+				executeJavaScript?: (code: string, userGesture: boolean) => unknown
+			}
 			if (guest.getURL) arrive(guest.getURL())
+			if (this.opts.pageProbe && guest.executeJavaScript) {
+				// The webview runs the call over IPC: a third callback argument fails
+				// structured clone, so only the two-argument promise form delivers.
+				const take = (value: unknown): void => {
+					if (typeof value === 'string' && value) this.finish(value)
+				}
+				try {
+					const out: unknown = guest.executeJavaScript(this.opts.pageProbe, false)
+					if (out && typeof (out as Promise<unknown>).then === 'function') {
+						void (out as Promise<unknown>).then(take).catch(() => { /* the guest page went away mid-probe */ })
+					}
+				} catch { /* the guest page is not ready for scripts yet */ }
+			}
 		}, 300)
 		this.contentEl.appendChild(view)
 	}

@@ -93,6 +93,21 @@ export function sanitizeFilename(name: string): string {
 }
 
 // Untrusted frontmatter: http(s) only, never `javascript:` or another scheme.
+// For a request the plugin itself makes from a note's value: https to a named
+// public host, never loopback, a private address or an IP literal.
+export function publicHttpsUrl(value: unknown): string | null {
+	let url: URL
+	try {
+		url = new URL(toStr(value).trim())
+	} catch {
+		return null
+	}
+	const host = url.hostname.toLowerCase()
+	if (url.protocol !== 'https:' || !host.includes('.') || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return null
+	if (/^[\d.]+$/.test(host) || host.startsWith('[') || host.includes(':')) return null
+	return url.href
+}
+
 export function safeUrl(value: unknown): string | null {
 	const url = toStr(value).trim()
 	return /^https?:\/\/\S/i.test(url) ? url : null

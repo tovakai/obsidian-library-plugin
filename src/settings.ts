@@ -15,7 +15,7 @@ import type { ICategory, IStatsTop } from "./constants";
 import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
 import { isContentType, type ContentType } from "./providers/types";
 import type { WatchSite } from "./watchSites";
-import { TYPE_DEFAULTS, addCategoryTop, cleanFolder, isDefaultTypeValue, newCategory } from "./categories";
+import { TYPE_DEFAULTS, addCategoryTop, categoryLabel, cleanFolder, isBuiltInCategory, isDefaultTypeValue, newCategory } from "./categories";
 import { tr } from "./i18n";
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, tokenFromInput } from "./anilistSync";
 import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malClientPair } from "./malSync";
@@ -223,6 +223,18 @@ export class LibrarySettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: tr("settings.comingSoon.name"),
+						desc: tr("settings.comingSoon.desc"),
+						render: (row) => {
+							row.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.showComingSoon).onChange(async (value) => {
+									this.plugin.settings.showComingSoon = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
+					{
 						name: tr("settings.upNextInCategories.name"),
 						desc: tr("settings.upNextInCategories.desc"),
 						render: (row) => {
@@ -260,6 +272,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				rows: [
 					{ name: tr("anilist.name"), desc: tr("settings.anilist.desc"), render: (row) => this.anilistAccount(row) },
 					{ name: tr("mal.name"), desc: tr("settings.mal.desc"), render: (row) => this.malAccount(row) },
+					{ name: tr("kitsu.name"), desc: tr("settings.kitsu.desc"), render: (row) => this.kitsuAccount(row) },
 				],
 			},
 			{
@@ -424,6 +437,30 @@ export class LibrarySettingTab extends PluginSettingTab {
 		void this.plugin.malImport(true);
 	}
 
+	private kitsuAccount(row: Setting): void {
+		const connected = this.plugin.settings.kitsuTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-kitsu" });
+		icon.appendChild(platformMark("kitsu"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.kitsuTokens = null;
+					await this.plugin.saveSettings();
+				} else {
+					// desktop opens the real Kitsu site; the plain form is the mobile path
+					await this.plugin.connectKitsu();
+				}
+				this.refresh();
+			});
+		});
+	}
+
 	private psnAccount(row: Setting): void {
 		const connected = this.plugin.settings.psnTokens !== null;
 		row.settingEl.addClass("library-platform-row");
@@ -518,13 +555,14 @@ export class LibrarySettingTab extends PluginSettingTab {
 	}
 
 	private categoryRows(cat: ICategory, index: number): Row[] {
-		const label = (): string => cat.name || tr("settings.category.name", { index: index + 1 });
+		const label = (): string => categoryLabel(cat) || tr("settings.category.name", { index: index + 1 });
 		const unfolded = (): boolean => this.expanded.has(cat);
-		return [
+		const builtIn = isBuiltInCategory(cat);
+		const rows: Row[] = [
 			{ name: label(), render: (row) => this.categoryControls(row, cat, label) },
 			{
 				name: tr("settings.category.type"),
-				visible: unfolded,
+				visible: () => !builtIn && unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
 					row.addText((text) =>
@@ -542,26 +580,16 @@ export class LibrarySettingTab extends PluginSettingTab {
 			},
 			{
 				name: tr("settings.category.folder"),
-				visible: unfolded,
+				visible: () => !builtIn && unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
-					row.addText((text) => {
-						text
-							.setPlaceholder(tr("settings.category.folder.placeholder"))
-							.setValue(cat.folder)
-							.onChange(async (value) => {
-								if (!this.folderFrom.has(cat)) this.folderFrom.set(cat, cat.folder);
-								cat.folder = value.trim();
-								await this.plugin.saveSettings();
-							});
-						text.inputEl.addEventListener("change", () => this.commitFolders(false));
-					});
+					this.folderInput(row, cat);
 				},
 			},
 			{
 				name: tr("settings.category.template"),
 				desc: tr("settings.category.template.desc"),
-				visible: unfolded,
+				visible: () => !builtIn && unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
 					row.addText((text) =>
@@ -578,11 +606,29 @@ export class LibrarySettingTab extends PluginSettingTab {
 				},
 			},
 		];
+		return rows;
+	}
+
+	private folderInput(row: Setting, cat: ICategory): void {
+		row.addText((text) => {
+			text
+				.setPlaceholder(tr("settings.category.folder.placeholder"))
+				.setValue(cat.folder)
+				.onChange(async (value) => {
+					if (!this.folderFrom.has(cat)) this.folderFrom.set(cat, cat.folder);
+					cat.folder = value.trim();
+					await this.plugin.saveSettings();
+				});
+			text.inputEl.setAttribute("aria-label", tr("settings.category.folder"));
+			text.inputEl.addEventListener("change", () => this.commitFolders(false));
+		});
 	}
 
 	private categoryControls(row: Setting, cat: ICategory, label: () => string): void {
 		const settings = this.plugin.settings;
-		row.addText((text) =>
+		const builtIn = isBuiltInCategory(cat);
+		if (builtIn) this.folderInput(row, cat);
+		if (!builtIn) row.addText((text) =>
 			text
 				.setPlaceholder(tr("settings.category.name.placeholder"))
 				.setValue(cat.name)
@@ -592,7 +638,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}),
 		);
-		row.addDropdown((dropdown) => {
+		if (!builtIn) row.addDropdown((dropdown) => {
 			this.addSourceOptions(dropdown);
 			dropdown.setValue(cat.contentType).onChange(async (value) => {
 				if (!isContentType(value)) return;
@@ -648,7 +694,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			if (at > 0) row.addExtraButton((button) => button.setIcon("arrow-up").setTooltip(tr("settings.category.up")).onClick(() => place(cat, at - 1)));
 			if (at < list.length - 1) row.addExtraButton((button) => button.setIcon("arrow-down").setTooltip(tr("settings.category.down")).onClick(() => place(cat, at + 1)));
 		}
-		row.addExtraButton((button) => {
+		if (!builtIn) row.addExtraButton((button) => {
 			const setIcon = (): void => {
 				button.setIcon(this.expanded.has(cat) ? "chevron-up" : "chevron-down");
 			};

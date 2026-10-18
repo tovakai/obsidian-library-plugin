@@ -7,7 +7,7 @@ export const TROPHY_GRADES = [
 	{ key: 'bronze', property: 'Bronze', color: '#c47a45', label: 'stats.psn.bronze' },
 ] as const
 
-function trophyIcon(color: string): SVGSVGElement {
+export function trophyIcon(color: string): SVGSVGElement {
 	const svg = createSvg('svg', { cls: 'library-trophy-icon', attr: { viewBox: '0 0 24 24', 'aria-hidden': 'true' } })
 	svg.createSvg('path', { attr: { d: 'M6 3h12v5a6 6 0 0 1-12 0V3z', fill: color } })
 	svg.createSvg('path', { attr: { d: 'M6 5H3.5v1.5A3.5 3.5 0 0 0 7 10M18 5h2.5v1.5A3.5 3.5 0 0 1 17 10', fill: 'none', stroke: color, 'stroke-width': '1.6' } })
