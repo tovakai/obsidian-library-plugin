@@ -545,7 +545,8 @@ sort trigger, the chosen one in the accent colour. */
 
 .library-view .library-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	grid-template-columns: repeat(auto-fill, 160px);
+	grid-auto-rows: 1fr;
 	gap: 20px;
 	margin-left: 0;
 	margin-right: 0;
