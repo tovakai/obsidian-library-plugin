@@ -50,6 +50,7 @@ import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSess
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
+import { airingLabel, nextAnimeEpisodes, nextSeriesEpisode, type Airing } from './airing'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
 import { KitsuLoginModal } from './ui/kitsuLoginModal'
@@ -278,6 +279,8 @@ export default class LibraryPlugin extends Plugin {
 			this.registerInterval(window.setTimeout(() => this.gameSyncTick(), 60000))
 			this.registerInterval(window.setTimeout(() => this.watchSyncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.watchSyncTick(), 3600000))
+			this.registerInterval(window.setTimeout(() => void this.airingIfDue(), 30000))
+			this.registerInterval(window.setInterval(() => void this.airingIfDue(), 3600000))
 			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
 		this.keySignatures = this.apiKeySignatures()
@@ -1396,6 +1399,60 @@ export default class LibraryPlugin extends Plugin {
 		const kind = this.kindOf(fm) ?? 'movie'
 		const rating = Number(toStr(fm['My Rating']))
 		return isFinished(fm, kind) || fm.Complete === true || parseWatched(fm.Progress) > 0 || (rating >= 1 && rating <= 10)
+	}
+
+	private airingKey(fm: Record<string, unknown>): string | null {
+		const kind = this.kindOf(fm)
+		if (kind === 'series') return this.imdbIdOf(fm)
+		if (kind !== 'anime' || toStr(fm.Source) !== 'anilist') return null
+		const ids = animeIds(toStr(fm['Source ID']))
+		if (!ids) return null
+		return ids.anilist !== null ? `anilist:${String(ids.anilist)}` : `mal:${String(ids.mal)}`
+	}
+
+	airingFor(fm: Record<string, unknown>): Airing | null {
+		const key = this.airingKey(fm)
+		const airing = key ? this.settings.airing[key] : undefined
+		return airing && airing.at > Date.now() ? airing : null
+	}
+
+	private airingWatched(fm: Record<string, unknown>): boolean {
+		if (parseWatched(fm.Progress) <= 0) return false
+		return this.kindOf(fm) !== 'series' || !toStr(fm['End Year']).trim()
+	}
+
+	private async airingIfDue(): Promise<void> {
+		if (this.unloaded || Date.now() - this.settings.airingChecked < 12 * 3600000) return
+		const next: Record<string, Airing> = {}
+		const anilist: number[] = []
+		const mal: number[] = []
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (!fm || isTemplateFile(file.path) || !this.airingWatched(fm)) continue
+			const key = this.airingKey(fm)
+			if (!key || next[key]) continue
+			if (key.startsWith('anilist:')) anilist.push(Number(key.slice(8)))
+			else if (key.startsWith('mal:')) mal.push(Number(key.slice(4)))
+			else {
+				if (this.unloaded) return
+				const found = await nextSeriesEpisode(key)
+				const kept = found === undefined ? this.settings.airing[key] : found
+				if (kept) next[key] = kept
+			}
+		}
+		const anime = await nextAnimeEpisodes({ anilist, mal })
+		if (this.unloaded) return
+		if (anime) {
+			for (const [id, airing] of anime.anilist) next[`anilist:${String(id)}`] = airing
+			for (const [id, airing] of anime.mal) next[`mal:${String(id)}`] = airing
+		} else {
+			for (const [key, airing] of Object.entries(this.settings.airing)) if (/^(anilist|mal):/.test(key)) next[key] = airing
+		}
+		this.settings.airing = next
+		this.settings.airingChecked = Date.now()
+		await this.persistSettings()
+		this.refreshViews()
+		this.refreshBanner()
 	}
 
 	private async watchSyncIfDue(site: WatchSite): Promise<void> {
@@ -2949,6 +3006,8 @@ export default class LibraryPlugin extends Plugin {
 		const yearsStr = year + (endYear ? '–' + endYear : '')
 		if (yearsStr) addRow(tr('header.years'), yearsStr)
 		if (season) addRow(tr('header.seasons'), season)
+		const airing = this.airingFor(fm)
+		if (airing) addRow(tr('header.nextEpisode'), airingLabel(airing))
 
 		const genres = toStrArray(fm.Genre).map(linkLabel)
 		if (genres.length > 0) addRow(tr('header.genre'), genres.join(', '))
@@ -3311,6 +3370,10 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.statsCollapsed !== 'boolean') this.settings.statsCollapsed = false
 		if (typeof this.settings.showUpNext !== 'boolean') this.settings.showUpNext = true
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
+		if (typeof this.settings.showComingSoon !== 'boolean') this.settings.showComingSoon = true
+		if (typeof this.settings.comingSoonCollapsed !== 'boolean') this.settings.comingSoonCollapsed = false
+		if (!this.settings.airing || typeof this.settings.airing !== 'object') this.settings.airing = {}
+		if (typeof this.settings.airingChecked !== 'number') this.settings.airingChecked = 0
 		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
 		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
 		if (!this.settings.nintendoTokens || typeof this.settings.nintendoTokens !== 'object') this.settings.nintendoTokens = null

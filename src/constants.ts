@@ -4,6 +4,7 @@ import type { KitsuTokens } from './kitsuSync'
 import type { PsnStats, PsnTokens } from './psn'
 import type { NintendoStats, NintendoTokens } from './nintendo'
 import type { ImdbEcho, WatchSite } from './watchSites'
+import type { Airing } from './airing'
 
 export const progressPattern: RegExp = /^(\d+)\s*\/\s*(\d+)$/
 export const dmyDatePattern: RegExp = /^(\d{2})\.(\d{2})\.(\d{4})$/
@@ -386,6 +387,10 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'filter.all': 'All',
 		'sort.unstarted': 'Not started',
 		'upNext.title': 'Up next',
+		'soon.title': 'Coming soon',
+		'header.nextEpisode': 'Next episode',
+		'settings.comingSoon.name': 'Coming soon',
+		'settings.comingSoon.desc': 'Next episodes of the series and anime you are watching, with their air dates.',
 		'card.notStarted': 'Not started yet',
 		'settings.upNext.name': 'Up next block',
 		'settings.upNext.desc': 'Shows everything you haven\'t started yet, from every category, at the end of the library.',
@@ -28058,6 +28063,10 @@ export interface ILibrarySettings {
 	netflixEcho: Record<string, number>
 	showRecommendations: boolean
 	showUpNext: boolean
+	showComingSoon: boolean
+	comingSoonCollapsed: boolean
+	airing: Record<string, Airing>
+	airingChecked: number
 	upNextCollapsed: boolean
 	// Category Up next shows, by name; empty = all.
 	upNextCategory: string
@@ -28108,6 +28117,10 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	netflixEcho: {},
 	showRecommendations: true,
 	showUpNext: true,
+	showComingSoon: true,
+	comingSoonCollapsed: false,
+	airing: {},
+	airingChecked: 0,
 	upNextCollapsed: false,
 	upNextCategory: '',
 	upNextInCategories: true,

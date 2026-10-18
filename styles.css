@@ -1436,3 +1436,51 @@ sort trigger, the chosen one in the accent colour. */
 	color: var(--color-green);
 	background-color: rgba(var(--color-green-rgb), 0.14);
 }
+
+.library-view .library-soon-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 8px;
+}
+
+.library-view .library-soon-list.collapsed {
+	display: none;
+}
+
+.library-view .library-soon-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px;
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	cursor: pointer;
+}
+
+.library-view .library-soon-row:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.library-view .library-soon-cover {
+	width: 36px;
+	height: 54px;
+	object-fit: cover;
+	border-radius: var(--radius-s);
+	flex-shrink: 0;
+}
+
+.library-view .library-soon-text {
+	min-width: 0;
+}
+
+.library-view .library-soon-name {
+	font-weight: var(--font-semibold);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.library-view .library-soon-when {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}

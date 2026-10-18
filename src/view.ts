@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian'
+import { airingLabel, type Airing } from './airing'
 import type LibraryPlugin from './main'
 import { RATING_RT_ICON, type ICategory, type IStatsTop } from './constants'
 import type { ContentType } from './providers/types'
@@ -502,6 +503,7 @@ export class LibraryView extends ItemView {
 
 		// Not-started may live in Up next alone only while that block is on.
 		const settings = this.plugin.settings
+		if (settings.showComingSoon) this.renderComingSoon(root, sections.flatMap(section => section.cards))
 		const upNextOnly = settings.showUpNext && !settings.upNextInCategories
 		let rendered = 0
 		for (const { category, cards } of sections) {
@@ -753,6 +755,41 @@ export class LibraryView extends ItemView {
 		renderGrid()
 		if (spec.collapsed) applyCollapsed(true)
 		return section
+	}
+
+	private renderComingSoon(root: HTMLElement, cards: CardData[]): void {
+		const soon = cards
+			.map(card => ({ card, airing: this.plugin.airingFor(card.fm) }))
+			.filter((item): item is { card: CardData; airing: Airing } => item.airing !== null)
+			.sort((a, b) => a.airing.at - b.airing.at)
+			.slice(0, 20)
+		if (soon.length === 0) return
+		const settings = this.plugin.settings
+		const section = root.createDiv({ cls: 'library-section library-coming-soon' })
+		section.createEl('h2', { text: tr('soon.title') })
+		const toolbar = section.createDiv({ cls: 'library-toolbar' })
+		const collapseBtn = toolbar.createEl('button', { cls: 'library-collapse-btn', text: '▼', attr: { 'aria-label': tr('soon.title'), 'aria-expanded': 'true' } })
+		const list = section.createDiv({ cls: 'library-soon-list' })
+		for (const { card, airing } of soon) {
+			const row = list.createDiv({ cls: 'library-soon-row' })
+			const src = coverSrc(this.app, coverValue(card.fm, settings.coverProperty))
+			if (src) row.createEl('img', { cls: 'library-soon-cover', attr: { src } })
+			const text = row.createDiv({ cls: 'library-soon-text' })
+			text.createDiv({ cls: 'library-soon-name', text: card.name })
+			text.createDiv({ cls: 'library-soon-when', text: airingLabel(airing) })
+			row.addEventListener('click', () => { void this.app.workspace.getLeaf(false).openFile(card.file) })
+		}
+		const applyCollapsed = (collapsed: boolean): void => {
+			list.toggleClass('collapsed', collapsed)
+			collapseBtn.setText(collapsed ? '▶' : '▼')
+			collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
+		}
+		collapseBtn.addEventListener('click', () => {
+			settings.comingSoonCollapsed = !list.hasClass('collapsed')
+			applyCollapsed(settings.comingSoonCollapsed)
+			void this.plugin.persistSettings()
+		})
+		if (settings.comingSoonCollapsed) applyCollapsed(true)
 	}
 
 	private renderCard(grid: HTMLElement, card: CardData): void {
