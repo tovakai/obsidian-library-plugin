@@ -1413,7 +1413,8 @@ export default class LibraryPlugin extends Plugin {
 	airingDates(fm: Record<string, unknown>): Airing[] {
 		const key = this.airingKey(fm)
 		const now = Date.now()
-		return (key ? this.settings.airing[key] ?? [] : []).filter(airing => airing.at > now)
+		const yearEnd = new Date(new Date(now).getFullYear() + 1, 0, 1).getTime()
+		return (key ? this.settings.airing[key] ?? [] : []).filter(airing => airing.at > now && airing.at < yearEnd)
 	}
 
 	airingFor(fm: Record<string, unknown>): Airing | null {
