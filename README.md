@@ -68,7 +68,7 @@ Each category searches open sources. An API key adds richer data, and its servic
 | Comics | Wikidata, AniList | [Comic Vine](https://comicvine.gamespot.com/api/) |
 | Music | Deezer | None |
 
-Anything that doesn't fit goes into a custom category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
+Anything that doesn't fit goes into a Manual category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
 **Example note**
 
@@ -77,12 +77,9 @@ Anything that doesn't fit goes into a custom category with your own fields. More
 Type: Series
 Name: Stranger Things
 Year: 2016
-Genre: ["[[Drama]]", "[[Horror]]"]
-Creator: ["[[The Duffer Brothers]]"]
-Cast: ["[[Winona Ryder]]"]
 Rating IMDB: 8.7
 My Rating: 9
-Cover: https://m.media-amazon.com/images/...
+Cover: https://images.metahub.space/poster/medium/tt4574334/img
 Progress: 8/42
 Date: 01.03.2026
 Source: omdb
@@ -90,7 +87,7 @@ Source ID: tt4574334
 ---
 ```
 
-`Progress: 8/42` means 8 of 42 episodes watched; `[[Drama]]` is a link to your Drama note. Refreshing a note fills in empty fields and updates ratings from the source. It never overwrites your own rating or progress.
+`Progress: 8/42` means 8 of 42 episodes watched. Genre, creator and cast are written as links to their own notes. Refreshing a note fills in empty fields and updates ratings from the source. It never overwrites your own rating or progress.
 
 <details>
 <summary><b>Commands</b></summary>
