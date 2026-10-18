@@ -7,6 +7,7 @@ import {
 	setIcon,
 	setTooltip,
 	Platform,
+	getLanguage,
 } from 'obsidian'
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
@@ -51,12 +52,12 @@ import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRed
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
-import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
+import { cleanPsnName, exchangePsnCode, psnEarnedTrophies, psnExpired, psnLanguage, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophy, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
 import { KitsuLoginModal } from './ui/kitsuLoginModal'
 import { AuthModal } from './ui/authModal'
 import { SIGNER_PROJECT, codeFromRedirect as nintendoCode, exchangeNintendoCode, nintendoAuth, nintendoPlayLog, type NintendoPlayedGame } from './nintendo'
-import { renderTrophies } from './ui/trophyIcons'
+import { renderTrophies, TROPHY_GRADES, trophyIcon } from './ui/trophyIcons'
 import { renderPlatformLabels } from './ui/platformIcons'
 import { createEmbedPlayer, toEmbed } from './trailer'
 import { applyEpisodeChange, followProgress, hasChapters, mergeSeasons, seasonsOf, setChapters, type EpisodeChange, type TrackKind } from './episodes'
@@ -193,6 +194,8 @@ export default class LibraryPlugin extends Plugin {
 	private lightbox: Lightbox | null = null
 	// unfolded seasons per note; screen state only
 	private openSeasons = new Map<string, Set<number>>()
+	private trophyLists = new Map<string, { trophies: PsnTrophy[]; total: number } | null>()
+	private openTrophies = new Set<string>()
 	private chapterLookups = new Set<string>()
 
 	async onload(): Promise<void> {
@@ -3066,6 +3069,7 @@ export default class LibraryPlugin extends Plugin {
 		wrap.appendChild(header)
 		this.buildMediaBlock(wrap, fm, name)
 		this.buildSeasonsBlock(wrap, fm, file)
+		this.buildTrophiesBlock(wrap, fm, file)
 		this.buildRecommendations(wrap, fm)
 		return wrap
 	}
@@ -3305,6 +3309,51 @@ export default class LibraryPlugin extends Plugin {
 			block.appendChild(list)
 		})
 		wrap.appendChild(block)
+	}
+
+	// A PlayStation game lists the trophies earned, fetched on open once a session.
+	private buildTrophiesBlock(wrap: HTMLElement, fm: Record<string, unknown>, file: TFile): void {
+		const titleId = toStr(fm['PSN ID'])
+		if (!titleId || isTemplateFile(file.path) || !this.settings.psnTokens) return
+		if (!this.trophyLists.has(titleId)) {
+			this.trophyLists.set(titleId, null)
+			void this.psnToken().then(token => token ? psnEarnedTrophies(token, titleId, psnLanguage(getLanguage())) : null).then(list => {
+				if (!list) { this.trophyLists.delete(titleId); return }
+				this.trophyLists.set(titleId, list)
+				if (list.trophies.length > 0) this.refreshBanner()
+			})
+		}
+		const list = this.trophyLists.get(titleId)
+		if (!list || list.trophies.length === 0) return
+		const open = this.openTrophies.has(titleId)
+		const block = wrap.createDiv({ cls: 'note-header-seasons note-header-trophy-list' })
+		const row = block.createDiv({ cls: 'note-header-season' })
+		row.createDiv({ cls: 'note-header-season-name', text: tr('header.trophies') })
+		row.createDiv({ cls: 'note-header-season-episodes', text: `${String(list.trophies.length)} / ${String(list.total)}` })
+		const toggle = row.createEl('button', { cls: 'note-header-season-toggle clickable-icon', attr: { 'aria-label': tr('header.trophies'), 'aria-expanded': open ? 'true' : 'false' } })
+		setIcon(toggle, open ? 'chevron-up' : 'chevron-down')
+		toggle.addEventListener('click', (e) => {
+			e.preventDefault()
+			if (open) this.openTrophies.delete(titleId)
+			else this.openTrophies.add(titleId)
+			this.refreshBanner()
+		})
+		if (!open) return
+		const items = block.createDiv({ cls: 'note-header-trophies-earned' })
+		for (const trophy of list.trophies) {
+			const grade = TROPHY_GRADES.find(g => g.key === trophy.grade)
+			const item = items.createDiv({ cls: 'note-header-trophy-item' })
+			const icon = safeUrl(trophy.iconUrl)
+			if (icon) item.createEl('img', { cls: 'note-header-trophy-image', attr: { src: icon, alt: '', loading: 'lazy' } })
+			const text = item.createDiv({ cls: 'note-header-trophy-text' })
+			const title = text.createDiv({ cls: 'note-header-trophy-name' })
+			if (grade) title.appendChild(trophyIcon(grade.color))
+			title.createSpan({ text: trophy.name })
+			if (trophy.detail) text.createDiv({ cls: 'note-header-trophy-detail', text: trophy.detail })
+			const side = item.createDiv({ cls: 'note-header-trophy-side' })
+			side.createDiv({ text: new Date(trophy.earnedAt).toLocaleDateString(getLanguage() + '-u-nu-latn', { day: 'numeric', month: 'short', year: 'numeric' }) })
+			if (trophy.rate !== null) side.createDiv({ cls: 'note-header-trophy-rate', text: tr('header.trophyRate', { rate: formatNumber(trophy.rate) }) })
+		}
 	}
 
 	private watchedBox(checked: boolean, onChange: (watched: boolean) => void): HTMLElement {

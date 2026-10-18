@@ -1561,3 +1561,60 @@ sort trigger, the chosen one in the accent colour. */
 	font-size: var(--font-ui-smaller);
 	white-space: nowrap;
 }
+
+.note-header-wrap .note-header-trophies-earned {
+	display: flex;
+	flex-direction: column;
+	padding: 4px 0 8px;
+}
+
+.note-header-wrap .note-header-trophy-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 0;
+	font-size: 0.9em;
+}
+
+.note-header-wrap .note-header-trophy-image {
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0;
+	object-fit: cover;
+	border-radius: 6px;
+}
+
+.note-header-wrap .note-header-trophy-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.note-header-wrap .note-header-trophy-name {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+}
+
+.note-header-wrap .note-header-trophy-name .library-trophy-icon {
+	width: 14px;
+	height: 14px;
+	flex-shrink: 0;
+}
+
+.note-header-wrap .note-header-trophy-detail {
+	color: var(--text-muted);
+}
+
+.note-header-wrap .note-header-trophy-side {
+	flex-shrink: 0;
+	text-align: right;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+
+.note-header-wrap .note-header-trophy-rate {
+	color: var(--text-faint);
+}

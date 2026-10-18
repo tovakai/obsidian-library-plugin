@@ -252,6 +252,76 @@ export async function psnTrophyIdsFor(token: string, titleIds: string[]): Promis
 	return out
 }
 
+export type TrophyGrade = 'platinum' | 'gold' | 'silver' | 'bronze'
+
+export interface PsnTrophy {
+	grade: TrophyGrade
+	name: string
+	detail: string
+	iconUrl: string | null
+	earnedAt: string
+	// Share of players who have it, 0–100.
+	rate: number | null
+}
+
+interface RawTrophy {
+	trophyId?: number
+	trophyType?: string
+	trophyName?: string
+	trophyDetail?: string
+	trophyIconUrl?: string
+	earned?: boolean
+	earnedDateTime?: string
+	trophyEarnedRate?: string
+}
+
+const GRADE_ORDER: TrophyGrade[] = ['platinum', 'gold', 'silver', 'bronze']
+
+// Earned trophies: names and icons from the game's list, dates from the member's.
+export function earnedTrophies(defs: RawTrophy[], mine: RawTrophy[]): PsnTrophy[] {
+	const byId = new Map(defs.map(def => [def.trophyId, def]))
+	const out: PsnTrophy[] = []
+	for (const own of mine) {
+		if (!own.earned || !own.earnedDateTime) continue
+		const def = byId.get(own.trophyId) ?? {}
+		const grade = (own.trophyType ?? def.trophyType ?? '') as TrophyGrade
+		if (GRADE_ORDER.indexOf(grade) < 0) continue
+		const rate = Number(own.trophyEarnedRate)
+		out.push({
+			grade,
+			name: def.trophyName ?? '',
+			detail: def.trophyDetail ?? '',
+			iconUrl: def.trophyIconUrl ?? null,
+			earnedAt: own.earnedDateTime,
+			rate: own.trophyEarnedRate && Number.isFinite(rate) ? rate : null,
+		})
+	}
+	return out.sort((a, b) => GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade) || b.earnedAt.localeCompare(a.earnedAt))
+}
+
+// Sony reads only a full tag ("ru-RU", not "ru") and only home regions ("ru-PH" falls back to English).
+const PSN_REGIONS: Record<string, string> = { en: 'US', ja: 'JP', ko: 'KR', zh: 'CN', uk: 'UA', cs: 'CZ', da: 'DK', sv: 'SE', el: 'GR', he: 'IL', vi: 'VN', nb: 'NO', ar: 'AE', hi: 'IN', ms: 'MY', fa: 'IR', be: 'BY', kk: 'KZ', ca: 'ES', sr: 'RS', sl: 'SI', et: 'EE' }
+export function psnLanguage(language: string): string {
+	if (language.indexOf('-') > 0) return language
+	return `${language}-${PSN_REGIONS[language] ?? language.toUpperCase()}`
+}
+
+export async function psnEarnedTrophies(token: string, titleId: string, language = ''): Promise<{ trophies: PsnTrophy[]; total: number } | null> {
+	const ids = await get<{ titles?: Array<{ trophyTitles?: Array<{ npCommunicationId?: string; npServiceName?: string }> }> }>(token,
+		`/trophy/v1/users/me/titles/trophyTitles?npTitleIds=${encodeURIComponent(titleId)}`)
+	if (!ids) return null
+	const title = ids.titles?.[0]?.trophyTitles?.[0]
+	if (!title?.npCommunicationId) return { trophies: [], total: 0 }
+	const id = encodeURIComponent(title.npCommunicationId)
+	const path = `/trophyGroups/all/trophies?npServiceName=${encodeURIComponent(title.npServiceName ?? 'trophy')}`
+	const [defs, mine] = await Promise.all([
+		get<{ trophies?: RawTrophy[] }>(token, `/trophy/v1/npCommunicationIds/${id}${path}`, language),
+		get<{ trophies?: RawTrophy[] }>(token, `/trophy/v1/users/me/npCommunicationIds/${id}${path}`),
+	])
+	if (!defs || !mine) return null
+	return { trophies: earnedTrophies(defs.trophies ?? [], mine.trophies ?? []), total: (defs.trophies ?? []).length }
+}
+
 // A library game: bought, PS Plus or free to play (apps come along too).
 export interface PsnOwnedGame {
 	titleId: string

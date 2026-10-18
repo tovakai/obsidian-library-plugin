@@ -168,6 +168,8 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'header.watched': 'Watched',
 		'header.episodeList': 'Episodes',
 		'header.chapters': 'Chapters',
+		'header.trophies': 'Trophies',
+		'header.trophyRate': '{rate}% of players',
 		'header.chapter': 'Chapter {number}',
 		'header.addChapters': 'Add chapters',
 		'modal.chaptersHint': 'Enter the number of chapters, or one chapter title per line.',
