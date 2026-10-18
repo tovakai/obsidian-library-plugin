@@ -602,7 +602,7 @@ sort trigger, the chosen one in the accent colour. */
 .library-view .library-section-heading {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	gap: 10px;
 	margin-bottom: 4px;
 }
 
