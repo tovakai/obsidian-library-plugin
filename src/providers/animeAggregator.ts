@@ -1,31 +1,43 @@
+import { KitsuProvider } from './kitsu'
 import { MalProvider } from './mal'
 import { SEARCH_BUDGET_MS, isEmptyValue, within } from '../util'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
 
-// MAL first with a Client ID, then AniList; deduped by idMal. Source stays anilist.
+// MAL first with a Client ID, then AniList; deduped by idMal. Kitsu adds its
+// own hits, already mapped to AniList ids. Source stays anilist.
 export class AnimeAggregatorProvider implements ContentProvider {
 	readonly id = 'anilist'
 	readonly contentTypes: ContentType[] = ['anime']
 
 	private anilist: ContentProvider
 	private mal: MalProvider
+	private kitsu: KitsuProvider
 
-	constructor(anilist: ContentProvider, mal: MalProvider) {
+	constructor(anilist: ContentProvider, mal: MalProvider, kitsu: KitsuProvider) {
 		this.anilist = anilist
 		this.mal = mal
+		this.kitsu = kitsu
 	}
 
 	async search(query: string, type: ContentType): Promise<SearchResult[]> {
-		const [fromMal, fromAniList] = await Promise.all([
+		const [fromMal, fromAniList, fromKitsu] = await Promise.all([
 			within(this.mal.search(query), SEARCH_BUDGET_MS, []),
-			within(this.anilist.search(query, type), SEARCH_BUDGET_MS, [])
+			within(this.anilist.search(query, type), SEARCH_BUDGET_MS, []),
+			within(this.kitsu.search(query), SEARCH_BUDGET_MS, [])
 		])
 		const listed = new Set(fromMal.map(result => result.sourceId))
 		const unlisted = fromAniList.filter((result) => {
 			const idMal = (result.raw as { idMal?: number | null } | null)?.idMal
 			return !idMal || !listed.has(MalProvider.PREFIX + String(idMal))
 		})
-		return [...fromMal, ...unlisted]
+		const kept = [...fromMal, ...unlisted]
+		const seen = new Set(kept.map(result => result.sourceId))
+		for (const result of fromKitsu) {
+			if (seen.has(result.sourceId)) continue
+			seen.add(result.sourceId)
+			kept.push(result)
+		}
+		return kept
 	}
 
 	refreshable(sourceId: string): boolean {

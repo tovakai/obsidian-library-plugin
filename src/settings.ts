@@ -260,6 +260,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				rows: [
 					{ name: tr("anilist.name"), desc: tr("settings.anilist.desc"), render: (row) => this.anilistAccount(row) },
 					{ name: tr("mal.name"), desc: tr("settings.mal.desc"), render: (row) => this.malAccount(row) },
+					{ name: tr("kitsu.name"), desc: tr("settings.kitsu.desc"), render: (row) => this.kitsuAccount(row) },
 				],
 			},
 			{
@@ -422,6 +423,30 @@ export class LibrarySettingTab extends PluginSettingTab {
 		new Notice(tr("notice.mal.connected"));
 		this.refresh();
 		void this.plugin.malImport(true);
+	}
+
+	private kitsuAccount(row: Setting): void {
+		const connected = this.plugin.settings.kitsuTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-kitsu" });
+		icon.appendChild(platformMark("kitsu"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.kitsuTokens = null;
+					await this.plugin.saveSettings();
+				} else {
+					// desktop opens the real Kitsu site; the plain form is the mobile path
+					await this.plugin.connectKitsu();
+				}
+				this.refresh();
+			});
+		});
 	}
 
 	private psnAccount(row: Setting): void {

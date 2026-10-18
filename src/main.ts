@@ -24,6 +24,7 @@ import { GameTrailerFinder } from './providers/gameTrailer'
 import { DeezerProvider } from './providers/deezer'
 import { AnimeProvider } from './providers/anime'
 import { MalProvider } from './providers/mal'
+import { KitsuProvider } from './providers/kitsu'
 import { ComicsProvider } from './providers/comics'
 import { ComicsAggregatorProvider } from './providers/comicsAggregator'
 import { WikidataComicProvider } from './providers/wikidataComics'
@@ -47,9 +48,11 @@ import { recommendationsFor, type Recommendation } from './recommendations'
 import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
 import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSession, type SteamSession } from './steamLibrary'
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
+import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal } from './ui/psnLoginModal'
+import { KitsuLoginModal } from './ui/kitsuLoginModal'
 import { AuthModal } from './ui/authModal'
 import { SIGNER_PROJECT, codeFromRedirect as nintendoCode, exchangeNintendoCode, nintendoAuth, nintendoPlayLog, type NintendoPlayedGame } from './nintendo'
 import { renderTrophies } from './ui/trophyIcons'
@@ -172,6 +175,11 @@ export default class LibraryPlugin extends Plugin {
 	private linkTimers = new Map<string, number>()
 	private malPushTimers = new Map<string, number>()
 	private imdbPushTimers = new Map<string, number>()
+	private kitsuPushTimers = new Map<string, number>()
+	private kitsuImporting = false
+	// our own Kitsu write coming back: no echo push
+	private kitsuPushing = false
+	private kitsuRefreshing: Promise<string | null> | null = null
 	private watchPushing = false
 	private enrichTimer: number | null = null
 	private enrichSleepTimer: number | null = null
@@ -202,7 +210,7 @@ export default class LibraryPlugin extends Plugin {
 			new WikidataGameProvider()
 		))
 		this.registry.register(new DeezerProvider())
-		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => MAL_CLIENT_ID)))
+		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => MAL_CLIENT_ID), new KitsuProvider()))
 		this.registry.register(new ComicsAggregatorProvider(
 			new ComicsProvider(() => this.settings.comicVineApiKey),
 			new WikidataComicProvider(),
@@ -250,6 +258,12 @@ export default class LibraryPlugin extends Plugin {
 					this.malPushTimers.set(file.path, window.setTimeout(() => {
 						this.malPushTimers.delete(file.path)
 						void this.malPush(file)
+					}, 800))
+					const existingKitsu = this.kitsuPushTimers.get(file.path)
+					if (existingKitsu) window.clearTimeout(existingKitsu)
+					this.kitsuPushTimers.set(file.path, window.setTimeout(() => {
+						this.kitsuPushTimers.delete(file.path)
+						void this.kitsuPush(file)
 					}, 800))
 					this.armImdbPush(file)
 				})
@@ -385,6 +399,30 @@ export default class LibraryPlugin extends Plugin {
 		})
 
 		this.addCommand({
+			id: 'kitsu-push',
+			name: tr('cmd.kitsuPush'),
+			checkCallback: (checking: boolean) => {
+				const file = this.app.workspace.getActiveFile()
+				const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined
+				if (!fm || toStr(fm.Source) !== 'anilist' || !toStr(fm['Source ID'])) return false
+				if (!checking) void this.kitsuPushCurrent()
+				return true
+			}
+		})
+
+		this.addCommand({
+			id: 'kitsu-pull',
+			name: tr('cmd.kitsuPull'),
+			callback: () => { void this.kitsuPull() }
+		})
+
+		this.addCommand({
+			id: 'kitsu-import',
+			name: tr('cmd.kitsuImport'),
+			callback: () => { void this.kitsuImport(true) }
+		})
+
+		this.addCommand({
 			id: 'steam-import',
 			name: tr('cmd.steamImport'),
 			callback: () => { void this.steamImport(true) }
@@ -409,11 +447,13 @@ export default class LibraryPlugin extends Plugin {
 		for (const timer of this.linkTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.malPushTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.imdbPushTimers.values()) window.clearTimeout(timer)
+		for (const timer of this.kitsuPushTimers.values()) window.clearTimeout(timer)
 		this.refreshTimer = null
 		this.bannerTimer = null
 		this.linkTimers.clear()
 		this.malPushTimers.clear()
 		this.imdbPushTimers.clear()
+		this.kitsuPushTimers.clear()
 		this.refreshCooldowns.clear()
 		if (this.enrichTimer) window.clearTimeout(this.enrichTimer)
 		if (this.enrichSleepTimer) window.clearTimeout(this.enrichSleepTimer)
@@ -1672,20 +1712,26 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private malSyncIfDue(): Promise<void> {
-		if (!Platform.isDesktopApp || !this.settings.malTokens || this.malImporting || this.anilistImporting) return Promise.resolve()
+		if (!Platform.isDesktopApp || !this.settings.malTokens || this.malImporting || this.anilistImporting || this.kitsuImporting) return Promise.resolve()
 		if (Date.now() - this.settings.malLastImport < 24 * 3600000) return Promise.resolve()
 		return this.malImport(false)
 	}
 
 	private anilistSyncIfDue(): Promise<void> {
-		if (!Platform.isDesktopApp || !this.settings.anilistToken.trim() || this.anilistImporting || this.malImporting) return Promise.resolve()
+		if (!Platform.isDesktopApp || !this.settings.anilistToken.trim() || this.anilistImporting || this.malImporting || this.kitsuImporting) return Promise.resolve()
 		if (Date.now() - this.settings.anilistLastImport < 24 * 3600000) return Promise.resolve()
 		return this.anilistImport(false)
 	}
 
-	// MAL first, AniList after: interleaved runs could create the same note twice
+	private kitsuSyncIfDue(): Promise<void> {
+		if (!Platform.isDesktopApp || !this.settings.kitsuTokens || this.kitsuImporting || this.malImporting || this.anilistImporting) return Promise.resolve()
+		if (Date.now() - this.settings.kitsuLastImport < 24 * 3600000) return Promise.resolve()
+		return this.kitsuImport(false)
+	}
+
+	// MAL first, AniList after, Kitsu last: interleaved runs could create the same note twice
 	private syncTick(): void {
-		void this.malSyncIfDue().then(() => this.anilistSyncIfDue())
+		void this.malSyncIfDue().then(() => this.anilistSyncIfDue()).then(() => this.kitsuSyncIfDue())
 	}
 
 	private gameSyncTick(): void {
@@ -1737,6 +1783,230 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			this.malRefreshing = null
 		}
+	}
+
+	async kitsuToken(): Promise<string | null> {
+		const tokens = this.settings.kitsuTokens
+		if (!tokens) return null
+		if (!isKitsuExpired(tokens)) return tokens.access
+		if (!this.kitsuRefreshing) this.kitsuRefreshing = this.refreshKitsuToken(tokens.refresh)
+		return this.kitsuRefreshing
+	}
+
+	private async refreshKitsuToken(refresh: string): Promise<string | null> {
+		try {
+			const next = await kitsuRefreshGrant(refresh)
+			if (!next) return null
+			this.settings.kitsuTokens = next
+			await this.saveSettings()
+			return next.access
+		} finally {
+			this.kitsuRefreshing = null
+		}
+	}
+
+	// Kitsu runs the password grant only (no OAuth apps), so desktop signs in on
+	// the real site inside the auth window and the session is read back from its
+	// storage; mobile keeps the plain form — no webview there.
+	connectKitsu(): Promise<boolean> {
+		if (Platform.isDesktopApp) {
+			return new Promise<boolean>((resolve) => {
+				new AuthModal(this.app, 'https://kitsu.app/', (answer) => {
+					void (async () => {
+						const tokens = answer ? tokensFromKitsuSession(answer) : null
+						if (!tokens) {
+							if (answer) new Notice(tr('notice.kitsu.connectFailed'))
+							resolve(false)
+							return
+						}
+						resolve(await this.kitsuFinishConnect(tokens))
+					})()
+				}, { title: tr('kitsu.loginTitle'), extract: () => null, pageProbe: KITSU_SESSION_PROBE }).open()
+			})
+		}
+		return new Promise((resolve) => {
+			new KitsuLoginModal(this.app, (username, password) => {
+				void this.kitsuConnect(username, password, resolve)
+			}).open()
+		})
+	}
+
+	private async kitsuConnect(username: string, password: string, done: (ok: boolean) => void): Promise<void> {
+		const tokens = await kitsuPasswordGrant(username, password)
+		if (!tokens) {
+			new Notice(tr('notice.kitsu.connectFailed'))
+			done(false)
+			return
+		}
+		done(await this.kitsuFinishConnect(tokens))
+	}
+
+	private async kitsuFinishConnect(tokens: KitsuTokens): Promise<boolean> {
+		try {
+			// A session read back from the webview may already be past its date;
+			// the refresh saves the new tokens itself, the fresh path saves here.
+			const expired = isKitsuExpired(tokens)
+			const access = expired ? await this.refreshKitsuToken(tokens.refresh) : tokens.access
+			if (!access) {
+				new Notice(tr('notice.kitsu.connectFailed'))
+				return false
+			}
+			const viewer = await kitsuViewer(access)
+			if (!viewer) {
+				new Notice(tr('notice.kitsu.connectFailed'))
+				return false
+			}
+			if (!expired) {
+				this.settings.kitsuTokens = tokens
+				await this.saveSettings()
+			}
+			new Notice(tr('notice.kitsu.connected', { name: viewer.name }))
+			void this.kitsuImport(true)
+			return true
+		} catch (e) {
+			console.error('Library: Kitsu connect error', e)
+			new Notice(tr('notice.kitsu.connectFailed'))
+			return false
+		}
+	}
+
+	// The note's Kitsu id: its own side first, the other side via mappings.
+	private async kitsuIdFor(ids: { anilist: number | null; mal: number | null }): Promise<number | null> {
+		if (ids.anilist !== null) {
+			const map = await kitsuIdsFor('anilist', [ids.anilist])
+			const id = map?.get(ids.anilist) ?? null
+			if (id !== null) return id
+		}
+		if (ids.mal !== null) {
+			const map = await kitsuIdsFor('mal', [ids.mal])
+			return map?.get(ids.mal) ?? null
+		}
+		return null
+	}
+
+	// one note → Kitsu: progress, status and score, creating the entry when new
+	private async kitsuPushNote(file: TFile, loud: boolean): Promise<boolean> {
+		const token = await this.kitsuToken()
+		const name = tr('kitsu.name')
+		if (!token) {
+			if (loud) new Notice(tr('notice.site.signedOut', { site: name }))
+			return false
+		}
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const note = fm && toStr(fm.Source) === 'anilist' ? animeIds(toStr(fm['Source ID'])) : null
+		if (!fm || !note) {
+			if (loud) new Notice(tr('notice.anilist.notAnime'))
+			return false
+		}
+		const viewer = await kitsuViewer(token)
+		if (!viewer) {
+			if (loud) new Notice(tr('notice.kitsu.pushFailed'))
+			return false
+		}
+		const kitsuId = await this.kitsuIdFor(note)
+		if (kitsuId === null) {
+			if (loud) new Notice(tr('notice.kitsu.noId'))
+			return false
+		}
+		const watched = parseWatched(fm.Progress)
+		const rating = Number(toStr(fm['My Rating']))
+		const score = Number.isFinite(rating) && rating > 0 ? rating : 0
+		const finished = isFinished(fm, this.kindOf(fm) ?? 'anime')
+		const existing = await findKitsuEntry(token, viewer.id, kitsuId)
+		// an existing entry only gets a status when the note is finished: never downgrade
+		const status = existing ? (finished ? 'completed' : null) : kitsuStatus(finished, watched)
+		const ok = await pushKitsuEntry(token,
+			{ entryId: existing?.entryId ?? null, kitsuId, userId: viewer.id },
+			{ progress: watched, status, rating: score > 0 ? score : null })
+		if (loud) {
+			new Notice(ok
+				? tr('notice.kitsu.pushed', { name: toStr(fm.Name) || file.basename })
+				: tr('notice.kitsu.pushFailed'))
+		}
+		return ok
+	}
+
+	private async kitsuPushCurrent(): Promise<void> {
+		const file = this.app.workspace.getActiveFile()
+		const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined
+		if (!file || !fm || toStr(fm.Source) !== 'anilist' || !toStr(fm['Source ID'])) {
+			new Notice(tr('notice.anilist.notAnime'))
+			return
+		}
+		await this.kitsuPushNote(file, true)
+	}
+
+	// send progress and rating to Kitsu unless they match what we last pushed (the echo)
+	private async kitsuPush(file: TFile): Promise<void> {
+		// a push or import in flight would drop this edit: re-arm the debounce
+		if (this.kitsuImporting || this.kitsuPushing) {
+			this.kitsuPushTimers.set(file.path, window.setTimeout(() => {
+				this.kitsuPushTimers.delete(file.path)
+				void this.kitsuPush(file)
+			}, 800))
+			return
+		}
+		if (!this.settings.kitsuTokens) return
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		if (!fm || toStr(fm.Source) !== 'anilist') return
+		const progress = toStr(fm.Progress)
+		const rating = Number(toStr(fm['My Rating']))
+		const score = Number.isFinite(rating) && rating > 0 ? rating : 0
+		const echo = this.settings.kitsuEcho[file.path]
+		if (echo && echo.p === progress && echo.r === score) return
+		this.kitsuPushing = true
+		try {
+			const ok = await this.kitsuPushNote(file, false)
+			if (ok) {
+				this.settings.kitsuEcho[file.path] = { p: progress, r: score }
+				await this.saveSettings()
+			}
+		} catch (e) {
+			console.error('Library: Kitsu push error', file.path, e)
+		} finally {
+			this.kitsuPushing = false
+		}
+	}
+
+	private async kitsuPull(): Promise<void> {
+		const token = await this.kitsuToken()
+		const name = tr('kitsu.name')
+		if (!token) { new Notice(tr('notice.site.signedOut', { site: name })); return }
+		new Notice(tr('notice.kitsu.pulling'))
+		const viewer = await kitsuViewer(token)
+		const entries = viewer ? await fetchKitsuList(token, viewer.id) : null
+		const ids = entries && await this.kitsuIdsForNotes(this.animeNotes())
+		if (!entries || !ids) {
+			new Notice(tr('notice.kitsu.pullFailed'))
+			return
+		}
+		const byKitsu = new Map<number, KitsuEntry>()
+		for (const e of entries) byKitsu.set(e.kitsuId, e)
+		const updated = await this.applyPulled(ids, kitsuId => {
+			const entry = byKitsu.get(kitsuId)
+			return entry && { progress: entry.progress, complete: entry.status === 'completed' }
+		})
+		new Notice(tr('notice.kitsu.pulled', { count: updated }))
+	}
+
+	// each anime note's Kitsu id: an AniList id first, a MAL id as fallback
+	private async kitsuIdsForNotes(notes: AnimeNote[]): Promise<Map<TFile, number> | null> {
+		const anilistIds: number[] = []
+		const malIds: number[] = []
+		for (const note of notes) {
+			if (note.anilist !== null) anilistIds.push(note.anilist)
+			if (note.mal !== null) malIds.push(note.mal)
+		}
+		const fromAnilist = await kitsuIdsFor('anilist', anilistIds)
+		const fromMal = await kitsuIdsFor('mal', malIds)
+		if (!fromAnilist || !fromMal) return null
+		const out = new Map<TFile, number>()
+		for (const note of notes) {
+			let id = note.anilist !== null ? fromAnilist.get(note.anilist) : undefined
+			if (!id && note.mal !== null) id = fromMal.get(note.mal)
+			if (id) out.set(note.file, id)
+		}
+		return out
 	}
 
 	private async malPushCurrent(): Promise<void> {
@@ -1831,7 +2101,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async malImport(loud: boolean): Promise<void> {
-		if (this.malImporting || this.anilistImporting) {
+		if (this.malImporting || this.anilistImporting || this.kitsuImporting) {
 			if (loud) new Notice(tr('notice.mal.importing'))
 			return
 		}
@@ -1858,7 +2128,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async anilistImport(loud: boolean): Promise<void> {
-		if (this.anilistImporting || this.malImporting) {
+		if (this.anilistImporting || this.malImporting || this.kitsuImporting) {
 			if (loud) new Notice(tr('notice.mal.importing'))
 			return
 		}
@@ -1900,10 +2170,54 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
+	async kitsuImport(loud: boolean): Promise<void> {
+		const name = tr('kitsu.name')
+		if (this.kitsuImporting || this.malImporting || this.anilistImporting) {
+			if (loud) new Notice(tr('notice.site.importing', { site: name }))
+			return
+		}
+		const token = await this.kitsuToken()
+		if (!token) { if (loud) new Notice(tr('notice.site.signedOut', { site: name })); return }
+		this.kitsuImporting = true
+		try {
+			if (loud) new Notice(tr('notice.site.importing', { site: name }))
+			const viewer = await kitsuViewer(token)
+			const entries = viewer ? await fetchKitsuList(token, viewer.id) : null
+			if (!entries) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
+			// map Kitsu ids back to AniList's so rows land on the note's own Source ID
+			const anilistOf = await externalIdsFor(entries.map(e => e.kitsuId), 'anilist')
+			if (!anilistOf) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
+			const rows: ImportRow[] = entries.map((entry) => {
+				const anilist = anilistOf.get(entry.kitsuId) ?? null
+				return {
+					// an entry Kitsu knows alone still updates notes, matched by title
+					sourceId: anilist !== null ? String(anilist) : null,
+					altId: null,
+					title: entry.title,
+					total: entry.total,
+					progress: entry.progress,
+					score: Math.round(entry.rating),
+					complete: entry.status === 'completed'
+				}
+			})
+			const a = await this.importRows(rows, 'anime')
+			this.settings.kitsuLastImport = Date.now()
+			this.pruneEcho()
+			await this.saveSettings()
+			// new categories/notes may exist: refresh the open tab and walk for covers
+			this.settingTab?.refresh()
+			this.scheduleEnrich(ENRICH_STEP_DELAY)
+			if (loud || a.created + a.updated > 0) new Notice(tr('notice.site.imported', { site: name, created: a.created, updated: a.updated }))
+		} finally {
+			this.kitsuImporting = false
+		}
+	}
+
 	// Update: anime sites first, one after the other (they write the same notes), then games
 	async updateAll(): Promise<void> {
 		if (this.settings.malTokens) await this.malImport(true)
 		if (this.settings.anilistToken.trim()) await this.anilistImport(true)
+		if (this.settings.kitsuTokens) await this.kitsuImport(true)
 		if (this.settings.psnTokens) await this.psnImport(true)
 		if (this.settings.steamId.trim()) await this.steamImport(true)
 		if (this.settings.nintendoTokens) await this.nintendoImport(true)
@@ -1914,6 +2228,9 @@ export default class LibraryPlugin extends Plugin {
 		const paths = new Set(this.app.vault.getMarkdownFiles().map((file) => file.path))
 		for (const path of Object.keys(this.settings.malEcho)) {
 			if (!paths.has(path)) delete this.settings.malEcho[path]
+		}
+		for (const path of Object.keys(this.settings.kitsuEcho)) {
+			if (!paths.has(path)) delete this.settings.kitsuEcho[path]
 		}
 		if (this.watchImporting) return
 		const imdb = new Set<string>()

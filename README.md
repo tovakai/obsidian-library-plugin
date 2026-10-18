@@ -25,7 +25,7 @@
 - Movies, series, anime, games, books, comics, and music as notes with cover, year, genres, country, creators, ratings, cast, and trailers where the source has them.
 - Open a note and tick episodes or chapters, scoring each; `Progress` counts the ticks and `My Rating` averages your scores.
 - Categories filter by year, genre, or country (games also by platform) and sort their titles; what you have not started gathers in Up next.
-- Connect AniList, MyAnimeList, PlayStation, Steam, and Nintendo Switch: lists, playtime, trophies, and achievements import as notes and re-import daily on desktop.
+- Connect AniList, MyAnimeList, Kitsu, PlayStation, Steam, and Nintendo Switch: lists, playtime, trophies, and achievements import as notes and re-import daily on desktop.
 - Genres, creators, and actors are links; each linked note collects its titles. Similar titles appear when the source has them.
 - Statistics count titles and hours, compare them with "In the same time" equivalents, and add a column for PlayStation, Nintendo, and MyAnimeList.
 - Fields sit in frontmatter for Bases and Dataview, with your own template and skipped fields. Works on desktop and mobile in every Obsidian language.
@@ -46,7 +46,7 @@ Categories in the Library settings tab reorder by dragging; editing a category's
 | Books | Open Library | [Google Books](https://console.cloud.google.com/apis/library/books.googleapis.com) |
 | Games | Steam, Wikidata | [RAWG](https://rawg.io/apidocs) |
 | Music | Deezer | |
-| Anime | AniList, MyAnimeList (search without an account) | AniList or MyAnimeList sign-in for list import and sync |
+| Anime | AniList, MyAnimeList, Kitsu (search without an account) | AniList, MyAnimeList, or Kitsu sign-in for list import and sync |
 | Comics | Wikidata, AniList for manga | [Comic Vine](https://comicvine.gamespot.com/api/) |
 | Anything else | Manual: you fill the fields | |
 
@@ -60,7 +60,7 @@ Statistics show the top lists you pick, your hours on movies, series, anime, and
 
 ## Anime sync
 
-Connect AniList or MyAnimeList: your started titles arrive as notes with progress and ratings and re-import daily on desktop. Changes push back: progress and score go to MyAnimeList on save and to AniList with the Push command. An import never moves progress backwards and only fills an empty `My Rating`. [Wiki: anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
+Connect AniList, MyAnimeList, or Kitsu: your started titles arrive as notes with progress and ratings and re-import daily on desktop. Changes push back: progress and score go to MyAnimeList and Kitsu on save and to AniList with the Push command. An import never moves progress backwards and only fills an empty `My Rating`. [Wiki: anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
 ## Frontmatter
 
@@ -107,6 +107,7 @@ Your library is plain notes that open offline; covers load from the web. The plu
 | `api.deezer.com`, `cdn-images.dzcdn.net` | Music search, covers | Album or artist |
 | `graphql.anilist.co`, `anilist.co`, `s4.anilist.co`, streaming services' image hosts | Anime, manga, sync | Title or ids; your token, progress, status, score |
 | `myanimelist.net`, `api.myanimelist.net`, `api-cdn.myanimelist.net` | Anime and manga search, covers, sign-in, list import, sync | Search text, your sign-in on MyAnimeList's page (the plugin keeps only the token); your token, progress, status, score |
+| `kitsu.io`, `kitsu.app` | Anime search, covers, list import, sync | Search text; your sign-in with the Kitsu account (the plugin keeps only the sign-in token); your token, progress, status, score |
 | `ca.account.sony.com`, `my.account.sony.com`, `m.np.playstation.com`, `web.np.playstation.com`, `image.api.playstation.com`, `psnobj.prod.dl.playstation.net` | PlayStation sign-in, played games, trophies, covers | Your sign-in on Sony's page (the plugin keeps only the token); the token |
 | `accounts.nintendo.com`, `api.accounts.nintendo.com`, `api-lp1.znc.srv.nintendo.net`, `atum-img-lp1.cdn.nintendo.net` | Nintendo sign-in, play activity, covers | Your sign-in on Nintendo's page (the plugin keeps only the session token); the tokens |
 | `nxapi-auth.fancy.org.uk`, `nxapi-znca-api.fancy.org.uk` | A third-party signing service: signs and encrypts the Nintendo Switch app requests, which Nintendo accepts only from its app; asked before you sign in | Your Nintendo Account id token, account id, and the Nintendo Switch app requests and answers |
@@ -127,7 +128,8 @@ Your library is plain notes that open offline; covers load from the web. The plu
 - `Share current note`
 - `Push current note to AniList`, `Pull progress from AniList`
 - `Push current note to MyAnimeList`, `Pull progress from MyAnimeList`
-- `Import from AniList`, `Import from MyAnimeList`
+- `Push current note to Kitsu`, `Pull progress from Kitsu`
+- `Import from AniList`, `Import from MyAnimeList`, `Import from Kitsu`
 - `Import Steam library`
 - `Import PlayStation games and trophies`
 - `Import Nintendo games`
