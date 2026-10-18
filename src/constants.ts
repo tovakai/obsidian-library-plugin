@@ -388,6 +388,8 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'sort.unstarted': 'Not started',
 		'upNext.title': 'Up next',
 		'soon.title': 'Coming soon',
+		'filter.title': 'Filter',
+		'filter.clear': 'Clear filters',
 		'header.nextEpisode': 'Next episode',
 		'settings.comingSoon.name': 'Coming soon',
 		'settings.comingSoon.desc': 'Next episodes of the series and anime you are watching, with their air dates.',

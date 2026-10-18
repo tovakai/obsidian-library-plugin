@@ -601,9 +601,68 @@ sort trigger, the chosen one in the accent colour. */
 
 .library-view .library-section-heading {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 10px;
-	margin-bottom: 4px;
+	margin-bottom: 14px;
+}
+
+.library-filter-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.library-filter-icon,
+.library-filter-icon .svg-icon,
+.library-filter-group-chevron,
+.library-filter-group-chevron .svg-icon {
+	display: flex;
+	width: 14px;
+	height: 14px;
+}
+
+.library-filter-menu .library-filter-group {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 10px;
+	background: none;
+	border: none;
+	box-shadow: none;
+	font-weight: var(--font-semibold);
+	cursor: pointer;
+}
+
+.library-filter-menu .library-filter-group:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.library-filter-group-value {
+	color: var(--text-accent);
+	font-weight: var(--font-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.library-filter-group-chevron {
+	margin-left: auto;
+	color: var(--text-muted);
+}
+
+.library-filter-values {
+	display: none;
+	padding-left: 10px;
+}
+
+.library-filter-values.open {
+	display: block;
+}
+
+.library-filter-clear {
+	color: var(--text-accent);
 }
 
 .library-view .library-toolbar {

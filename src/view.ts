@@ -582,43 +582,68 @@ export class LibraryView extends ItemView {
 	}
 
 	// Only values some card has; a filter shows with 2+ values or a chosen one.
-	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>, kind?: ContentType): void {
-		for (const { facet, label } of FACETS) {
+	private sectionFilters(toolbar: HTMLElement, filters: NonNullable<SectionSpec['filters']>): void {
+		const groups = FACETS.map(({ facet, label }) => {
 			const counts = new Map<string, number>()
 			for (const card of filters.all) {
 				for (const value of facetValues(card, facet)) counts.set(value, (counts.get(value) ?? 0) + 1)
 			}
-			const chosen = filters.chosen[facet] ?? ''
-			if (counts.size < 2 && !chosen) continue
 			const values = [...counts.keys()].sort((a, b) => facet === 'year' ? Number(b) - Number(a) : a.localeCompare(b))
-			const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
-			const trigger = dropdown.createEl('button', {
-				cls: 'library-sort-trigger',
-				text: (chosen || tr(label)) + ' ▾',
-				attr: { 'aria-label': tr(label), 'aria-haspopup': 'true', 'aria-expanded': 'false' }
+			return { facet, label, counts, values, chosen: filters.chosen[facet] ?? '' }
+		}).filter(group => group.counts.size >= 2 || group.chosen)
+		if (groups.length === 0) return
+		const active = groups.filter(group => group.chosen).length
+		const dropdown = toolbar.createDiv({ cls: 'library-sort-dropdown library-filter-dropdown' })
+		const trigger = dropdown.createEl('button', {
+			cls: 'library-sort-trigger library-filter-trigger',
+			attr: { 'aria-label': tr('filter.title'), 'aria-haspopup': 'true', 'aria-expanded': 'false' }
+		})
+		setIcon(trigger.createSpan({ cls: 'library-filter-icon' }), 'filter')
+		trigger.createSpan({ text: active > 0 ? `${tr('filter.title')} · ${formatNumber(active)}` : tr('filter.title') })
+		if (active > 0) trigger.addClass('is-active')
+		const menu = dropdown.createDiv({ cls: 'library-sort-menu library-filter-menu' })
+		if (active > 0) {
+			const clear = menu.createEl('button', { cls: 'library-sort-menu-item library-filter-clear', text: tr('filter.clear') })
+			clear.addEventListener('click', e => {
+				e.stopPropagation()
+				menu.removeClass('open')
+				for (const group of groups) if (group.chosen) filters.choose(group.facet, '')
 			})
-			if (chosen) trigger.addClass('is-active')
-			const menu = dropdown.createDiv({ cls: 'library-sort-menu library-filter-menu' })
-			for (const value of ['', ...values]) {
-				const item = menu.createEl('button', {
+		}
+		for (const group of groups) {
+			const head = menu.createEl('button', { cls: 'library-filter-group', attr: { 'aria-expanded': 'false' } })
+			head.createSpan({ cls: 'library-filter-group-name', text: tr(group.label) })
+			if (group.chosen) head.createSpan({ cls: 'library-filter-group-value', text: group.chosen })
+			const chevron = head.createSpan({ cls: 'library-filter-group-chevron' })
+			setIcon(chevron, 'chevron-right')
+			const list = menu.createDiv({ cls: 'library-filter-values' })
+			for (const value of ['', ...group.values]) {
+				const item = list.createEl('button', {
 					cls: 'library-sort-menu-item',
-					text: value ? `${value} · ${formatNumber(counts.get(value) ?? 0)}` : tr('filter.all')
+					text: value ? `${value} · ${formatNumber(group.counts.get(value) ?? 0)}` : tr('filter.all')
 				})
-				if (value === chosen) item.addClass('active')
+				if (value === group.chosen) item.addClass('active')
 				item.addEventListener('click', e => {
 					e.stopPropagation()
 					menu.removeClass('open')
-					if (value !== chosen) filters.choose(facet, value)
+					if (value !== group.chosen) filters.choose(group.facet, value)
 				})
 			}
-			trigger.addEventListener('click', e => {
+			head.addEventListener('click', e => {
 				e.stopPropagation()
-				const open = !menu.hasClass('open')
-				this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
-				menu.toggleClass('open', open)
-				trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
+				const open = !list.hasClass('open')
+				list.toggleClass('open', open)
+				head.setAttribute('aria-expanded', open ? 'true' : 'false')
+				setIcon(chevron, open ? 'chevron-down' : 'chevron-right')
 			})
 		}
+		trigger.addEventListener('click', e => {
+			e.stopPropagation()
+			const open = !menu.hasClass('open')
+			this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
+			menu.toggleClass('open', open)
+			trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
+		})
 	}
 
 	private sectionMeta(row: HTMLElement, cards: CardData[], kind?: ContentType): void {
@@ -640,17 +665,15 @@ export class LibraryView extends ItemView {
 
 	private renderSection(root: HTMLElement, spec: SectionSpec, cards: CardData[]): HTMLElement {
 		const section = root.createDiv({ cls: 'library-section' })
-		const heading = section.createDiv({ cls: 'library-section-heading' })
-		heading.createEl('h2', { text: spec.title })
-
-		const toolbar = section.createDiv({ cls: 'library-toolbar' })
-		const collapseBtn = heading.createEl('button', {
+		const toolbar = section.createDiv({ cls: 'library-section-heading library-toolbar' })
+		toolbar.createEl('h2', { text: spec.title })
+		const collapseBtn = toolbar.createEl('button', {
 			cls: 'library-collapse-btn',
 			text: '▼',
 			attr: { 'aria-label': spec.title, 'aria-expanded': 'true' }
 		})
-		this.sectionMeta(heading, cards, spec.kind)
-		if (spec.filters) this.sectionFilters(toolbar, spec.filters, spec.kind)
+		this.sectionMeta(toolbar, cards, spec.kind)
+		if (spec.filters) this.sectionFilters(toolbar, spec.filters)
 		toolbar.createDiv({ cls: 'library-toolbar-spacer' })
 
 		const sortDropdown = toolbar.createDiv({ cls: 'library-sort-dropdown' })
