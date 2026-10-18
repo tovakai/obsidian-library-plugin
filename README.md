@@ -25,7 +25,7 @@
 
 - **One note per title.** The note keeps the cover, year, genres, creators, cast, ratings and trailer. All of it sits in the note's properties (frontmatter), so Bases, Dataview and other plugins can read it.
 - **Progress you can tick.** Episode and chapter lists live at the top of the note. Tick them off as you go, rate them, and see when the next episode airs.
-- **A library view.** One section per kind of media, with filters and sorting by rating, date or progress, an "Up next" shelf, and a "Coming soon" list of new episodes.
+- **A library view.** One section per kind of media, with filters and sorting by rating, date or progress, an "Up next" shelf, and a "Soon" list with the air dates of new episodes.
 - **Statistics.** How many titles you have, how many hours of watching or reading that is, and fun comparisons like "in that time you could have watched every Bond film".
 - **Linked notes.** Genres, creators and actors are links. Open the Horror note and it lists every horror title in your library.
 - Works on desktop and mobile, in every Obsidian language.
@@ -68,7 +68,7 @@ Each category searches open sources. An API key adds richer data, and its servic
 
 Anything that doesn't fit goes into a Manual category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
-**Example note**
+**A note from the library**
 
 ```yaml
 ---
