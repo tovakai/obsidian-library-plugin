@@ -580,20 +580,10 @@ export class LibrarySettingTab extends PluginSettingTab {
 			},
 			{
 				name: tr("settings.category.folder"),
-				visible: () => builtIn || unfolded(),
+				visible: () => !builtIn && unfolded(),
 				render: (row) => {
 					row.settingEl.addClass("library-settings-advanced-row");
-					row.addText((text) => {
-						text
-							.setPlaceholder(tr("settings.category.folder.placeholder"))
-							.setValue(cat.folder)
-							.onChange(async (value) => {
-								if (!this.folderFrom.has(cat)) this.folderFrom.set(cat, cat.folder);
-								cat.folder = value.trim();
-								await this.plugin.saveSettings();
-							});
-						text.inputEl.addEventListener("change", () => this.commitFolders(false));
-					});
+					this.folderInput(row, cat);
 				},
 			},
 			{
@@ -619,9 +609,25 @@ export class LibrarySettingTab extends PluginSettingTab {
 		return rows;
 	}
 
+	private folderInput(row: Setting, cat: ICategory): void {
+		row.addText((text) => {
+			text
+				.setPlaceholder(tr("settings.category.folder.placeholder"))
+				.setValue(cat.folder)
+				.onChange(async (value) => {
+					if (!this.folderFrom.has(cat)) this.folderFrom.set(cat, cat.folder);
+					cat.folder = value.trim();
+					await this.plugin.saveSettings();
+				});
+			text.inputEl.setAttribute("aria-label", tr("settings.category.folder"));
+			text.inputEl.addEventListener("change", () => this.commitFolders(false));
+		});
+	}
+
 	private categoryControls(row: Setting, cat: ICategory, label: () => string): void {
 		const settings = this.plugin.settings;
 		const builtIn = isBuiltInCategory(cat);
+		if (builtIn) this.folderInput(row, cat);
 		if (!builtIn) row.addText((text) =>
 			text
 				.setPlaceholder(tr("settings.category.name.placeholder"))
