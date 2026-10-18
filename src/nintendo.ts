@@ -236,7 +236,12 @@ async function coralAnswer<T>(session: Signer, resp: { status: number, arrayBuff
 interface CoralLogin {
 	token: string
 	nsaId: string
+	expires: number
 }
+
+// The signing service takes one sign-in per token: the Coral login is kept with
+// the token that made it, and a new login gets a new token.
+let coral: { login: CoralLogin, session: Signer, owner: string } | null = null
 
 // The signing service signs (f) and encrypts; Coral answers with its token.
 async function coralLogin(session: Signer, idToken: string, user: NaUser): Promise<CoralLogin | null> {
@@ -266,10 +271,10 @@ async function coralLogin(session: Signer, idToken: string, user: NaUser): Promi
 		body: fromBase64(body).buffer as ArrayBuffer,
 		throw: false,
 	})
-	const result = await coralAnswer<{ user?: { nsaId?: string }, webApiServerCredential?: { accessToken?: string } }>(session, resp, url)
+	const result = await coralAnswer<{ user?: { nsaId?: string }, webApiServerCredential?: { accessToken?: string, expiresIn?: number } }>(session, resp, url)
 	const token = result?.webApiServerCredential?.accessToken
 	const nsaId = result?.user?.nsaId
-	return token && nsaId ? { token, nsaId } : null
+	return token && nsaId ? { token, nsaId, expires: Date.now() + (result?.webApiServerCredential?.expiresIn ?? 0) * 1000 } : null
 }
 
 async function coralCall<T>(session: Signer, login: CoralLogin, path: string, parameter: Record<string, unknown>): Promise<T | null> {
@@ -319,15 +324,23 @@ export function isMediaApp(name: string): boolean {
 
 export async function nintendoPlayLog(tokens: NintendoTokens): Promise<NintendoPlayedGame[] | null> {
 	try {
-		const session = await signerSession()
-		if (!session) return null
-		const na = await naToken(tokens.session)
-		const user = na ? await naUser(na.access) : null
-		if (!na || !user) return null
-		const login = await coralLogin(session, na.idToken, user)
-		if (!login) return null
+		const soon = Date.now() + 60000
+		let held = coral && coral.owner === tokens.session && coral.login.expires > soon && coral.session.expires > soon ? coral : null
+		if (!held) {
+			coral = null
+			signer = null
+			const session = await signerSession()
+			if (!session) return null
+			const na = await naToken(tokens.session)
+			const user = na ? await naUser(na.access) : null
+			if (!na || !user) return null
+			const login = await coralLogin(session, na.idToken, user)
+			if (!login) return null
+			held = coral = { login, session, owner: tokens.session }
+		}
+		const { login, session } = held
 		const games = await coralCall<Array<Partial<NintendoPlayedGame>>>(session, login, '/v4/User/PlayLog/Show', { nsaId: login.nsaId })
-		if (!games) return null
+		if (!games) { coral = null; return null }
 		return games.filter(game => !!game.name && !isMediaApp(game.name)).map(game => ({
 			name: game.name as string,
 			imageUri: game.imageUri ?? null,
