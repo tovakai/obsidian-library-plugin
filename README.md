@@ -7,68 +7,70 @@
 <p align="center">
   <a href="https://community.obsidian.md/plugins/library"><img src="https://img.shields.io/badge/Obsidian-Community%20Plugin-7C3AED?style=flat-square&logo=obsidian&logoColor=white" alt="Community Plugin"></a>
   <a href="https://github.com/venvk/obsidian-library-plugin/releases"><img src="https://img.shields.io/github/v/release/venvk/obsidian-library-plugin?style=flat-square&label=version&color=blue" alt="Version"></a>
+  <a href="https://github.com/venvk/obsidian-library-plugin/stargazers"><img src="https://img.shields.io/github/stars/venvk/obsidian-library-plugin?style=flat-square&label=stars&color=yellow" alt="Stars"></a>
   <a href="https://github.com/venvk/obsidian-library-plugin/releases"><img src="https://img.shields.io/github/downloads/venvk/obsidian-library-plugin/total?style=flat-square&color=brightgreen" alt="Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/venvk/obsidian-library-plugin?style=flat-square&color=orange" alt="License"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?logo=TypeScript&logoColor=FFF&style=flat-square" alt="TypeScript"></a>
+  <a href="https://obsidian.md/"><img src="https://img.shields.io/badge/Obsidian-v1.8.7+-7C3AED?style=flat-square&logo=obsidian&logoColor=white" alt="Obsidian v1.8.7+"></a>
 </p>
 
 <p align="center">
-  Movies, series, anime, books, games, comics and music as plain Markdown notes,<br>
-  shown as a gallery of covers. Search a title, pick it, and the note writes itself.
+  Your movies, series, anime and manga, books, games, comics and music as plain Markdown notes,<br>
+  shown as a gallery of covers. Search a title, pick it, and the note fills itself in.
   <br><br>
   <a href="https://community.obsidian.md/plugins/library">Install</a> · <a href="https://github.com/venvk/obsidian-library-plugin/wiki">Wiki</a> · <a href="https://github.com/venvk/obsidian-library-plugin/issues/new/choose">Report a bug</a>
 </p>
 
 ## What it does
 
-- **One note per title** with cover, year, genres, creators, cast, ratings and trailer. Everything sits in frontmatter, so Bases and Dataview read it.
-- **Progress you can tick.** Episodes and chapters live in the note header; tick them, score them, and see when the next episode airs.
-- **A library view** with a category per kind, filters, sorting by rating, date, progress and more, an Up next shelf and a Coming soon list of new episodes.
-- **Statistics** for titles, hours and trophies, with "in the same time you could have…" comparisons.
-- **Links between notes.** Genres, creators and actors are links, so each of them collects its titles.
+- **One note per title.** The note keeps the cover, year, genres, creators, cast, ratings and trailer. All of it sits in the note's properties (frontmatter), so Bases, Dataview and other plugins can read it.
+- **Progress you can tick.** Episode and chapter lists live at the top of the note. Tick them off as you go, rate them, and see when the next episode airs.
+- **A library view.** One section per kind of media, with filters and sorting by rating, date or progress, an "Up next" shelf, and a "Coming soon" list of new episodes.
+- **Statistics.** How many titles you have, how many hours of watching or reading that is, and fun comparisons like "in that time you could have watched every Bond film".
+- **Linked notes.** Genres, creators and actors are links. Open the Horror note and it lists every horror title in your library.
 - Works on desktop and mobile, in every Obsidian language.
 
-## Connectors
+## Getting started
 
-Sign in once in the plugin settings. Your lists arrive as notes and stay in sync.
+1. In Obsidian open **Settings**, then **Community plugins**, search for **Library**, install and enable it.
+2. Click the Library icon on the left sidebar and press **+**.
+3. Pick a kind, search, choose a result. Each kind gets its own category and folder, created with its first title.
+
+Same name, different films? Add the year: `dune 1984`.
+
+## Connect and sync
+
+Connect an account in the plugin settings. Your lists arrive as notes, and anime progress and scores stay in sync.
 
 | | Service | What comes in | What goes back |
 | :-: | --- | --- | --- |
 | <img src="assets/connectors/anilist.svg" width="24" alt=""> | **AniList** | Anime and manga lists, progress, scores | Progress and score, with the Push command |
 | <img src="assets/connectors/myanimelist.svg" width="24" alt=""> | **MyAnimeList** | Anime and manga lists, progress, scores | Progress and score, on save |
 | <img src="assets/connectors/kitsu.svg" width="24" alt=""> | **Kitsu** | Anime list, progress, ratings | Progress and rating, on save |
-| <img src="assets/connectors/imdb.svg" width="24" alt=""> | **IMDb** | Ratings, episode ratings, watchlist | Scores and new titles |
-| <img src="assets/connectors/netflix.svg" width="24" alt=""> | **Netflix** | Viewing history and thumbs | Scores, as thumbs |
-| <img src="assets/connectors/playstation.svg" width="24" alt=""> | **PlayStation** | Played games, playtime, trophies with icons and dates | |
-| <img src="assets/connectors/steam.svg" width="24" alt=""> | **Steam** | Library, playtime, achievements with icons and dates | |
-| <img src="assets/connectors/nintendo.svg" width="24" alt=""> | **Nintendo Switch** | Played games and playtime | |
+| <img src="assets/connectors/imdb.svg" width="24" alt=""> | **IMDb** | Ratings, episode ratings, watchlist | Scores and new watchlist titles |
+| <img src="assets/connectors/netflix.svg" width="24" alt=""> | **Netflix** | Viewing history and thumbs up or down | Scores, as thumbs |
+| <img src="assets/connectors/playstation.svg" width="24" alt=""> | **PlayStation** | Played games, playtime, trophies with icons and dates | Nothing |
+| <img src="assets/connectors/steam.svg" width="24" alt=""> | **Steam** | Library, playtime, achievements with icons and dates | Nothing |
+| <img src="assets/connectors/nintendo.svg" width="24" alt=""> | **Nintendo Switch** | Played games and playtime | Nothing |
 
-Imports run once a day on desktop. They never move progress backwards and never overwrite a score you set in the note. IMDb, Netflix, PlayStation, Steam and Nintendo connect on desktop only.
-
-## Getting started
-
-1. Install **Library** from Community plugins.
-2. Open the Library tab from the ribbon and press **+**.
-3. Pick a kind, search, choose a result. The first title of each kind creates its category and folder.
-
-Add a year to tell apart films with the same name: `dune 1984`.
+Imports run once a day on desktop. Your own scores are never overwritten, and progress never moves backwards. IMDb, Netflix, PlayStation, Steam and Nintendo work on desktop only.
 
 ## Sources
 
-Every category works without keys. A key only moves its service to the front.
+Each category searches open sources. An API key adds richer data, and its service is tried first.
 
 | Category | Open sources | With a key |
 | --- | --- | --- |
-| Movies, series | Cinemeta, Wikidata | [OMDb](https://www.omdbapi.com/apikey.aspx), [TMDB](https://www.themoviedb.org/settings/api) for season ratings and stills |
+| Movies, series | Cinemeta, Wikidata | [OMDb](https://www.omdbapi.com/apikey.aspx), [TMDB](https://www.themoviedb.org/settings/api) for season ratings and episode images |
 | Books | Open Library | [Google Books](https://console.cloud.google.com/apis/library/books.googleapis.com) |
-| Games | Steam, Wikidata | [RAWG](https://rawg.io/apidocs), [Twitch](https://dev.twitch.tv/console/apps) for IGDB trailers |
-| Anime, manga | AniList, MyAnimeList, Kitsu | |
+| Games | Steam, Wikidata | [RAWG](https://rawg.io/apidocs), [Twitch](https://dev.twitch.tv/console/apps) (game trailers) |
+| Anime, manga | AniList, MyAnimeList, Kitsu | None |
 | Comics | Wikidata, AniList | [Comic Vine](https://comicvine.gamespot.com/api/) |
-| Music | Deezer | |
+| Music | Deezer | None |
 
-Anything else goes in a custom category where you fill the fields yourself. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
+Anything that doesn't fit goes into a custom category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
-<details>
-<summary><b>Example note</b></summary>
+**Example note**
 
 ```yaml
 ---
@@ -88,8 +90,7 @@ Source ID: tt4574334
 ---
 ```
 
-A refresh fills empty fields and updates source ratings. It never touches your own.
-</details>
+`Progress: 8/42` means 8 of 42 episodes watched; `[[Drama]]` is a link to your Drama note. Refreshing a note fills in empty fields and updates ratings from the source. It never overwrites your own rating or progress.
 
 <details>
 <summary><b>Commands</b></summary>
@@ -103,7 +104,7 @@ A refresh fills empty fields and updates source ratings. It never touches your o
 
 ## Privacy
 
-Your library is plain notes and opens offline. The plugin goes online only to search, refresh, sync or share, at most once every 5 minutes per note. No telemetry, no self-update, and each key goes only to its own service. Sign-ins happen on the service's own page; the plugin keeps only the token.
+Your library is plain notes and opens offline. The plugin only goes online to search, refresh, sync or share, and never more often than once every 5 minutes for the same note. No telemetry, no self-update. Each API key is sent only to its own service, and sign-ins happen on the service's own page, so the plugin only ever stores the token.
 
 Nintendo accepts requests only from its own app, so they pass through a third-party signing service ([nxapi-znca-api](https://github.com/samuelthomas2774/nxapi-znca-api)). The plugin asks before you sign in.
 

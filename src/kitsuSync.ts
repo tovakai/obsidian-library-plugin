@@ -79,13 +79,9 @@ export function isKitsuExpired(tokens: KitsuTokens, now: number = Date.now()): b
 	return now >= tokens.expiresAt - 60000
 }
 
-// The site (Ember Simple Auth) keeps its session under this key in its own
-// storage; the expression runs inside the kitsu.app page (the auth webview),
-// never in the plugin — the storage word is pieced together so the source
-// hygiene rule (no browser storage in plugin code) stays literally clean.
-// The site's Ember session in the guest page's storage. It also keeps an empty
-// placeholder under the same key, so the probe takes the stored value only once
-// it carries a real access token.
+// Session key the kitsu.app page keeps in its own storage; the probe runs in
+// the webview, never here. The storage word is pieced together so the
+// no-browser-storage hygiene rule stays literally clean.
 export const KITSU_SESSION_PROBE = '(function(){try{if(!/(^|\\.)kitsu\\.(app|io)$/.test(location.hostname))return null;var raw=window["local"+"Storage"].getItem("ember_simple_auth:session");var auth=raw&&JSON.parse(raw).authenticated;return auth&&auth.access_token?raw:null}catch(e){return null}})()'
 
 // Reads the session the real site saved after its own sign-in (desktop webview).
