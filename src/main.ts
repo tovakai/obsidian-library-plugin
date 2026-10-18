@@ -166,13 +166,13 @@ export default class LibraryPlugin extends Plugin {
 	private anilistImporting = false
 	// our own MAL write coming back: no echo push
 	private malPushing = false
-	private psnTimer: number | null = null
 	// The sign-in ran out: said once a session, not on every attempt.
 	private psnExpiredSaid = false
 	private psnRenewAfter = 0
 	// keyed Source:Source ID, fetched once a session
 	private recommendations = new Map<string, Promise<Recommendation[]>>()
-	private steamTimer: number | null = null
+	// sleeps between import steps; unload wakes them so their finally blocks run
+	private pauses = new Map<number, () => void>()
 	private refreshCooldowns = new Map<string, number>()
 	private syncingLinks = new Set<string>()
 	private linkTimers = new Map<string, number>()
@@ -464,10 +464,11 @@ export default class LibraryPlugin extends Plugin {
 		this.refreshCooldowns.clear()
 		if (this.enrichTimer) window.clearTimeout(this.enrichTimer)
 		if (this.enrichSleepTimer) window.clearTimeout(this.enrichSleepTimer)
-		if (this.steamTimer) window.clearTimeout(this.steamTimer)
-		this.steamTimer = null
-		if (this.psnTimer) window.clearTimeout(this.psnTimer)
-		this.psnTimer = null
+		for (const [id, wake] of this.pauses) {
+			window.clearTimeout(id)
+			wake()
+		}
+		this.pauses.clear()
 		this.recommendations.clear()
 		this.enrichTimer = null
 		this.enrichSleepTimer = null
@@ -756,7 +757,7 @@ export default class LibraryPlugin extends Plugin {
 					byUrl.set(url, file)
 					gameNotes.push(file)
 					created++
-					await new Promise<void>(resolve => { this.steamTimer = window.setTimeout(resolve, 1500) })
+					await this.pause(1500)
 				} catch (e) {
 					console.error('Library: Steam import error', game.appId, e)
 				}
@@ -767,7 +768,6 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			session?.close()
 			this.steamImporting = false
-			this.steamTimer = null
 		}
 	}
 
@@ -978,8 +978,11 @@ export default class LibraryPlugin extends Plugin {
 			const match = toStr(fm.Progress).match(progressPattern)
 			const noteTotal = match ? Number(match[2]) : 0
 			const localWatched = parseWatched(fm.Progress)
+			// the note's episode list caps it: ticks past the list would be dropped and pulled again each sync
+			const listed = seasonsOf(fm, 'anime').reduce((n, season) => n + season.episodes.length, 0)
 			const pulled = Math.max(localWatched, entry.progress)
-			const newWatched = entry.complete ? Math.max(pulled, noteTotal) : pulled
+			const reached = entry.complete ? Math.max(pulled, noteTotal) : pulled
+			const newWatched = listed > 0 ? Math.max(localWatched, Math.min(reached, listed)) : reached
 			if (newWatched === localWatched && !('Complete' in fm)) continue
 			// keep the note's own total: Progress stays watched/total, never "15/12"
 			const total = String(Math.max(noteTotal, newWatched, 1))
@@ -1274,7 +1277,7 @@ export default class LibraryPlugin extends Plugin {
 			const rating = Number(toStr(fm?.['My Rating']))
 			if (!id || !(rating >= 1 && rating <= 10) || this.settings.netflixEcho[id] === thumbRank(rating)) continue
 			await this.netflixPush(file)
-			await new Promise<void>(resolve => { window.setTimeout(resolve, 3000) })
+			await this.pause(3000)
 		}
 	}
 
@@ -1324,7 +1327,7 @@ export default class LibraryPlugin extends Plugin {
 			const id = fm && !isTemplateFile(file.path) ? this.imdbIdOf(fm) : null
 			if (!id || this.settings.imdbEcho[id]) continue
 			await this.imdbPush(file)
-			await new Promise<void>(resolve => { window.setTimeout(resolve, 3000) })
+			await this.pause(3000)
 		}
 	}
 
@@ -1368,7 +1371,7 @@ export default class LibraryPlugin extends Plugin {
 		const provider = this.registry.forType(title.kind)
 		if (!provider) return null
 		// Netflix gives only a name: the source's best match for it, else a bare note
-		const sourceId = title.id || (await provider.search(title.name, title.kind))[0]?.sourceId || ''
+		const sourceId = title.id || (await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[]))[0]?.sourceId || ''
 		const meta = sourceId ? await provider.fetch(sourceId, title.kind) : null
 		const category = await this.categoryFor(title.kind)
 		const extra: Record<string, unknown> = {}
@@ -1761,7 +1764,7 @@ export default class LibraryPlugin extends Plugin {
 			} catch (e) {
 				console.error('Library: game look-up error', file.path, e)
 			}
-			await new Promise<void>(resolve => { this.psnTimer = window.setTimeout(resolve, 1500) })
+			await this.pause(1500)
 		}
 	}
 
@@ -1960,7 +1963,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	// one note → Kitsu: progress, status and score, creating the entry when new
-	private async kitsuPushNote(file: TFile, loud: boolean): Promise<boolean> {
+	private async kitsuPushNote(file: TFile, loud: boolean, sendProgress = true): Promise<boolean> {
 		const token = await this.kitsuToken()
 		const name = tr('kitsu.name')
 		if (!token) {
@@ -1992,7 +1995,7 @@ export default class LibraryPlugin extends Plugin {
 		const status = existing ? (finished ? 'completed' : null) : kitsuStatus(finished, watched)
 		const ok = await pushKitsuEntry(token,
 			{ entryId: existing?.entryId ?? null, kitsuId, userId: viewer.id },
-			{ progress: watched, status, rating: score > 0 ? score : null })
+			{ progress: sendProgress ? watched : null, status, rating: score > 0 ? score : null })
 		if (loud) {
 			new Notice(ok
 				? tr('notice.kitsu.pushed', { name: toStr(fm.Name) || file.basename })
@@ -2031,7 +2034,8 @@ export default class LibraryPlugin extends Plugin {
 		if (echo && echo.p === progress && echo.r === score) return
 		this.kitsuPushing = true
 		try {
-			const ok = await this.kitsuPushNote(file, false)
+			// a score edit alone must not send back a progress Kitsu may have moved past
+			const ok = await this.kitsuPushNote(file, false, !echo || echo.p !== progress)
 			if (ok) {
 				this.settings.kitsuEcho[file.path] = { p: progress, r: score }
 				await this.saveSettings()
@@ -2180,10 +2184,10 @@ export default class LibraryPlugin extends Plugin {
 			if (loud) new Notice(tr('notice.mal.importing'))
 			return
 		}
-		const token = await this.malToken()
-		if (!token) { if (loud) new Notice(tr('notice.mal.noToken')); return }
 		this.malImporting = true
 		try {
+			const token = await this.malToken()
+			if (!token) { if (loud) new Notice(tr('notice.mal.noToken')); return }
 			if (loud) new Notice(tr('notice.mal.importing'))
 			const [anime, manga] = await Promise.all([fetchMalList(token), fetchMalList(token, 'manga')])
 			if (!anime || !manga) { if (loud) new Notice(tr('notice.mal.importFailed')); return }
@@ -2251,10 +2255,10 @@ export default class LibraryPlugin extends Plugin {
 			if (loud) new Notice(tr('notice.site.importing', { site: name }))
 			return
 		}
-		const token = await this.kitsuToken()
-		if (!token) { if (loud) new Notice(tr('notice.site.signedOut', { site: name })); return }
 		this.kitsuImporting = true
 		try {
+			const token = await this.kitsuToken()
+			if (!token) { if (loud) new Notice(tr('notice.site.signedOut', { site: name })); return }
 			if (loud) new Notice(tr('notice.site.importing', { site: name }))
 			const viewer = await kitsuViewer(token)
 			const entries = viewer ? await fetchKitsuList(token, viewer.id) : null
@@ -2731,6 +2735,16 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
+	private pause(ms: number): Promise<void> {
+		return new Promise<void>(resolve => {
+			const id = window.setTimeout(() => {
+				this.pauses.delete(id)
+				resolve()
+			}, ms)
+			this.pauses.set(id, resolve)
+		})
+	}
+
 	// its own timer: sharing the walk's would let a key change cancel this sleep and hang the walk
 	private enrichSleep(ms: number): Promise<void> {
 		return new Promise<void>(resolve => {
@@ -2827,7 +2841,7 @@ export default class LibraryPlugin extends Plugin {
 	): Promise<void> {
 		const name = toStr(fm.Name) || file.basename
 		const year = Number(fm.Year) || 0
-		const results = await provider.search(name, category.contentType)
+		const results = await within(provider.search(name, category.contentType), SEARCH_BUDGET_MS * 2, [] as SearchResult[])
 		// one unambiguous hit only: a remake shares the title ("Dune" 1984/2021)
 		const matches = results.filter(result =>
 			sameTitle(result.title, name) && (!year || result.year === null || result.year === year)
@@ -2896,6 +2910,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private refreshBanner(): void {
+		if (this.unloaded) return
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view || !view.file) return
 		const sizer = view.containerEl.querySelector('.markdown-preview-sizer')
@@ -3201,7 +3216,7 @@ export default class LibraryPlugin extends Plugin {
 			if (!this.chapterLookups.has(file.path)) {
 				this.chapterLookups.add(file.path)
 				void this.lookUpChapters(file, fm).then((titles) => {
-					if (titles.length > 0) void this.addChapters(file, titles)
+					if (titles.length > 0 && !this.unloaded) void this.addChapters(file, titles)
 				})
 			}
 			const add = createEl('button')
@@ -3343,7 +3358,10 @@ export default class LibraryPlugin extends Plugin {
 	private awardsBlock(wrap: HTMLElement, titleId: string, label: string, load: () => Promise<{ trophies: PsnTrophy[]; total: number } | null>): void {
 		if (!this.trophyLists.has(titleId)) {
 			this.trophyLists.set(titleId, null)
-			void load().then(list => {
+			void load().catch((e: unknown) => {
+				console.error('Library: awards error', titleId, e)
+				return null
+			}).then(list => {
 				if (!list) { this.trophyLists.delete(titleId); return }
 				this.trophyLists.set(titleId, list)
 				if (list.trophies.length > 0) this.refreshBanner()
@@ -3425,7 +3443,7 @@ export default class LibraryPlugin extends Plugin {
 		const sourceId = toStr(fm['Source ID'])
 		return findChapters({
 			isbn: toStr(fm.ISBN),
-			work: sourceId.startsWith('/works/') ? sourceId : '',
+			work: /^\/works\/[\w.-]+$/.test(sourceId) ? sourceId : '',
 			title: toStr(fm.Name) || file.basename,
 			author: toStrArray(fm.Creator || fm.Author).map(linkLabel)[0] ?? ''
 		})

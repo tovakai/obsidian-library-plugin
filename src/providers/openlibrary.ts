@@ -72,7 +72,7 @@ export async function findChapters(book: BookLookup): Promise<string[]> {
 		return titles
 	}
 
-	let work = book.work && book.work.startsWith('/works/') ? book.work : ''
+	let work = book.work && /^\/works\/[\w.-]+$/.test(book.work) ? book.work : ''
 	if (isbn.length === 10 || isbn.length === 13) {
 		const edition = await getJson<OpenLibraryEdition>(`https://openlibrary.org/isbn/${isbn}.json`)
 		const own = chapterTitles(edition)
@@ -86,7 +86,7 @@ export async function findChapters(book: BookLookup): Promise<string[]> {
 		const found = await getJson<OpenLibrarySearchResponse>(`${OpenLibraryProvider.SEARCH}?${query.toString()}`)
 		work = found?.docs?.[0]?.key ?? ''
 	}
-	if (!work.startsWith('/works/')) return done([])
+	if (!/^\/works\/[\w.-]+$/.test(work)) return done([])
 	const editions = await getJson<{ entries?: OpenLibraryEdition[] }>(`https://openlibrary.org${work}/editions.json?limit=100`)
 	// Fullest contents, preferring editions in the title's script.
 	const script = scriptOf(book.title ?? '')

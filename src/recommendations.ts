@@ -266,7 +266,7 @@ const LATIN = /^[\x20-\x7e]+$/
 // First two genres (one is too broad), else the work's own subjects.
 async function openLibrary(sourceId: string, name: string, genres: string[]): Promise<Recommendation[]> {
 	let subjects = genres.filter(g => LATIN.test(g)).slice(0, 2)
-	if (subjects.length === 0 && sourceId.startsWith('/works/')) {
+	if (subjects.length === 0 && /^\/works\/[\w.-]+$/.test(sourceId)) {
 		const work = await getJson<{ subjects?: string[] }>(`${OPENLIB}${sourceId}.json`)
 		subjects = (work?.subjects ?? []).filter(s => !SHELF_SUBJECT.test(s) && LATIN.test(s)).slice(0, 2)
 	}

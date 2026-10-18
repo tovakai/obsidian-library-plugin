@@ -38,10 +38,10 @@ export interface MalEntry {
 	total: number
 }
 
-export type MalStatus = 'watching' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_watch'
+export type MalStatus = 'watching' | 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_watch' | 'plan_to_read'
 
 // Statuses the user has actually started; plan_to_* entries are not imported.
-const STARTED = new Set<MalStatus>(['watching', 'completed', 'on_hold', 'dropped'])
+const STARTED = new Set<MalStatus>(['watching', 'reading', 'completed', 'on_hold', 'dropped'])
 
 export function isStarted(status: string): boolean {
 	return STARTED.has(status as MalStatus)
@@ -147,10 +147,6 @@ async function api<T>(token: string, path: string, method = 'GET', body?: string
 		console.error('Library: MyAnimeList request error', e)
 		return null
 	}
-}
-
-export function malViewer(token: string): Promise<{ id: number; name: string } | null> {
-	return api<{ id: number; name: string }>(token, '/users/@me')
 }
 
 // MAL scores are 1–10 (0 would clear it); status only when Complete.

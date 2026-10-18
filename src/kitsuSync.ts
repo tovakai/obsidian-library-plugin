@@ -195,9 +195,11 @@ export async function findKitsuEntry(token: string, userId: string, kitsuId: num
 export async function pushKitsuEntry(
 	token: string,
 	target: { entryId: number | null; kitsuId: number; userId: string },
-	updates: { progress: number; status: KitsuStatus | null; rating: number | null }
+	// progress null leaves an existing entry's progress as it is
+	updates: { progress: number | null; status: KitsuStatus | null; rating: number | null }
 ): Promise<boolean> {
-	const attributes: Record<string, unknown> = { progress: Math.max(0, Math.floor(updates.progress)) }
+	const attributes: Record<string, unknown> = {}
+	if (updates.progress !== null || target.entryId === null) attributes.progress = Math.max(0, Math.floor(updates.progress ?? 0))
 	if (updates.status) attributes.status = updates.status
 	if (updates.rating != null && updates.rating > 0) {
 		attributes.rating = Math.min(10, Math.max(1, Math.round(updates.rating * 2) / 2))

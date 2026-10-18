@@ -37,6 +37,8 @@ export class GameAggregatorProvider implements ContentProvider {
 	}
 
 	refreshable(sourceId: string): boolean {
+		// no source has these: the enrich walk would revisit them forever
+		if (/^(psn|nintendo):/.test(sourceId)) return false
 		if (sourceId.startsWith(SteamProvider.PREFIX) || /^Q\d+$/.test(sourceId)) return true
 		return this.rawg.refreshable?.(sourceId) ?? true
 	}

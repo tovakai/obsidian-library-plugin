@@ -39,7 +39,8 @@ export class ComicsProvider implements ContentProvider {
 	}
 
 	private volumeId(sourceId: string): string {
-		return sourceId.replace(/^\d+-/, '')
+		// the id goes into the request path: digits only
+		return /^(?:\d+-)?(\d+)$/.exec(sourceId)?.[1] ?? '0'
 	}
 
 	private detailUrl(sourceId: string, raw?: unknown): string {

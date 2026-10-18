@@ -397,17 +397,6 @@ export function cleanPsnName(name: string): string {
 	return name.replace(/[™®©]/g, '').replace(/\s+/g, ' ').trim()
 }
 
-// "0/1 · 2/3 · 9/15 · 43/75": platinum, gold, silver, bronze, earned of defined.
-export function trophyLine(earned: TrophyCounts, defined: TrophyCounts): string {
-	return (['platinum', 'gold', 'silver', 'bronze'] as const)
-		.map(grade => `${String(earned[grade])}/${String(defined[grade])}`)
-		.join(' · ')
-}
-
-export function trophyTotal(counts: TrophyCounts): number {
-	return counts.platinum + counts.gold + counts.silver + counts.bronze
-}
-
 export interface PsnStats {
 	games: number
 	minutes: number
