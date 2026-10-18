@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian'
+import { App, ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian'
 import { airingLabel, type Airing } from './airing'
 import type LibraryPlugin from './main'
 import { categoryLabel } from './categories'
@@ -32,7 +32,7 @@ import {
 
 export const LIBRARY_VIEW_TYPE = 'library-view'
 
-interface CardData {
+export interface CardData {
 	file: TFile
 	fm: Record<string, unknown>
 	kind: ContentType
@@ -107,70 +107,11 @@ interface SectionSpec {
 // A key no category name takes.
 const UP_NEXT_SORT = '@upNext'
 
-export class LibraryView extends ItemView {
-	private plugin: LibraryPlugin
-	private renderTimer: number | null = null
-	// Paths shown last render: a note ceasing to be one must still trigger the render that drops it.
-	private shown = new Set<string>()
+// Cards, statistics and the Soon list, shared by the library tab and the note blocks.
+export class LibraryRenderer {
+	constructor(private app: App, private plugin: LibraryPlugin) {}
 
-	constructor(leaf: WorkspaceLeaf, plugin: LibraryPlugin) {
-		super(leaf)
-		this.plugin = plugin
-	}
-
-	getViewType(): string {
-		return LIBRARY_VIEW_TYPE
-	}
-
-	getDisplayText(): string {
-		return tr('view.title')
-	}
-
-	getIcon(): string {
-		return 'library'
-	}
-
-	async onOpen(): Promise<void> {
-		// Only library notes redraw: any other note fires `changed` every few seconds.
-		this.registerEvent(this.app.metadataCache.on('changed', (file) => {
-			if (this.shown.has(file.path) || this.isLibraryNote(this.app.metadataCache.getFileCache(file)?.frontmatter)) {
-				this.scheduleRender()
-			}
-		}))
-		this.registerEvent(this.app.vault.on('delete', (file) => {
-			if (this.shown.has(file.path)) this.scheduleRender()
-		}))
-		this.registerEvent(this.app.vault.on('rename', (_file, oldPath) => {
-			if (this.shown.has(oldPath)) this.scheduleRender()
-		}))
-		this.registerDomEvent(activeDocument, 'click', () => {
-			this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
-		})
-		this.render()
-	}
-
-	private scheduleRender(): void {
-		if (this.renderTimer) window.clearTimeout(this.renderTimer)
-		this.renderTimer = window.setTimeout(() => this.render(), 300)
-	}
-
-	private isLibraryNote(fm: Record<string, unknown> | undefined): boolean {
-		const type = fm?.Type
-		return typeof type === 'string' && this.plugin.settings.categories.some(c => c.typeValue === type)
-	}
-
-	private readSort(section: string, fallback: SortChoice): SortChoice {
-		const saved = this.plugin.settings.sortState[section]
-		if (!saved || SORT_KEYS.indexOf(saved.key as SortKey) < 0) return fallback
-		return { key: saved.key as SortKey, asc: saved.asc !== false }
-	}
-
-	private writeSort(section: string, key: SortKey, asc: boolean): void {
-		this.plugin.settings.sortState[section] = { key, asc }
-		void this.plugin.persistSettings()
-	}
-
-	private collectCards(category: ICategory): CardData[] {
+	collectCards(category: ICategory): CardData[] {
 		const cards: CardData[] = []
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			if (isTemplateFile(file.path)) continue
@@ -189,7 +130,7 @@ export class LibraryView extends ItemView {
 		return cards
 	}
 
-	private collectStats(): { columns: StatsColumn[]; time: TimeSlice[]; undated: number } {
+	collectStats(): { columns: StatsColumn[]; time: TimeSlice[]; undated: number } {
 		const tops = this.plugin.settings.stats.tops
 		const properties = tops.filter(top => top.kind === 'property').map(top => top.key)
 		const counts = properties.map(() => new Map<string, { label: string; count: number }>())
@@ -280,7 +221,7 @@ export class LibraryView extends ItemView {
 		return { columns, time, undated }
 	}
 
-	private renderTimeChart(body: HTMLElement, slices: TimeSlice[], undated: number): void {
+	renderTimeChart(body: HTMLElement, slices: TimeSlice[], undated: number): void {
 		const col = body.createDiv({ cls: 'library-stats-col library-time-col' })
 		col.createEl('h3', { text: tr('stats.watchTime') })
 
@@ -334,7 +275,7 @@ export class LibraryView extends ItemView {
 		row.createSpan({ cls: 'library-time-name', text: comparisonText(comparison) })
 	}
 
-	private renderStats(root: HTMLElement): HTMLElement | null {
+	renderStats(root: HTMLElement): HTMLElement | null {
 		const stats = this.collectStats()
 		const columns = stats.columns.filter(column => column.items.length > 0)
 		const showTime = this.plugin.settings.stats.watchTime
@@ -452,6 +393,186 @@ export class LibraryView extends ItemView {
 		return header
 	}
 
+	renderComingSoon(root: HTMLElement, cards: CardData[]): void {
+		const soon = cards
+			.map(card => ({ card, airing: this.plugin.airingFor(card.fm) }))
+			.filter((item): item is { card: CardData; airing: Airing } => item.airing !== null)
+			.sort((a, b) => a.airing.at - b.airing.at)
+			.slice(0, 20)
+		if (soon.length === 0) return
+		const settings = this.plugin.settings
+		const section = root.createDiv({ cls: 'library-section library-coming-soon' })
+		const heading = section.createDiv({ cls: 'library-section-heading' })
+		heading.createEl('h2', { text: tr('soon.title') })
+		const collapseBtn = heading.createEl('button', { cls: 'library-collapse-btn', text: '▼', attr: { 'aria-label': tr('soon.title'), 'aria-expanded': 'true' } })
+		const list = section.createDiv({ cls: 'library-soon-list' })
+		for (const { card, airing } of soon) {
+			const row = list.createDiv({ cls: 'library-soon-row' })
+			const src = coverSrc(this.app, coverValue(card.fm, settings.coverProperty))
+			if (src) row.createEl('img', { cls: 'library-soon-cover', attr: { src } })
+			const text = row.createDiv({ cls: 'library-soon-text' })
+			text.createDiv({ cls: 'library-soon-name', text: card.name })
+			text.createDiv({ cls: 'library-soon-when', text: airingLabel(airing) })
+			row.addEventListener('click', () => { void this.app.workspace.getLeaf(false).openFile(card.file) })
+		}
+		const applyCollapsed = (collapsed: boolean): void => {
+			list.toggleClass('collapsed', collapsed)
+			collapseBtn.setText(collapsed ? '▶' : '▼')
+			collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
+		}
+		collapseBtn.addEventListener('click', () => {
+			settings.comingSoonCollapsed = !list.hasClass('collapsed')
+			applyCollapsed(settings.comingSoonCollapsed)
+			void this.plugin.persistSettings()
+		})
+		if (settings.comingSoonCollapsed) applyCollapsed(true)
+	}
+
+	renderCard(grid: HTMLElement, card: CardData): void {
+		const { file, fm } = card
+		const cardEl = grid.createDiv({
+			cls: 'library-card',
+			attr: {
+				'role': 'button',
+				'tabindex': '0',
+				'aria-label': card.name
+			}
+		})
+		cardEl.addEventListener('click', () => {
+			void this.app.workspace.getLeaf(false).openFile(file)
+		})
+		cardEl.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault()
+				void this.app.workspace.getLeaf(false).openFile(file)
+			}
+		})
+
+		const cover = coverValue(fm, this.plugin.settings.coverProperty)
+		const imgDiv = cardEl.createDiv({ cls: 'card-image' })
+		const cardCover = coverSrc(this.app, cover)
+		if (cardCover) {
+			imgDiv.createEl('img', { attr: { src: cardCover, alt: card.name, loading: 'lazy', decoding: 'async' } })
+		} else {
+			const type = toStr(fm.Type).toLowerCase()
+			const emoji = type === 'anime' ? '🎌'
+				: type === 'comic' ? '📚'
+				: type === 'book' ? '📖'
+				: type === 'game' ? '🎮'
+				: type === 'music' ? '🎵'
+				: type === 'manual' ? '📝'
+				: '🎬'
+			imgDiv.createSpan({ text: emoji })
+		}
+		renderPlatforms(imgDiv, fm, 'card-platforms')
+		if (notStarted(fm, card.kind)) {
+			const badge = imgDiv.createSpan({
+				cls: 'card-unstarted',
+				attr: { 'role': 'img', 'aria-label': tr('card.notStarted') }
+			})
+			setIcon(badge, 'eye')
+		}
+
+		const info = cardEl.createDiv({ cls: 'card-info' })
+		info.createDiv({ cls: 'card-title', text: card.name })
+
+		const author = toStrArray(fm.Author || fm.Creator || fm.Director || fm.Artist).map(linkLabel).join(', ')
+		if (author) info.createDiv({ cls: 'card-author', text: author })
+		if (fm.Year) info.createDiv({ cls: 'card-year', text: toStr(fm.Year) })
+
+		const myRating = fm['My Rating'] ?? fm.Rating
+		const imdb = fm['Rating IMDB']
+		const rt = fm['Rating RT']
+		const rawg = fm['Rating RAWG']
+		const mc = fm['Rating MC']
+		if (imdb || rt || rawg || mc || myRating) {
+			const parts: string[] = []
+			if (imdb) parts.push('IMDb ' + toStr(imdb))
+			if (rt) parts.push(RATING_RT_ICON + ' ' + toStr(rt) + '%')
+			if (rawg) parts.push('RAWG ' + toStr(rawg))
+			if (mc) parts.push('MC ' + toStr(mc))
+			if (myRating) parts.push(toStr(myRating))
+			info.createDiv({ cls: 'card-rating', text: parts.join(' | ') })
+		}
+
+		renderTrophies(info, fm, 'card-trophies')
+
+		const percent = shownProgress(fm, card.kind)
+		if (percent !== null && percent < 100) {
+			const pc = info.createDiv({ cls: 'card-progress' })
+			pc.createDiv({ cls: 'card-progress-label', text: String(percent) + '%' })
+			const bar = pc.createDiv({ cls: 'card-progress-bar' })
+			bar.createDiv({ cls: 'card-progress-fill' }).setCssStyles({ width: String(percent) + '%' })
+		}
+	}
+}
+
+export class LibraryView extends ItemView {
+	private plugin: LibraryPlugin
+	private renderTimer: number | null = null
+	// Paths shown last render: a note ceasing to be one must still trigger the render that drops it.
+	private shown = new Set<string>()
+
+	private r: LibraryRenderer
+
+	constructor(leaf: WorkspaceLeaf, plugin: LibraryPlugin) {
+		super(leaf)
+		this.plugin = plugin
+		this.r = new LibraryRenderer(this.app, plugin)
+	}
+
+	getViewType(): string {
+		return LIBRARY_VIEW_TYPE
+	}
+
+	getDisplayText(): string {
+		return tr('view.title')
+	}
+
+	getIcon(): string {
+		return 'library'
+	}
+
+	async onOpen(): Promise<void> {
+		// Only library notes redraw: any other note fires `changed` every few seconds.
+		this.registerEvent(this.app.metadataCache.on('changed', (file) => {
+			if (this.shown.has(file.path) || this.isLibraryNote(this.app.metadataCache.getFileCache(file)?.frontmatter)) {
+				this.scheduleRender()
+			}
+		}))
+		this.registerEvent(this.app.vault.on('delete', (file) => {
+			if (this.shown.has(file.path)) this.scheduleRender()
+		}))
+		this.registerEvent(this.app.vault.on('rename', (_file, oldPath) => {
+			if (this.shown.has(oldPath)) this.scheduleRender()
+		}))
+		this.registerDomEvent(activeDocument, 'click', () => {
+			this.contentEl.querySelectorAll('.library-sort-menu.open').forEach(m => m.removeClass('open'))
+		})
+		this.render()
+	}
+
+	private scheduleRender(): void {
+		if (this.renderTimer) window.clearTimeout(this.renderTimer)
+		this.renderTimer = window.setTimeout(() => this.render(), 300)
+	}
+
+	private isLibraryNote(fm: Record<string, unknown> | undefined): boolean {
+		const type = fm?.Type
+		return typeof type === 'string' && this.plugin.settings.categories.some(c => c.typeValue === type)
+	}
+
+	private readSort(section: string, fallback: SortChoice): SortChoice {
+		const saved = this.plugin.settings.sortState[section]
+		if (!saved || SORT_KEYS.indexOf(saved.key as SortKey) < 0) return fallback
+		return { key: saved.key as SortKey, asc: saved.asc !== false }
+	}
+
+	private writeSort(section: string, key: SortKey, asc: boolean): void {
+		this.plugin.settings.sortState[section] = { key, asc }
+		void this.plugin.persistSettings()
+	}
+
 	render(): void {
 		const root = this.contentEl
 		const scrollTop = root.scrollTop
@@ -460,7 +581,7 @@ export class LibraryView extends ItemView {
 
 		const sections = this.plugin.settings.categories.map(category => ({
 			category,
-			cards: this.collectCards(category)
+			cards: this.r.collectCards(category)
 		}))
 		this.shown.clear()
 		for (const { cards } of sections) {
@@ -500,13 +621,13 @@ export class LibraryView extends ItemView {
 			return
 		}
 
-		const statsHeader = this.renderStats(root)
+		const statsHeader = this.r.renderStats(root)
 		if (statsHeader) statsHeader.appendChild(actions)
 		else pageHeader()
 
 		// Not-started may live in Up next alone only while that block is on.
 		const settings = this.plugin.settings
-		if (settings.showComingSoon) this.renderComingSoon(root, sections.reduce((all, section) => all.concat(section.cards), [] as CardData[]))
+		if (settings.showComingSoon) this.r.renderComingSoon(root, sections.reduce((all, section) => all.concat(section.cards), [] as CardData[]))
 		const upNextOnly = settings.showUpNext && !settings.upNextInCategories
 		let rendered = 0
 		for (const { category, cards } of sections) {
@@ -738,7 +859,7 @@ export class LibraryView extends ItemView {
 				return sortAsc ? cmp : -cmp
 			})
 			grid.empty()
-			for (const card of sorted) this.renderCard(grid, card)
+			for (const card of sorted) this.r.renderCard(grid, card)
 		}
 
 		sortOptions.forEach(opt => {
@@ -786,119 +907,6 @@ export class LibraryView extends ItemView {
 		renderGrid()
 		if (spec.collapsed) applyCollapsed(true)
 		return section
-	}
-
-	private renderComingSoon(root: HTMLElement, cards: CardData[]): void {
-		const soon = cards
-			.map(card => ({ card, airing: this.plugin.airingFor(card.fm) }))
-			.filter((item): item is { card: CardData; airing: Airing } => item.airing !== null)
-			.sort((a, b) => a.airing.at - b.airing.at)
-			.slice(0, 20)
-		if (soon.length === 0) return
-		const settings = this.plugin.settings
-		const section = root.createDiv({ cls: 'library-section library-coming-soon' })
-		const heading = section.createDiv({ cls: 'library-section-heading' })
-		heading.createEl('h2', { text: tr('soon.title') })
-		const collapseBtn = heading.createEl('button', { cls: 'library-collapse-btn', text: '▼', attr: { 'aria-label': tr('soon.title'), 'aria-expanded': 'true' } })
-		const list = section.createDiv({ cls: 'library-soon-list' })
-		for (const { card, airing } of soon) {
-			const row = list.createDiv({ cls: 'library-soon-row' })
-			const src = coverSrc(this.app, coverValue(card.fm, settings.coverProperty))
-			if (src) row.createEl('img', { cls: 'library-soon-cover', attr: { src } })
-			const text = row.createDiv({ cls: 'library-soon-text' })
-			text.createDiv({ cls: 'library-soon-name', text: card.name })
-			text.createDiv({ cls: 'library-soon-when', text: airingLabel(airing) })
-			row.addEventListener('click', () => { void this.app.workspace.getLeaf(false).openFile(card.file) })
-		}
-		const applyCollapsed = (collapsed: boolean): void => {
-			list.toggleClass('collapsed', collapsed)
-			collapseBtn.setText(collapsed ? '▶' : '▼')
-			collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
-		}
-		collapseBtn.addEventListener('click', () => {
-			settings.comingSoonCollapsed = !list.hasClass('collapsed')
-			applyCollapsed(settings.comingSoonCollapsed)
-			void this.plugin.persistSettings()
-		})
-		if (settings.comingSoonCollapsed) applyCollapsed(true)
-	}
-
-	private renderCard(grid: HTMLElement, card: CardData): void {
-		const { file, fm } = card
-		const cardEl = grid.createDiv({
-			cls: 'library-card',
-			attr: {
-				'role': 'button',
-				'tabindex': '0',
-				'aria-label': card.name
-			}
-		})
-		cardEl.addEventListener('click', () => {
-			void this.app.workspace.getLeaf(false).openFile(file)
-		})
-		cardEl.addEventListener('keydown', (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault()
-				void this.app.workspace.getLeaf(false).openFile(file)
-			}
-		})
-
-		const cover = coverValue(fm, this.plugin.settings.coverProperty)
-		const imgDiv = cardEl.createDiv({ cls: 'card-image' })
-		const cardCover = coverSrc(this.app, cover)
-		if (cardCover) {
-			imgDiv.createEl('img', { attr: { src: cardCover, alt: card.name, loading: 'lazy', decoding: 'async' } })
-		} else {
-			const type = toStr(fm.Type).toLowerCase()
-			const emoji = type === 'anime' ? '🎌'
-				: type === 'comic' ? '📚'
-				: type === 'book' ? '📖'
-				: type === 'game' ? '🎮'
-				: type === 'music' ? '🎵'
-				: type === 'manual' ? '📝'
-				: '🎬'
-			imgDiv.createSpan({ text: emoji })
-		}
-		renderPlatforms(imgDiv, fm, 'card-platforms')
-		if (notStarted(fm, card.kind)) {
-			const badge = imgDiv.createSpan({
-				cls: 'card-unstarted',
-				attr: { 'role': 'img', 'aria-label': tr('card.notStarted') }
-			})
-			setIcon(badge, 'eye')
-		}
-
-		const info = cardEl.createDiv({ cls: 'card-info' })
-		info.createDiv({ cls: 'card-title', text: card.name })
-
-		const author = toStrArray(fm.Author || fm.Creator || fm.Director || fm.Artist).map(linkLabel).join(', ')
-		if (author) info.createDiv({ cls: 'card-author', text: author })
-		if (fm.Year) info.createDiv({ cls: 'card-year', text: toStr(fm.Year) })
-
-		const myRating = fm['My Rating'] ?? fm.Rating
-		const imdb = fm['Rating IMDB']
-		const rt = fm['Rating RT']
-		const rawg = fm['Rating RAWG']
-		const mc = fm['Rating MC']
-		if (imdb || rt || rawg || mc || myRating) {
-			const parts: string[] = []
-			if (imdb) parts.push('IMDb ' + toStr(imdb))
-			if (rt) parts.push(RATING_RT_ICON + ' ' + toStr(rt) + '%')
-			if (rawg) parts.push('RAWG ' + toStr(rawg))
-			if (mc) parts.push('MC ' + toStr(mc))
-			if (myRating) parts.push(toStr(myRating))
-			info.createDiv({ cls: 'card-rating', text: parts.join(' | ') })
-		}
-
-		renderTrophies(info, fm, 'card-trophies')
-
-		const percent = shownProgress(fm, card.kind)
-		if (percent !== null && percent < 100) {
-			const pc = info.createDiv({ cls: 'card-progress' })
-			pc.createDiv({ cls: 'card-progress-label', text: String(percent) + '%' })
-			const bar = pc.createDiv({ cls: 'card-progress-bar' })
-			bar.createDiv({ cls: 'card-progress-fill' }).setCssStyles({ width: String(percent) + '%' })
-		}
 	}
 
 	async onClose(): Promise<void> {

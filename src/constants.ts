@@ -395,6 +395,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'filter.title': 'Filter',
 		'filter.clear': 'Clear filters',
 		'header.nextEpisode': 'Next episode',
+		'block.empty': 'Nothing here yet',
 		'settings.localCovers.name': 'Keep covers in the vault',
 		'settings.localCovers.desc': 'Downloads cover images into a Covers folder in the library folder, so the library shows them offline. The note then links the file.',
 		'settings.comingSoon.name': 'Soon',

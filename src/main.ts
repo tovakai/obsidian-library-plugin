@@ -52,6 +52,7 @@ import { earnedAchievements, gameAchievements, ownedGames, playtimeHours, steamA
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
+import { LibraryBlock } from './libraryBlock'
 import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
 import { cleanPsnName, exchangePsnCode, psnEarnedTrophies, psnExpired, psnLanguage, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophy, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
@@ -232,6 +233,9 @@ export default class LibraryPlugin extends Plugin {
 		this.addSettingTab(this.settingTab)
 
 		this.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, this))
+		this.registerMarkdownCodeBlockProcessor('library', (source, el, ctx) => {
+			ctx.addChild(new LibraryBlock(el, this, source))
+		})
 		this.addRibbonIcon('library', tr('view.title'), () => { void this.activateView() })
 
 		const banner = (): void => {
