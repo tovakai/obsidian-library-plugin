@@ -46,3 +46,30 @@ export class PsnLoginModal extends Modal {
 		this.onCode(code)
 	}
 }
+
+export function psnSilentCode(timeout = 20000): Promise<string | null> {
+	const doc = activeDocument
+	const win = doc.win as Window & { createEl: typeof createEl }
+	return new Promise((resolve) => {
+		const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
+			cls: 'library-steam-probe',
+			attr: { partition: 'persist:library-psn', disableblinkfeatures: 'WebAuth', src: psnAuthUrl() },
+		})
+		let timer = 0
+		const done = (code: string | null): void => {
+			window.clearTimeout(timer)
+			view.remove()
+			resolve(code)
+		}
+		const check = (event: Event): void => {
+			const detail = event as Event & { url?: string; validatedURL?: string }
+			const code = codeFromRedirect(detail.url ?? detail.validatedURL ?? '')
+			if (code) done(code)
+		}
+		for (const name of ['will-navigate', 'did-start-navigation', 'did-redirect-navigation', 'did-fail-load']) {
+			view.addEventListener(name, check)
+		}
+		timer = window.setTimeout(() => done(null), timeout)
+		doc.body.appendChild(view)
+	})
+}

@@ -51,7 +51,7 @@ import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRed
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
-import { PsnLoginModal } from './ui/psnLoginModal'
+import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
 import { KitsuLoginModal } from './ui/kitsuLoginModal'
 import { AuthModal } from './ui/authModal'
 import { SIGNER_PROJECT, codeFromRedirect as nintendoCode, exchangeNintendoCode, nintendoAuth, nintendoPlayLog, type NintendoPlayedGame } from './nintendo'
@@ -167,6 +167,7 @@ export default class LibraryPlugin extends Plugin {
 	private psnTimer: number | null = null
 	// The sign-in ran out: said once a session, not on every attempt.
 	private psnExpiredSaid = false
+	private psnRenewAfter = 0
 	// keyed Source:Source ID, fetched once a session
 	private recommendations = new Map<string, Promise<Recommendation[]>>()
 	private steamTimer: number | null = null
@@ -1743,11 +1744,18 @@ export default class LibraryPlugin extends Plugin {
 	async psnToken(): Promise<string | null> {
 		const tokens = this.settings.psnTokens
 		if (!tokens) return null
-		if (!psnExpired(tokens)) return tokens.access
+		const renew = Platform.isDesktopApp && tokens.refreshExpiresAt > 0 && Date.now() > tokens.refreshExpiresAt - 3 * 86400000 && Date.now() > this.psnRenewAfter
+		if (!psnExpired(tokens) && !renew) return tokens.access
 		if (!this.psnRefreshing) {
 			this.psnRefreshing = (async () => {
 				try {
-					const next = await refreshPsnTokens(tokens.refresh)
+					let next = renew ? null : await refreshPsnTokens(tokens.refresh)
+					if (!next && Platform.isDesktopApp && Date.now() > this.psnRenewAfter) {
+						const code = await psnSilentCode()
+						next = code ? await exchangePsnCode(code) : null
+						if (!next) this.psnRenewAfter = Date.now() + 3600000
+					}
+					if (!next && !psnExpired(tokens)) return tokens.access
 					if (!next) {
 						if (!this.psnExpiredSaid) new Notice(tr('notice.psn.expired'))
 						this.psnExpiredSaid = true

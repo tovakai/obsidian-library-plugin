@@ -154,7 +154,7 @@ export function imdbTitles(rated: ImdbNode[], listed: { title: ImdbNode; added: 
 const IMDB_READ = `(async () => {
 	const data = document.getElementById('__NEXT_DATA__')?.textContent ?? '';
 	const user = /"userId":"(ur\\d+)"/.exec(data)?.[1];
-	if (!user) return 'signed-out';
+	if (!user) return data ? 'signed-out' : '';
 	const ask = async (query) => {
 		const r = await window.fetch('https://api.graphql.imdb.com/', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
 		if (!r.ok) throw new Error(String(r.status));
@@ -308,8 +308,11 @@ export function netflixTitles(viewed: NetflixViewed[], rated: NetflixRated[]): N
 
 // The account pages' Falcor endpoint, paged; the profile is the signed-in one.
 const NETFLIX_READ = `(async () => {
-	const user = window.netflix?.reactContext?.models?.userInfo?.data;
-	if (!user?.guid) return 'signed-out';
+	const context = window.netflix?.reactContext;
+	if (!context) return '';
+	const user = context.models?.userInfo?.data;
+	if (location.pathname.includes('/login') || user?.membershipStatus === 'ANONYMOUS') return 'signed-out';
+	if (!user?.guid) return '';
 	const call = async (path) => {
 		const query = new URLSearchParams({ falcor_server: '0.1.0', method: 'call', callPath: JSON.stringify(path) });
 		const body = new URLSearchParams({ param: JSON.stringify({ guid: user.guid }), authURL: user.authURL || '' });
