@@ -47,7 +47,7 @@ import { ShareModal, shareTargetFromFile } from './ui/shareModal'
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
 import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
-import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSession, type SteamSession } from './steamLibrary'
+import { earnedAchievements, gameAchievements, ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamLanguage, steamSession, type SteamSession } from './steamLibrary'
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
@@ -3311,13 +3311,39 @@ export default class LibraryPlugin extends Plugin {
 		wrap.appendChild(block)
 	}
 
-	// A PlayStation game lists the trophies earned, fetched on open once a session.
+	// A PlayStation or Steam game lists what was earned, fetched on open once a session.
 	private buildTrophiesBlock(wrap: HTMLElement, fm: Record<string, unknown>, file: TFile): void {
-		const titleId = toStr(fm['PSN ID'])
-		if (!titleId || isTemplateFile(file.path) || !this.settings.psnTokens) return
+		if (isTemplateFile(file.path)) return
+		const psnId = toStr(fm['PSN ID'])
+		if (psnId && this.settings.psnTokens) {
+			this.awardsBlock(wrap, `psn:${psnId}`, tr('header.trophies'), async () => {
+				const token = await this.psnToken()
+				return token ? psnEarnedTrophies(token, psnId, psnLanguage(getLanguage())) : null
+			})
+		}
+		const appId = Number(/^steam:(\d+)$/.exec(toStr(fm['Source ID']))?.[1] ?? /store\.steampowered\.com\/app\/(\d+)/.exec(toStr(fm.URL))?.[1])
+		if (appId > 0 && Platform.isDesktopApp && this.settings.steamId.trim()) {
+			this.awardsBlock(wrap, `steam:${String(appId)}`, tr('header.achievements'), () => this.steamAwards(appId))
+		}
+	}
+
+	private async steamAwards(appId: number): Promise<{ trophies: PsnTrophy[]; total: number } | null> {
+		const session = await steamSession(this.settings.steamId.trim())
+		if (!session) return null
+		try {
+			const defs = await gameAchievements(session.token, appId, steamLanguage(getLanguage()))
+			const unlocks = defs ? await session.unlocks(appId) : null
+			if (!defs || !unlocks) return null
+			return { trophies: earnedAchievements(appId, defs, unlocks), total: defs.length }
+		} finally {
+			session.close()
+		}
+	}
+
+	private awardsBlock(wrap: HTMLElement, titleId: string, label: string, load: () => Promise<{ trophies: PsnTrophy[]; total: number } | null>): void {
 		if (!this.trophyLists.has(titleId)) {
 			this.trophyLists.set(titleId, null)
-			void this.psnToken().then(token => token ? psnEarnedTrophies(token, titleId, psnLanguage(getLanguage())) : null).then(list => {
+			void load().then(list => {
 				if (!list) { this.trophyLists.delete(titleId); return }
 				this.trophyLists.set(titleId, list)
 				if (list.trophies.length > 0) this.refreshBanner()
@@ -3328,9 +3354,9 @@ export default class LibraryPlugin extends Plugin {
 		const open = this.openTrophies.has(titleId)
 		const block = wrap.createDiv({ cls: 'note-header-seasons note-header-trophy-list' })
 		const row = block.createDiv({ cls: 'note-header-season' })
-		row.createDiv({ cls: 'note-header-season-name', text: tr('header.trophies') })
+		row.createDiv({ cls: 'note-header-season-name', text: label })
 		row.createDiv({ cls: 'note-header-season-episodes', text: `${String(list.trophies.length)} / ${String(list.total)}` })
-		const toggle = row.createEl('button', { cls: 'note-header-season-toggle clickable-icon', attr: { 'aria-label': tr('header.trophies'), 'aria-expanded': open ? 'true' : 'false' } })
+		const toggle = row.createEl('button', { cls: 'note-header-season-toggle clickable-icon', attr: { 'aria-label': label, 'aria-expanded': open ? 'true' : 'false' } })
 		setIcon(toggle, open ? 'chevron-up' : 'chevron-down')
 		toggle.addEventListener('click', (e) => {
 			e.preventDefault()

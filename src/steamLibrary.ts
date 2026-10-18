@@ -1,4 +1,5 @@
 import { requestUrl } from 'obsidian'
+import type { PsnTrophy } from './psn'
 
 // Steam sign-in and library. No key: a hidden webview on the sign-in window's
 // partition reads steamcommunity.com as the user (nothing is kept in settings).
@@ -65,6 +66,8 @@ export function steamTokenFromAnswer(text: string): string | null {
 export interface SteamSession {
 	token: string
 	stats(appId: number): Promise<SteamStats | null>
+	// Unlock times by achievement key, epoch seconds.
+	unlocks(appId: number): Promise<Map<number, number> | null>
 	close(): void
 }
 
@@ -127,8 +130,82 @@ export async function steamSession(steamId: string): Promise<SteamSession | null
 			const total = Number(match[2])
 			return total > 0 ? { achieved, total } : null
 		},
+		unlocks: async (appId: number): Promise<Map<number, number> | null> => {
+			if (!Number.isSafeInteger(appId) || appId <= 0) return null
+			try {
+				const pairs = JSON.parse(await read(unlockScript(id, appId))) as Array<[number, number]>
+				return new Map(pairs)
+			} catch {
+				return null
+			}
+		},
 		close
 	}
+}
+
+// The achievements page keeps the member's unlocks in its server-rendered query
+// cache (valve-ssr-data), JSON nested in JSON strings.
+function unlockScript(id: string, appId: number): string {
+	return `window.fetch("/profiles/${id}/stats/${String(appId)}?l=english").then(r => r.text()).then(t => {` +
+		' const raw = new DOMParser().parseFromString(t, "text/html").getElementById("valve-ssr-data")?.textContent;' +
+		' if (!raw) return "";' +
+		' const out = []; const seen = new Set();' +
+		' const walk = (v) => {' +
+		'  if (typeof v === "string") { if (/^[[{]/.test(v)) { try { walk(JSON.parse(v)) } catch {} } return; }' +
+		'  if (!v || typeof v !== "object" || seen.has(v)) return; seen.add(v);' +
+		`  if (v.appid === ${String(appId)} && v.achievements && typeof v.achievements === "object") {` +
+		'   for (const a of Object.values(v.achievements)) if (a && a.unlocked && a.unlock_time) out.push([a.internal_key, a.unlock_time]);' +
+		'   return; }' +
+		'  for (const k of Object.keys(v)) walk(v[k]);' +
+		' };' +
+		' walk(JSON.parse(raw)); return JSON.stringify(out); }).catch(() => "")'
+}
+
+// Steam's own names for languages; English when Steam has none for it.
+const STEAM_LANGUAGES: Record<string, string> = {
+	ru: 'russian', de: 'german', fr: 'french', es: 'spanish', it: 'italian', ja: 'japanese', ko: 'koreana',
+	zh: 'schinese', 'zh-tw': 'tchinese', pt: 'portuguese', 'pt-br': 'brazilian', pl: 'polish', tr: 'turkish',
+	uk: 'ukrainian', cs: 'czech', nl: 'dutch', da: 'danish', fi: 'finnish', nb: 'norwegian', no: 'norwegian',
+	sv: 'swedish', hu: 'hungarian', ro: 'romanian', th: 'thai', vi: 'vietnamese', bg: 'bulgarian', el: 'greek',
+	ar: 'arabic', id: 'indonesian',
+}
+export function steamLanguage(language: string): string {
+	const tag = language.toLowerCase()
+	return STEAM_LANGUAGES[tag] ?? STEAM_LANGUAGES[tag.split('-')[0] ?? ''] ?? 'english'
+}
+
+export interface SteamAchievement {
+	internal_key?: number
+	localized_name?: string
+	localized_desc?: string
+	icon?: string
+	player_percent_unlocked?: string
+}
+
+// Unlocked ones first by date, newest on top.
+export function earnedAchievements(appId: number, defs: SteamAchievement[], unlocks: Map<number, number>): PsnTrophy[] {
+	const out: PsnTrophy[] = []
+	for (const def of defs) {
+		const at = unlocks.get(def.internal_key ?? -1)
+		if (!at) continue
+		const rate = Number(def.player_percent_unlocked)
+		out.push({
+			grade: null,
+			name: def.localized_name ?? '',
+			detail: def.localized_desc ?? '',
+			iconUrl: def.icon && /^[\w.]+$/.test(def.icon) ? `https://shared.fastly.steamstatic.com/community_assets/images/apps/${String(appId)}/${def.icon}` : null,
+			earnedAt: new Date(at * 1000).toISOString(),
+			rate: def.player_percent_unlocked && Number.isFinite(rate) ? rate : null,
+		})
+	}
+	return out.sort((a, b) => b.earnedAt.localeCompare(a.earnedAt))
+}
+
+export async function gameAchievements(token: string, appId: number, language: string): Promise<SteamAchievement[] | null> {
+	const json = await get<{ response?: { achievements?: SteamAchievement[] } }>(
+		`${API}/IPlayerService/GetGameAchievements/v1/?access_token=${encodeURIComponent(token)}&appid=${String(appId)}&language=${encodeURIComponent(language)}`
+	)
+	return json?.response?.achievements ?? null
 }
 
 export async function ownedGames(token: string, steamId: string): Promise<OwnedGame[] | null> {

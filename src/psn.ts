@@ -254,8 +254,9 @@ export async function psnTrophyIdsFor(token: string, titleIds: string[]): Promis
 
 export type TrophyGrade = 'platinum' | 'gold' | 'silver' | 'bronze'
 
+// A trophy or a Steam achievement; Steam has no grades.
 export interface PsnTrophy {
-	grade: TrophyGrade
+	grade: TrophyGrade | null
 	name: string
 	detail: string
 	iconUrl: string | null
@@ -296,7 +297,8 @@ export function earnedTrophies(defs: RawTrophy[], mine: RawTrophy[]): PsnTrophy[
 			rate: own.trophyEarnedRate && Number.isFinite(rate) ? rate : null,
 		})
 	}
-	return out.sort((a, b) => GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade) || b.earnedAt.localeCompare(a.earnedAt))
+	const rank = (grade: TrophyGrade | null): number => grade ? GRADE_ORDER.indexOf(grade) : GRADE_ORDER.length
+	return out.sort((a, b) => rank(a.grade) - rank(b.grade) || b.earnedAt.localeCompare(a.earnedAt))
 }
 
 // Sony reads only a full tag ("ru-RU", not "ru") and only home regions ("ru-PH" falls back to English).

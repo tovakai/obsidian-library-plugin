@@ -169,6 +169,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'header.episodeList': 'Episodes',
 		'header.chapters': 'Chapters',
 		'header.trophies': 'Trophies',
+		'header.achievements': 'Achievements',
 		'header.trophyRate': '{rate}% of players',
 		'header.chapter': 'Chapter {number}',
 		'header.addChapters': 'Add chapters',
