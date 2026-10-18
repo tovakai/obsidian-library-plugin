@@ -31,8 +31,9 @@ export function signedInAt(site: WatchSite, url: string): string | null {
 }
 
 // Runs `code` in a hidden webview opened at `url` on the sign-in partition and
-// returns its string answer; '' when the page does not load in time.
-export async function readPage(url: string, code: string, timeout = 30000): Promise<string> {
+// returns its string answer; '' when the page does not load in time. `ready`
+// skips pages that reload into the real one, like a bot check.
+export async function readPage(url: string, code: string, timeout = 30000, ready = 'true'): Promise<string> {
 	const doc = activeDocument
 	const win = doc.win as Window & { createEl: typeof createEl }
 	const view = win.createEl('webview' as keyof HTMLElementTagNameMap, {
@@ -44,7 +45,15 @@ export async function readPage(url: string, code: string, timeout = 30000): Prom
 	try {
 		await new Promise<void>((resolve, reject) => {
 			const timer = window.setTimeout(() => reject(new Error('timeout')), timeout)
-			view.addEventListener('dom-ready', () => { window.clearTimeout(timer); resolve() }, { once: true })
+			const check = (): void => {
+				void guest.executeJavaScript(ready).catch(() => false).then(ok => {
+					if (!ok) return
+					window.clearTimeout(timer)
+					view.removeEventListener('dom-ready', check)
+					resolve()
+				})
+			}
+			view.addEventListener('dom-ready', check)
 		})
 		let timer = 0
 		const answer = await Promise.race([
@@ -185,7 +194,7 @@ export interface WatchHistory {
 
 // Rated titles, rated episodes and the watchlist; null when the site does not answer.
 export async function imdbHistory(): Promise<WatchHistory | 'signed-out' | null> {
-	const answer = await readPage('https://www.imdb.com/', IMDB_READ, 120000)
+	const answer = await readPage('https://www.imdb.com/', IMDB_READ, 120000, "!!document.getElementById('__NEXT_DATA__')")
 	if (answer === 'signed-out') return answer
 	try {
 		const data = JSON.parse(answer) as { rated?: ImdbNode[]; listed?: { title: ImdbNode; added: string }[] }
@@ -200,7 +209,7 @@ async function imdbAsk<T>(query: string): Promise<T | null> {
 	const code = `window.fetch('https://api.graphql.imdb.com/', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: ${JSON.stringify(JSON.stringify({ query }))} }).then(r => r.ok ? r.text() : '').catch(() => '')`
 	try {
 		// Any page of the site carries the cookies; robots.txt loads fastest.
-		const answer = JSON.parse(await readPage('https://www.imdb.com/robots.txt', code)) as { data?: T; errors?: unknown[] }
+		const answer = JSON.parse(await readPage('https://www.imdb.com/robots.txt', code, 30000, "document.contentType === 'text/plain'")) as { data?: T; errors?: unknown[] }
 		return answer.errors?.length ? null : answer.data ?? null
 	} catch {
 		return null

@@ -1341,7 +1341,9 @@ export default class LibraryPlugin extends Plugin {
 		if (existing) {
 			this.watchNotes.set(key, existing)
 			const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
-			const rate = title.rating !== null && isEmptyValue(fm?.['My Rating'])
+			const seen = this.settings.imdbEcho[title.id]
+			const rerated = !!seen && seen.r > 0 && title.rating !== null && Math.round(title.rating) !== seen.r && Math.round(Number(toStr(fm?.['My Rating']))) === seen.r
+			const rate = title.rating !== null && (isEmptyValue(fm?.['My Rating']) || rerated)
 			const finish = title.kind === 'movie' && watched && fm?.Complete !== true
 			const link = !!title.netflixId && (toStr(fm?.['Netflix ID']) !== String(title.netflixId) || toStrArray(fm?.Platforms).indexOf('Netflix') < 0)
 			this.noteImdbHas(title)
