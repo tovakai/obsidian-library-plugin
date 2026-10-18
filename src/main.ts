@@ -53,6 +53,8 @@ import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRed
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { LibraryBlock } from './libraryBlock'
+import { TraktLoginModal } from './ui/traktLoginModal'
+import { refreshTraktTokens, traktChanges, traktData, traktExpired, traktHistory, traktSend, type TraktEcho } from './trakt'
 import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
 import { cleanPsnName, exchangePsnCode, psnEarnedTrophies, psnExpired, psnLanguage, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophy, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
@@ -183,11 +185,14 @@ export default class LibraryPlugin extends Plugin {
 	private linkTimers = new Map<string, number>()
 	private malPushTimers = new Map<string, number>()
 	private imdbPushTimers = new Map<string, number>()
+	private traktPushTimers = new Map<string, number>()
+	private traktPushing = false
 	private kitsuPushTimers = new Map<string, number>()
 	private kitsuImporting = false
 	// our own Kitsu write coming back: no echo push
 	private kitsuPushing = false
 	private kitsuRefreshing: Promise<string | null> | null = null
+	private traktRefreshing: Promise<string | null> | null = null
 	private watchPushing = false
 	private enrichTimer: number | null = null
 	private enrichSleepTimer: number | null = null
@@ -282,6 +287,7 @@ export default class LibraryPlugin extends Plugin {
 						void this.kitsuPush(file)
 					}, 800))
 					this.armImdbPush(file)
+					this.armTraktPush(file)
 				})
 			)
 			this.refreshBanner()
@@ -295,6 +301,8 @@ export default class LibraryPlugin extends Plugin {
 			this.registerInterval(window.setInterval(() => this.watchSyncTick(), 3600000))
 			this.registerInterval(window.setTimeout(() => void this.airingIfDue(), 30000))
 			this.registerInterval(window.setTimeout(() => this.coverSweep(), 20000))
+			// notes not yet on Trakt, e.g. a pass cut short by a restart
+			this.registerInterval(window.setTimeout(() => void this.traktBackfill(), 90000))
 			this.registerInterval(window.setInterval(() => void this.airingIfDue(), 3600000))
 			this.registerInterval(window.setInterval(() => this.gameSyncTick(), 3600000))
 		})
@@ -436,6 +444,12 @@ export default class LibraryPlugin extends Plugin {
 		})
 
 		this.addCommand({
+			id: 'trakt-import',
+			name: tr('cmd.traktImport'),
+			callback: () => { void this.traktImport(true) }
+		})
+
+		this.addCommand({
 			id: 'kitsu-import',
 			name: tr('cmd.kitsuImport'),
 			callback: () => { void this.kitsuImport(true) }
@@ -467,6 +481,8 @@ export default class LibraryPlugin extends Plugin {
 		for (const timer of this.malPushTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.imdbPushTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.kitsuPushTimers.values()) window.clearTimeout(timer)
+		for (const timer of this.traktPushTimers.values()) window.clearTimeout(timer)
+		this.traktPushTimers.clear()
 		this.refreshTimer = null
 		this.bannerTimer = null
 		this.linkTimers.clear()
@@ -1360,16 +1376,13 @@ export default class LibraryPlugin extends Plugin {
 		if (existing) {
 			this.watchNotes.set(key, existing)
 			const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
-			const seen = this.settings.imdbEcho[title.id]
+			const seen = (title.trakt ? this.settings.traktEcho : this.settings.imdbEcho)[title.id]
 			const rerated = !!seen && seen.r > 0 && title.rating !== null && Math.round(title.rating) !== seen.r && Math.round(Number(toStr(fm?.['My Rating']))) === seen.r
 			const rate = title.rating !== null && (isEmptyValue(fm?.['My Rating']) || rerated)
 			const finish = title.kind === 'movie' && watched && fm?.Complete !== true
 			const link = !!title.netflixId && (toStr(fm?.['Netflix ID']) !== String(title.netflixId) || toStrArray(fm?.Platforms).indexOf('Netflix') < 0)
 			this.noteImdbHas(title)
-			if (title.listed && (title.watched || (fm && this.isStarted(fm))) && await imdbWatchlistRemove(title.id)) {
-				const echo = this.settings.imdbEcho[title.id]
-				if (echo) echo.l = false
-			}
+			if (title.listed && (title.watched || (fm && this.isStarted(fm)))) await this.unlist(title)
 			if (!rate && !finish && !link) return null
 			await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
 				if (rate) current['My Rating'] = title.rating
@@ -1400,17 +1413,34 @@ export default class LibraryPlugin extends Plugin {
 		const file = await this.newNote(category, provider.id, sourceId, name, meta ?? { fields: { Name: title.name, Year: title.year }, progressTotal: null, imdbId: null }, extra)
 		this.watchNotes.set(key, file)
 		this.noteImdbHas(title)
-		if (title.listed && title.watched && await imdbWatchlistRemove(title.id)) {
-			const echo = this.settings.imdbEcho[title.id]
-			if (echo) echo.l = false
-		}
+		if (title.listed && title.watched) await this.unlist(title)
 		return 'created'
+	}
+
+	// A watched title leaves the watchlist of the site it came from.
+	private async unlist(title: WatchedTitle): Promise<void> {
+		let done = false
+		if (title.trakt) {
+			const token = await this.traktToken()
+			done = !!token && await traktSend(token, title.id, title.kind, { rating: null, list: false, movieWatched: false, episodes: [], episodeRatings: [] })
+		} else {
+			done = await imdbWatchlistRemove(title.id)
+		}
+		const echo = (title.trakt ? this.settings.traktEcho : this.settings.imdbEcho)[title.id]
+		if (done && echo) echo.l = false
 	}
 
 	// What came from a site need not go back to it.
 	private noteImdbHas(title: WatchedTitle): void {
 		if (title.netflixId && title.rating !== null) this.settings.netflixEcho[String(title.netflixId)] = thumbRank(title.rating)
 		if (!/^tt\d+$/.test(title.id)) return
+		if (title.trakt) {
+			const echo = this.settings.traktEcho[title.id] ?? (this.settings.traktEcho[title.id] = { r: 0 })
+			if (title.rating !== null) echo.r = Math.round(title.rating)
+			if (title.listed) echo.l = true
+			if (title.kind === 'movie' && title.watched) echo.m = true
+			return
+		}
 		const echo = this.settings.imdbEcho[title.id] ?? (this.settings.imdbEcho[title.id] = { r: 0 })
 		if (title.rating !== null) echo.r = Math.round(title.rating)
 		if (title.listed) echo.l = true
@@ -1481,6 +1511,187 @@ export default class LibraryPlugin extends Plugin {
 		this.refreshBanner()
 	}
 
+	connectTrakt(): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
+			new TraktLoginModal(this.app, (tokens) => {
+				void (async () => {
+					if (tokens) {
+						this.settings.traktTokens = tokens
+						this.settings.traktEcho = {}
+						await this.saveSettings()
+						void this.traktImport(true)
+					}
+					resolve(tokens !== null)
+				})()
+			}).open()
+		})
+	}
+
+	async traktToken(): Promise<string | null> {
+		const tokens = this.settings.traktTokens
+		if (!tokens) return null
+		if (!traktExpired(tokens)) return tokens.access
+		if (!this.traktRefreshing) {
+			this.traktRefreshing = (async () => {
+				// refresh tokens are single-use: the new pair is saved at once
+				const next = await refreshTraktTokens(tokens.refresh)
+				if (!next) return Date.now() < tokens.expiresAt ? tokens.access : null
+				this.settings.traktTokens = next
+				await this.saveSettings()
+				return next.access
+			})().finally(() => { this.traktRefreshing = null })
+		}
+		return this.traktRefreshing
+	}
+
+	private async traktSyncIfDue(): Promise<void> {
+		// desktop only: two devices sharing a vault would make the same note twice
+		if (!Platform.isDesktopApp || !this.settings.traktTokens || Date.now() - this.settings.traktLastImport < 24 * 3600000) return
+		await this.traktImport(false)
+	}
+
+	// Trakt into Movies and Series: watched, rated and listed titles, ticked and scored episodes.
+	async traktImport(loud: boolean): Promise<void> {
+		if (this.watchImporting || !this.settings.traktTokens) return
+		this.watchImporting = true
+		try {
+			const token = await this.traktToken()
+			if (!token) { if (loud) new Notice(tr('notice.site.signedOut', { site: 'Trakt' })); return }
+			if (loud) new Notice(tr('notice.site.importing', { site: 'Trakt' }))
+			const data = await traktData(token)
+			if (!data) { if (loud) new Notice(tr('notice.site.failed', { site: 'Trakt' })); return }
+			const history = traktHistory(data)
+			let created = 0
+			let updated = 0
+			const count = (result: 'created' | 'updated' | null): void => {
+				if (result === 'created') created++
+				else if (result === 'updated') updated++
+			}
+			for (const title of history.titles) {
+				if (this.unloaded) return
+				try { count(await this.importWatched(title)) } catch (e) { console.error('Library: Trakt import error', title.name, e) }
+			}
+			const bySeries = new Map<string, { series: WatchedTitle; items: { season: number; episode: number; rating?: number }[] }>()
+			for (const [id, seen] of history.watched) {
+				bySeries.set(id, { series: seen.series, items: seen.episodes.map(key => ({ season: Number(key.split(':')[0]), episode: Number(key.split(':')[1]) })) })
+			}
+			for (const rated of history.episodes) {
+				const entry = bySeries.get(rated.series.id) ?? { series: { ...rated.series, trakt: true }, items: [] }
+				entry.items.push({ season: rated.season, episode: rated.episode, rating: rated.rating })
+				bySeries.set(rated.series.id, entry)
+			}
+			for (const { series, items } of bySeries.values()) {
+				if (this.unloaded) return
+				try { count(await this.traktEpisodes(series, items)) } catch (e) { console.error('Library: Trakt episode import error', series.name, e) }
+			}
+			this.settings.traktLastImport = Date.now()
+			await this.saveSettings()
+			if (loud || created > 0 || updated > 0) new Notice(tr('notice.site.imported', { site: 'Trakt', created, updated }))
+		} finally {
+			this.watchImporting = false
+			this.watchNotes.clear()
+		}
+		void this.traktBackfill()
+	}
+
+	// Ticks and scores a series note's episodes from Trakt; the note is made if missing.
+	private async traktEpisodes(series: WatchedTitle, items: { season: number; episode: number; rating?: number }[]): Promise<'created' | 'updated' | null> {
+		let file = this.noteOfImdb(series.id, 'series')
+		const made = !file && await this.importWatched(series) === 'created'
+		file = file ?? this.watchNotes.get(`series:${series.id}`) ?? null
+		if (!file) return null
+		const echo = this.settings.traktEcho[series.id] ?? (this.settings.traktEcho[series.id] = { r: 0 })
+		const seen = new Set(echo.w ?? [])
+		let changed = false
+		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+			for (const item of items) {
+				const key = `${String(item.season)}:${String(item.episode)}`
+				const seasons = seasonsOf(fm)
+				const index = seasonIndex(seasons.map(s => s.name), item.season)
+				const episode = seasons[index]?.episodes[item.episode - 1]
+				seen.add(key)
+				if (item.rating) echo.e = { ...echo.e, [key]: Math.round(item.rating) }
+				if (!episode) continue
+				if (!episode.watched) { applyEpisodeChange(fm, { season: index, episode: item.episode - 1, watched: true }); changed = true }
+				if (item.rating && episode.rating === null) { applyEpisodeChange(fm, { season: index, episode: item.episode - 1, rating: item.rating }); changed = true }
+			}
+		})
+		echo.w = [...seen]
+		return made ? 'created' : changed ? 'updated' : null
+	}
+
+	// What a note says Trakt should hold: IMDb's wants plus ticked episodes and a finished movie.
+	private traktWanted(fm: Record<string, unknown>): TraktEcho {
+		const base = this.imdbWanted(fm)
+		const w: string[] = []
+		const kind = this.kindOf(fm)
+		if (kind === 'series') {
+			const seasons = seasonsOf(fm)
+			const names = seasons.map(s => s.name)
+			seasons.forEach((season, index) => {
+				const numbered = Number(/\d+/.exec(season.name)?.[0])
+				const number = seasonIndex(names, numbered) === index ? numbered : index + 1
+				season.episodes.forEach((episode, at) => {
+					if (episode.watched) w.push(`${String(number)}:${String(at + 1)}`)
+				})
+			})
+		}
+		return { r: base.r, l: base.l, e: base.e, w, m: kind === 'movie' && isFinished(fm, 'movie') }
+	}
+
+	// Library to Trakt: a new score, a new unwatched title (watchlist), ticked episodes, episode scores.
+	private async traktPush(file: TFile): Promise<void> {
+		if (!this.settings.traktTokens) return
+		// Trakt is plain HTTP: it waits only for its own import and pushes, never for IMDb's page
+		if (this.watchImporting || this.traktPushing) { this.armTraktPush(file); return }
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const id = fm && !isTemplateFile(file.path) ? this.imdbIdOf(fm) : null
+		if (!fm || !id) return
+		const kind = this.kindOf(fm) === 'movie' ? 'movie' : 'series'
+		const want = this.traktWanted(fm)
+		const had: TraktEcho = this.settings.traktEcho[id] ?? { r: 0 }
+		const change = traktChanges(want, had, kind)
+		if (change.rating === null && change.list === null && !change.movieWatched && change.episodes.length === 0 && change.episodeRatings.length === 0) return
+		const token = await this.traktToken()
+		if (!token) return
+		this.traktPushing = true
+		try {
+			if (!await traktSend(token, id, kind, change)) return
+			this.settings.traktEcho[id] = {
+				r: change.rating ?? had.r,
+				l: change.list === null ? had.l : change.list,
+				m: !!had.m || change.movieWatched,
+				w: [...new Set([...(had.w ?? []), ...(want.w ?? [])])],
+				e: { ...had.e, ...want.e },
+			}
+			await this.persistSettings()
+		} finally {
+			this.traktPushing = false
+		}
+	}
+
+	private armTraktPush(file: TFile): void {
+		if (this.unloaded || !this.settings.traktTokens) return
+		const existing = this.traktPushTimers.get(file.path)
+		if (existing) window.clearTimeout(existing)
+		this.traktPushTimers.set(file.path, window.setTimeout(() => {
+			this.traktPushTimers.delete(file.path)
+			void this.traktPush(file)
+		}, 1500))
+	}
+
+	// Older notes reach Trakt one at a time in the background.
+	private async traktBackfill(): Promise<void> {
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (this.unloaded || !this.settings.traktTokens) return
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			const id = fm && !isTemplateFile(file.path) ? this.imdbIdOf(fm) : null
+			if (!id || this.settings.traktEcho[id]) continue
+			await this.traktPush(file)
+			await this.pause(1500)
+		}
+	}
+
 	private async watchSyncIfDue(site: WatchSite): Promise<void> {
 		const state = this.settings.watchSites[site]
 		if (!Platform.isDesktopApp || !state.connected || Date.now() - state.lastImport < 24 * 3600000) return
@@ -1488,7 +1699,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private watchSyncTick(): void {
-		void this.watchSyncIfDue('imdb').then(() => this.watchSyncIfDue('netflix')).catch((e: unknown) => console.error('Library: watch sync error', e))
+		void this.watchSyncIfDue('imdb').then(() => this.watchSyncIfDue('netflix')).then(() => this.traktSyncIfDue()).catch((e: unknown) => console.error('Library: watch sync error', e))
 	}
 
 	// Nintendo: consent first — a third-party signing service carries the requests
@@ -2312,6 +2523,7 @@ export default class LibraryPlugin extends Plugin {
 		if (this.settings.malTokens) await this.malImport(true)
 		if (this.settings.anilistToken.trim()) await this.anilistImport(true)
 		if (this.settings.kitsuTokens) await this.kitsuImport(true)
+		if (this.settings.traktTokens) await this.traktImport(true)
 		if (this.settings.psnTokens) await this.psnImport(true)
 		if (this.settings.steamId.trim()) await this.steamImport(true)
 		if (this.settings.nintendoTokens) await this.nintendoImport(true)
@@ -2338,6 +2550,7 @@ export default class LibraryPlugin extends Plugin {
 			if (netflixId) netflix.add(netflixId)
 		}
 		for (const id of Object.keys(this.settings.imdbEcho)) if (!imdb.has(id)) delete this.settings.imdbEcho[id]
+		for (const id of Object.keys(this.settings.traktEcho)) if (!imdb.has(id)) delete this.settings.traktEcho[id]
 		for (const id of Object.keys(this.settings.netflixEcho)) if (!netflix.has(id)) delete this.settings.netflixEcho[id]
 	}
 
@@ -3557,6 +3770,10 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.showComingSoon !== 'boolean') this.settings.showComingSoon = true
 		if (typeof this.settings.localCovers !== 'boolean') this.settings.localCovers = false
+		const trakt = this.settings.traktTokens
+		if (trakt && (typeof trakt.access !== 'string' || typeof trakt.refresh !== 'string' || typeof trakt.expiresAt !== 'number')) this.settings.traktTokens = null
+		if (!this.settings.traktEcho || typeof this.settings.traktEcho !== 'object') this.settings.traktEcho = {}
+		if (typeof this.settings.traktLastImport !== 'number') this.settings.traktLastImport = 0
 		if (typeof this.settings.comingSoonCollapsed !== 'boolean') this.settings.comingSoonCollapsed = false
 		if (!this.settings.airing || typeof this.settings.airing !== 'object' || Object.values(this.settings.airing).some(value => !Array.isArray(value))) {
 			this.settings.airing = {}

@@ -1,6 +1,7 @@
 import type { ContentType } from './providers/types'
 import type { MalTokens } from './malSync'
 import type { KitsuTokens } from './kitsuSync'
+import type { TraktEcho, TraktTokens } from './trakt'
 import type { PsnStats, PsnTokens } from './psn'
 import type { NintendoStats, NintendoTokens } from './nintendo'
 import type { ImdbEcho, WatchSite } from './watchSites'
@@ -396,6 +397,13 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'filter.clear': 'Clear filters',
 		'header.nextEpisode': 'Next episode',
 		'block.empty': 'Nothing here yet',
+		'settings.trakt.desc': 'Watch history, ratings and watchlist come in as notes; scores, ticked episodes and new titles go back.',
+		'trakt.loginTitle': 'Sign in to Trakt',
+		'trakt.code': 'On trakt.tv/activate, enter this code:',
+		'trakt.open': 'Open trakt.tv',
+		'trakt.waiting': 'Waiting for you to approve on Trakt…',
+		'trakt.expired': 'The code expired. Close this window and connect again.',
+		'cmd.traktImport': 'Import from Trakt',
 		'settings.localCovers.name': 'Keep covers in the vault',
 		'settings.localCovers.desc': 'Downloads cover images into a Covers folder in the library folder, so the library shows them offline. The note then links the file.',
 		'settings.comingSoon.name': 'Soon',
@@ -28770,6 +28778,9 @@ export interface ILibrarySettings {
 	malLastImport: number
 	anilistLastImport: number
 	kitsuTokens: KitsuTokens | null
+	traktTokens: TraktTokens | null
+	traktEcho: Record<string, TraktEcho>
+	traktLastImport: number
 	// Last pushed progress/rating per note; the auto-push skips notes still showing them.
 	kitsuEcho: Record<string, { p: string; r: number }>
 	kitsuLastImport: number
@@ -28832,6 +28843,9 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	malLastImport: 0,
 	anilistLastImport: 0,
 	kitsuTokens: null,
+	traktTokens: null,
+	traktEcho: {},
+	traktLastImport: 0,
 	kitsuEcho: {},
 	kitsuLastImport: 0,
 	malMangaType: '',

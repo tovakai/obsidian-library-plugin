@@ -83,6 +83,8 @@ export interface WatchedTitle {
 	watched: boolean
 	netflixId?: number
 	listed?: boolean
+	// From Trakt: its echo and watchlist, not IMDb's.
+	trakt?: boolean
 }
 
 const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']

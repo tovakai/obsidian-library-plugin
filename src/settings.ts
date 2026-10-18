@@ -278,6 +278,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				rows: [
 					{ name: "IMDb", desc: tr("settings.imdb.desc"), render: (row) => this.siteAccount(row, "imdb") },
 					{ name: "Netflix", desc: tr("settings.netflix.desc"), render: (row) => this.siteAccount(row, "netflix") },
+					{ name: "Trakt", desc: tr("settings.trakt.desc"), render: (row) => this.traktAccount(row) },
 				],
 			},
 			{
@@ -468,6 +469,30 @@ export class LibrarySettingTab extends PluginSettingTab {
 				} else {
 					// desktop opens the real Kitsu site; the plain form is the mobile path
 					await this.plugin.connectKitsu();
+				}
+				this.refresh();
+			});
+		});
+	}
+
+	private traktAccount(row: Setting): void {
+		const connected = this.plugin.settings.traktTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-trakt" });
+		icon.appendChild(platformMark("trakt"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.traktTokens = null;
+					this.plugin.settings.traktEcho = {};
+					await this.plugin.saveSettings();
+				} else {
+					await this.plugin.connectTrakt();
 				}
 				this.refresh();
 			});
