@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian'
 import { airingLabel, type Airing } from './airing'
 import type LibraryPlugin from './main'
+import { categoryLabel } from './categories'
 import { RATING_RT_ICON, type ICategory, type IStatsTop } from './constants'
 import type { ContentType } from './providers/types'
 import { formatNumber, tr, trCount } from './i18n'
@@ -271,7 +272,7 @@ export class LibraryView extends ItemView {
 			const color = TIME_COLORS[cat.contentType]
 			if (!color) continue
 			const minutes = timeMinutes.get(cat.name) || 0
-			if (minutes > 0) time.push({ name: cat.name, minutes, color })
+			if (minutes > 0) time.push({ name: categoryLabel(cat), minutes, color })
 		}
 
 		return { columns, time, undated }
@@ -512,7 +513,7 @@ export class LibraryView extends ItemView {
 			rendered++
 			const chosen = settings.filterState[category.name] ?? {}
 			this.renderSection(root, {
-				title: category.name,
+				title: categoryLabel(category),
 				sortId: category.name,
 				defaultSort: { key: 'name', asc: true },
 				kind: category.contentType,
@@ -554,19 +555,19 @@ export class LibraryView extends ItemView {
 				setCollapsed: (collapsed) => { settings.upNextCollapsed = collapsed }
 			}, shown)
 			upNextEl.addClass('library-up-next')
-			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen)
+			if (names.length > 1) this.upNextFilter(upNextEl, names, chosen, name => { const cat = settings.categories.find(c => c.name === name); return cat ? categoryLabel(cat) : name })
 			rendered++
 		}
 		if (rendered === 0) root.createEl('p', { text: tr('view.empty') })
 		root.scrollTop = scrollTop
 	}
 
-	private upNextFilter(section: HTMLElement, names: string[], chosen: string): void {
+	private upNextFilter(section: HTMLElement, names: string[], chosen: string, label: (name: string) => string): void {
 		const row = createDiv({ cls: 'library-filter', attr: { role: 'group', 'aria-label': tr('upNext.title') } })
 		for (const name of ['', ...names]) {
 			const button = row.createEl('button', {
 				cls: 'library-filter-item',
-				text: name || tr('filter.all'),
+				text: name ? label(name) : tr('filter.all'),
 				attr: { 'aria-pressed': name === chosen ? 'true' : 'false' }
 			})
 			if (name === chosen) button.addClass('is-active')

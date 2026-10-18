@@ -19,6 +19,10 @@ export function isBuiltInCategory(cat: ICategory): boolean {
 	return cat.contentType !== 'manual' && cat.typeValue === TYPE_DEFAULTS[cat.contentType]
 }
 
+export function categoryLabel(cat: ICategory): string {
+	return isBuiltInCategory(cat) ? tr(`settings.default.${cat.contentType}`) : cat.name
+}
+
 export function isDefaultTypeValue(value: string): boolean {
 	return Object.values(TYPE_DEFAULTS).includes(value)
 }

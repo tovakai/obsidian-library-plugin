@@ -205,7 +205,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'settings.category.template.desc': 'New notes start as a copy of this note, with its properties and text. The plugin fills only the fields it leaves empty.',
 		'settings.category.template.placeholder': 'e.g. Templates/Movie',
 		'notice.templateMissing': 'Template not found: {path}',
-		'settings.category.manual': 'Manual · no source',
+		'settings.category.manual': 'Custom · no source',
 		'settings.category.type': 'Type value',
 		'settings.category.drag': 'Drag to reorder',
 		'settings.category.up': 'Move up',
@@ -219,7 +219,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'settings.default.game': 'Games',
 		'settings.default.music': 'Music',
 		'settings.default.anime': 'Anime',
-		'settings.default.manual': 'Manual',
+		'settings.default.manual': 'Custom',
 		'settings.section.example': 'Example note',
 		'settings.example.desc':
 			'To include a note in a category, set the Type field in frontmatter.',

@@ -37,7 +37,7 @@ import { isContentType } from './providers/types'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './providers/types'
 import { PickTypeModal, type AddChoice } from './ui/pickTypeModal'
 import { ConfirmModal } from './ui/confirmModal'
-import { MEDIA, TYPE_DEFAULTS, addCategoryTop, isBuiltInCategory, cleanFolder, inferLibraryFolder, isInside, joinFolder, newCategory, parentFolder } from './categories'
+import { MEDIA, TYPE_DEFAULTS, addCategoryTop, categoryLabel, isBuiltInCategory, cleanFolder, inferLibraryFolder, isInside, joinFolder, newCategory, parentFolder } from './categories'
 import { AddContentModal } from './ui/addContentModal'
 import { LibrarySearchModal } from './ui/librarySearchModal'
 import { PromptModal } from './ui/promptModal'
@@ -575,7 +575,7 @@ export default class LibraryPlugin extends Plugin {
 		this.settings.categories.push(category)
 		addCategoryTop(this.settings, category.typeValue)
 		await this.saveSettings()
-		new Notice(tr('notice.categoryCreated', { name: category.name }))
+		new Notice(tr('notice.categoryCreated', { name: categoryLabel(category) }))
 		return category
 	}
 
@@ -2357,7 +2357,7 @@ export default class LibraryPlugin extends Plugin {
 				this.settings.categories.push(category)
 				addCategoryTop(this.settings, category.typeValue)
 				await this.saveSettings()
-				new Notice(tr('notice.categoryCreated', { name: category.name }))
+				new Notice(tr('notice.categoryCreated', { name: categoryLabel(category) }))
 			}
 		}
 		const notes = this.app.vault.getMarkdownFiles().filter(file =>

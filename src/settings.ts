@@ -15,7 +15,7 @@ import type { ICategory, IStatsTop } from "./constants";
 import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
 import { isContentType, type ContentType } from "./providers/types";
 import type { WatchSite } from "./watchSites";
-import { TYPE_DEFAULTS, addCategoryTop, cleanFolder, isBuiltInCategory, isDefaultTypeValue, newCategory } from "./categories";
+import { TYPE_DEFAULTS, addCategoryTop, categoryLabel, cleanFolder, isBuiltInCategory, isDefaultTypeValue, newCategory } from "./categories";
 import { tr } from "./i18n";
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, tokenFromInput } from "./anilistSync";
 import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malClientPair } from "./malSync";
@@ -555,7 +555,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 	}
 
 	private categoryRows(cat: ICategory, index: number): Row[] {
-		const label = (): string => cat.name || tr("settings.category.name", { index: index + 1 });
+		const label = (): string => categoryLabel(cat) || tr("settings.category.name", { index: index + 1 });
 		const unfolded = (): boolean => this.expanded.has(cat);
 		const builtIn = isBuiltInCategory(cat);
 		const rows: Row[] = [
