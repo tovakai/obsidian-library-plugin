@@ -640,10 +640,11 @@ export class LibraryView extends ItemView {
 
 	private renderSection(root: HTMLElement, spec: SectionSpec, cards: CardData[]): HTMLElement {
 		const section = root.createDiv({ cls: 'library-section' })
-		section.createEl('h2', { text: spec.title })
+		const heading = section.createDiv({ cls: 'library-section-heading' })
+		heading.createEl('h2', { text: spec.title })
 
 		const toolbar = section.createDiv({ cls: 'library-toolbar' })
-		const collapseBtn = toolbar.createEl('button', {
+		const collapseBtn = heading.createEl('button', {
 			cls: 'library-collapse-btn',
 			text: '▼',
 			attr: { 'aria-label': spec.title, 'aria-expanded': 'true' }
@@ -766,9 +767,9 @@ export class LibraryView extends ItemView {
 		if (soon.length === 0) return
 		const settings = this.plugin.settings
 		const section = root.createDiv({ cls: 'library-section library-coming-soon' })
-		section.createEl('h2', { text: tr('soon.title') })
-		const toolbar = section.createDiv({ cls: 'library-toolbar' })
-		const collapseBtn = toolbar.createEl('button', { cls: 'library-collapse-btn', text: '▼', attr: { 'aria-label': tr('soon.title'), 'aria-expanded': 'true' } })
+		const heading = section.createDiv({ cls: 'library-section-heading' })
+		heading.createEl('h2', { text: tr('soon.title') })
+		const collapseBtn = heading.createEl('button', { cls: 'library-collapse-btn', text: '▼', attr: { 'aria-label': tr('soon.title'), 'aria-expanded': 'true' } })
 		const list = section.createDiv({ cls: 'library-soon-list' })
 		for (const { card, airing } of soon) {
 			const row = list.createDiv({ cls: 'library-soon-row' })
