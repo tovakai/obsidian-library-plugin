@@ -28065,7 +28065,7 @@ export interface ILibrarySettings {
 	showUpNext: boolean
 	showComingSoon: boolean
 	comingSoonCollapsed: boolean
-	airing: Record<string, Airing>
+	airing: Record<string, Airing[]>
 	airingChecked: number
 	upNextCollapsed: boolean
 	// Category Up next shows, by name; empty = all.

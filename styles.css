@@ -1484,3 +1484,13 @@ sort trigger, the chosen one in the accent colour. */
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
+
+.note-header-episode.is-upcoming .note-header-episode-name {
+	color: var(--text-muted);
+}
+
+.note-header-episode-date {
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}

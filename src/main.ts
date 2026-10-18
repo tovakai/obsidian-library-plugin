@@ -50,7 +50,7 @@ import { ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamSess
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
-import { airingLabel, nextAnimeEpisodes, nextSeriesEpisode, type Airing } from './airing'
+import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
 import { cleanPsnName, exchangePsnCode, psnExpired, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
 import { KitsuLoginModal } from './ui/kitsuLoginModal'
@@ -1410,10 +1410,14 @@ export default class LibraryPlugin extends Plugin {
 		return ids.anilist !== null ? `anilist:${String(ids.anilist)}` : `mal:${String(ids.mal)}`
 	}
 
-	airingFor(fm: Record<string, unknown>): Airing | null {
+	airingDates(fm: Record<string, unknown>): Airing[] {
 		const key = this.airingKey(fm)
-		const airing = key ? this.settings.airing[key] : undefined
-		return airing && airing.at > Date.now() ? airing : null
+		const now = Date.now()
+		return (key ? this.settings.airing[key] ?? [] : []).filter(airing => airing.at > now)
+	}
+
+	airingFor(fm: Record<string, unknown>): Airing | null {
+		return this.airingDates(fm)[0] ?? null
 	}
 
 	private airingWatched(fm: Record<string, unknown>): boolean {
@@ -1423,7 +1427,7 @@ export default class LibraryPlugin extends Plugin {
 
 	private async airingIfDue(): Promise<void> {
 		if (this.unloaded || Date.now() - this.settings.airingChecked < 12 * 3600000) return
-		const next: Record<string, Airing> = {}
+		const next: Record<string, Airing[]> = {}
 		const anilist: number[] = []
 		const mal: number[] = []
 		for (const file of this.app.vault.getMarkdownFiles()) {
@@ -1435,12 +1439,12 @@ export default class LibraryPlugin extends Plugin {
 			else if (key.startsWith('mal:')) mal.push(Number(key.slice(4)))
 			else {
 				if (this.unloaded) return
-				const found = await nextSeriesEpisode(key)
+				const found = await seriesSchedule(key)
 				const kept = found === undefined ? this.settings.airing[key] : found
-				if (kept) next[key] = kept
+				if (kept && kept.length > 0) next[key] = kept
 			}
 		}
-		const anime = await nextAnimeEpisodes({ anilist, mal })
+		const anime = await animeSchedules({ anilist, mal })
 		if (this.unloaded) return
 		if (anime) {
 			for (const [id, airing] of anime.anilist) next[`anilist:${String(id)}`] = airing
@@ -3206,6 +3210,14 @@ export default class LibraryPlugin extends Plugin {
 		if (seasons.length === 0) return
 		const open = this.openSeasons.get(file.path) ?? new Set<number>()
 		this.openSeasons.set(file.path, open)
+		const airs = new Map<string, number>()
+		if (!book) {
+			const names = seasons.map(season => season.name)
+			for (const airing of this.airingDates(fm)) {
+				const index = airing.s === null ? (seasons.length === 1 ? 0 : -1) : seasonIndex(names, airing.s)
+				if (index >= 0) airs.set(`${String(index)}:${String(airing.e - 1)}`, airing.at)
+			}
+		}
 		const change = (c: EpisodeChange): void => { if (kind) void this.changeEpisodes(file, c, kind) }
 
 		const block = createDiv()
@@ -3279,6 +3291,11 @@ export default class LibraryPlugin extends Plugin {
 				const number = String(e + 1)
 				label.setText(episode.title ? `${number}. ${episode.title}` : tr(book ? 'header.chapter' : 'header.episode', { number }))
 				item.appendChild(label)
+				const at = airs.get(`${String(index)}:${String(e)}`)
+				if (at !== undefined) {
+					item.classList.add('is-upcoming')
+					item.createDiv({ cls: 'note-header-episode-date', text: airingDate(at) })
+				}
 				item.appendChild(this.ratingInput(episode.rating, false, (rating) => change({ season: index, episode: e, rating })))
 				list.appendChild(item)
 			})
@@ -3372,7 +3389,10 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.showComingSoon !== 'boolean') this.settings.showComingSoon = true
 		if (typeof this.settings.comingSoonCollapsed !== 'boolean') this.settings.comingSoonCollapsed = false
-		if (!this.settings.airing || typeof this.settings.airing !== 'object') this.settings.airing = {}
+		if (!this.settings.airing || typeof this.settings.airing !== 'object' || Object.values(this.settings.airing).some(value => !Array.isArray(value))) {
+			this.settings.airing = {}
+			this.settings.airingChecked = 0
+		}
 		if (typeof this.settings.airingChecked !== 'number') this.settings.airingChecked = 0
 		if (typeof this.settings.upNextCategory !== 'string') this.settings.upNextCategory = ''
 		if (typeof this.settings.steamLastImport !== 'number') this.settings.steamLastImport = 0
