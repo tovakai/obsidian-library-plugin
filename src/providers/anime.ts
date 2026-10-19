@@ -1,6 +1,8 @@
 import { requestUrl } from 'obsidian'
 import { MalProvider } from './mal'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
+import type { ILibrarySettings } from '../constants'
+import { pickTitle } from '../util'
 
 interface AniListMedia {
 	id: number
@@ -39,6 +41,8 @@ export class AnimeProvider implements ContentProvider {
 
 	private static readonly ENDPOINT = 'https://graphql.anilist.co'
 
+	constructor(private prefs: () => Pick<ILibrarySettings, 'titleLanguage' | 'adultTitles'>) {}
+
 	private async gql<T>(query: string, variables: Record<string, unknown>): Promise<T | null> {
 		const resp = await requestUrl({
 			url: AnimeProvider.ENDPOINT,
@@ -52,7 +56,7 @@ export class AnimeProvider implements ContentProvider {
 	}
 
 	private title(media: AniListMedia): string {
-		return media.title.english ?? media.title.romaji ?? media.title.native ?? ''
+		return pickTitle(media.title, this.prefs().titleLanguage)
 	}
 
 	private cover(media: AniListMedia): string | null {
@@ -69,7 +73,7 @@ export class AnimeProvider implements ContentProvider {
 
 	async search(query: string): Promise<SearchResult[]> {
 		try {
-			const q = `query ($s: String) { Page(perPage: 20) { media(search: $s, type: ANIME, sort: SEARCH_MATCH) { ${MEDIA_FIELDS} } } }`
+			const q = `query ($s: String) { Page(perPage: 20) { media(search: $s, type: ANIME, sort: SEARCH_MATCH${this.prefs().adultTitles ? '' : ', isAdult: false'}) { ${MEDIA_FIELDS} } } }`
 			const json = await this.gql<AniListSearchResponse>(q, { s: query })
 			const media = json?.data?.Page?.media ?? []
 			return media.map((m) => ({

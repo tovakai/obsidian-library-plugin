@@ -231,11 +231,11 @@ export default class LibraryPlugin extends Plugin {
 			new WikidataGameProvider()
 		))
 		this.registry.register(new DeezerProvider())
-		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(), new MalProvider(() => MAL_CLIENT_ID), new KitsuProvider()))
+		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(() => this.settings), new MalProvider(() => MAL_CLIENT_ID, () => this.settings), new KitsuProvider(() => this.settings)))
 		this.registry.register(new ComicsAggregatorProvider(
 			new ComicsProvider(() => this.settings.comicVineApiKey),
 			new WikidataComicProvider(),
-			new MangaProvider()
+			new MangaProvider(() => this.settings)
 		))
 		this.settingTab = new LibrarySettingTab(this.app, this)
 		this.addSettingTab(this.settingTab)
@@ -3841,6 +3841,8 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.upNextCollapsed !== 'boolean') this.settings.upNextCollapsed = false
 		if (typeof this.settings.showComingSoon !== 'boolean') this.settings.showComingSoon = true
 		if (typeof this.settings.localCovers !== 'boolean') this.settings.localCovers = false
+		if (!['english', 'romaji', 'native'].includes(this.settings.titleLanguage)) this.settings.titleLanguage = 'english'
+		if (typeof this.settings.adultTitles !== 'boolean') this.settings.adultTitles = false
 		const trakt = this.settings.traktTokens
 		if (trakt && (typeof trakt.access !== 'string' || typeof trakt.refresh !== 'string' || typeof trakt.expiresAt !== 'number')) this.settings.traktTokens = null
 		if (!this.settings.traktEcho || typeof this.settings.traktEcho !== 'object') this.settings.traktEcho = {}

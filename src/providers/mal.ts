@@ -1,5 +1,7 @@
 import { requestUrl } from 'obsidian'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
+import type { ILibrarySettings } from '../constants'
+import { pickTitle } from '../util'
 
 interface MalAnime {
 	id: number
@@ -29,7 +31,7 @@ export class MalProvider implements ContentProvider {
 
 	private getClientId: () => string
 
-	constructor(getClientId: () => string) {
+	constructor(getClientId: () => string, private prefs: () => Pick<ILibrarySettings, 'titleLanguage' | 'adultTitles'>) {
 		this.getClientId = getClientId
 	}
 
@@ -53,15 +55,16 @@ export class MalProvider implements ContentProvider {
 		return resp.status === 200 ? resp.json as T : null
 	}
 
-	// English title first, like AniList notes.
+	// MyAnimeList's main title is the romaji one.
 	private title(anime: MalAnime): string {
-		return anime.alternative_titles?.en || anime.title
+		const alt = anime.alternative_titles
+		return pickTitle({ english: alt?.en, romaji: anime.title, native: alt?.ja }, this.prefs().titleLanguage)
 	}
 
 	async search(query: string): Promise<SearchResult[]> {
 		try {
 			const json = await this.get<{ data?: { node: MalAnime }[] }>(
-				`/anime?q=${encodeURIComponent(query)}&limit=20&fields=${SEARCH_FIELDS}`
+				`/anime?q=${encodeURIComponent(query)}&limit=20&fields=${SEARCH_FIELDS}${this.prefs().adultTitles ? '&nsfw=true' : ''}`
 			)
 			return (json?.data ?? []).map(({ node }) => ({
 				provider: this.id,

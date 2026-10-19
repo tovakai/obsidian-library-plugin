@@ -426,6 +426,13 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'diary.yesterday': 'yesterday',
 		'settings.diary.name': 'Diary',
 		'settings.diary.desc': 'Shows your three latest diary entries in the statistics. Ticking an episode or chapter, or marking a title complete, writes the day into the note\'s Log property.',
+		'settings.titleLanguage.name': 'Anime and manga titles',
+		'settings.titleLanguage.desc': 'Which name new anime and manga notes get. When a title has no name in that language, the next one is used.',
+		'settings.titleLanguage.english': 'English',
+		'settings.titleLanguage.romaji': 'Romaji',
+		'settings.titleLanguage.native': 'Original',
+		'settings.adultTitles.name': 'Adult titles in search',
+		'settings.adultTitles.desc': 'Shows anime and manga marked as adult in search results.',
 		'settings.localCovers.name': 'Keep covers in the vault',
 		'settings.localCovers.desc': 'Downloads cover images into a Covers folder in the library folder, so the library shows them offline. The note then links the file.',
 		'settings.comingSoon.name': 'Soon',
@@ -31085,6 +31092,8 @@ export interface ISortState {
 	asc: boolean
 }
 
+export type TitleLanguage = 'english' | 'romaji' | 'native'
+
 export interface ILibrarySettings {
 	categories: ICategory[]
 	// Parent of each category's English subfolder (Library/Movies); '' = vault root.
@@ -31131,6 +31140,10 @@ export interface ILibrarySettings {
 	showUpNext: boolean
 	showComingSoon: boolean
 	localCovers: boolean
+	// anime and manga names: english, romaji or native, the first one a source has
+	titleLanguage: TitleLanguage
+	// adult titles in anime and manga search
+	adultTitles: boolean
 	comingSoonCollapsed: boolean
 	showDiary: boolean
 	showProfile: boolean
@@ -31191,6 +31204,8 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	showUpNext: true,
 	showComingSoon: true,
 	localCovers: false,
+	titleLanguage: 'english',
+	adultTitles: false,
 	comingSoonCollapsed: false,
 	showDiary: true,
 	showProfile: true,

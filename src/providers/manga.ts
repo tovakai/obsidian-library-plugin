@@ -1,5 +1,7 @@
 import { requestUrl } from 'obsidian'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './types'
+import type { ILibrarySettings } from '../constants'
+import { pickTitle } from '../util'
 
 interface MangaMedia {
 	id: number
@@ -14,8 +16,8 @@ interface MangaMedia {
 	siteUrl?: string
 }
 
-const SEARCH = 'query ($s: String) { Page(perPage: 15) { media(search: $s, type: MANGA, sort: SEARCH_MATCH) {' +
-	' id title { romaji english native } startDate { year } format coverImage { large } } } }'
+const search = (adult: boolean): string => 'query ($s: String) { Page(perPage: 15) { media(search: $s, type: MANGA, sort: SEARCH_MATCH' +
+	(adult ? '' : ', isAdult: false') + ') { id title { romaji english native } startDate { year } format coverImage { large } } } }'
 const MEDIA = 'query ($id: Int) { Media(id: $id, type: MANGA) { id title { romaji english native } startDate { year }' +
 	' chapters volumes genres coverImage { extraLarge large } staff(perPage: 8) { edges { role node { name { full } } } } siteUrl } }'
 
@@ -26,6 +28,8 @@ export class MangaProvider implements ContentProvider {
 	readonly contentTypes: ContentType[] = ['comic']
 
 	static readonly PREFIX = 'manga:'
+
+	constructor(private prefs: () => Pick<ILibrarySettings, 'titleLanguage' | 'adultTitles'>) {}
 
 	private async gql<T>(query: string, variables: Record<string, unknown>): Promise<T | null> {
 		try {
@@ -44,11 +48,11 @@ export class MangaProvider implements ContentProvider {
 	}
 
 	private title(media: MangaMedia): string {
-		return media.title?.english ?? media.title?.romaji ?? media.title?.native ?? String(media.id)
+		return (media.title && pickTitle(media.title, this.prefs().titleLanguage)) || String(media.id)
 	}
 
 	async search(query: string): Promise<SearchResult[]> {
-		const json = await this.gql<{ data?: { Page?: { media?: MangaMedia[] } } }>(SEARCH, { s: query })
+		const json = await this.gql<{ data?: { Page?: { media?: MangaMedia[] } } }>(search(this.prefs().adultTitles), { s: query })
 		return (json?.data?.Page?.media ?? []).map((media): SearchResult => ({
 			provider: this.id,
 			sourceId: MangaProvider.PREFIX + String(media.id),
