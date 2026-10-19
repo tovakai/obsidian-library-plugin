@@ -26,7 +26,11 @@
 - **One note per title.** The note keeps the cover, year, genres, creators, cast, ratings and trailer. All of it sits in the note's properties (frontmatter), so Bases, Dataview and other plugins can read it.
 - **Progress you can tick.** Episode and chapter lists live at the top of the note. Tick them off as you go, rate them, and see when the next episode airs.
 - **A library view.** One section per kind of media, with filters and sorting by rating, date or progress, an "Up next" shelf, and a "Soon" list with the air dates of new episodes.
-- **Statistics.** How many titles you have, how many hours of watching or reading that is, and fun comparisons like "in that time you could have watched every Bond film".
+- **Statistics.** How many titles you have, how many hours of watching or reading that is, and fun comparisons like "in that time you could have watched every Bond film". It also shows your taste (how your scores compare with other viewers, your favourite genres and decade) and your latest diary entries.
+- **A diary.** Tick an episode or a chapter, or mark a title complete, and the day goes into the note's `Log` property.
+- **Library blocks.** A `library` code block in any note shows cards picked by category, genre, year or score, what you are in the middle of, the Soon list or the statistics.
+- **A library map.** One command draws your library as a canvas, with posters grouped around the actors and creators they share.
+- **Covers offline.** Turn on "Keep covers in the vault" and covers are saved to a Covers folder, so the library looks the same without internet.
 - **Linked notes.** Genres, creators and actors are links. Open the Horror note and it lists every horror title in your library.
 - Works on desktop and mobile, in every Obsidian language.
 
@@ -96,6 +100,7 @@ Source ID: tt4574334
 - Rebuild graph links · Find & remove duplicates · Share current note
 - Import from AniList, MyAnimeList or Kitsu · Push and pull progress for each
 - Import Steam library · Import PlayStation games and trophies · Import Nintendo games
+- Import from Trakt · Build library map
 </details>
 
 ## Privacy
