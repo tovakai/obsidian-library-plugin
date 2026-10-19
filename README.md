@@ -71,6 +71,8 @@ Each category searches open sources. An API key adds richer data, and its servic
 | Comics | Wikidata, AniList | [Comic Vine](https://comicvine.gamespot.com/api/) |
 | Music | Deezer | None |
 
+Anime and manga notes take English, romaji or original names, as you choose in the settings. Titles marked adult stay out of search until you turn them on.
+
 Anything that doesn't fit goes into a Manual category with your own fields. More in the wiki: [sources and keys](https://github.com/venvk/obsidian-library-plugin/wiki/Sources-and-API-keys), [frontmatter](https://github.com/venvk/obsidian-library-plugin/wiki/Frontmatter-reference), [anime sync](https://github.com/venvk/obsidian-library-plugin/wiki/Anime-sync).
 
 **A note from the library**

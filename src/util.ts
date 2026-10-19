@@ -1,5 +1,5 @@
 import { App, normalizePath } from 'obsidian'
-import { progressPattern, dmyDatePattern, type ICategory, type IStatsTop } from './constants'
+import { progressPattern, dmyDatePattern, type ICategory, type IStatsTop, type TitleLanguage } from './constants'
 import { formatNumber, tr } from './i18n'
 import { normalizeSeasons } from './trailer'
 import type { ContentType } from './providers/types'
@@ -451,4 +451,17 @@ export function dropPlatforms(fm: Record<string, unknown>, family: (platform: st
 
 export function exactHours(totalMinutes: number): string {
 	return formatNumber(Math.round(totalMinutes / 6) / 10, { style: 'unit', unit: 'hour', unitDisplay: 'long', maximumFractionDigits: 1 })
+}
+
+export interface TitleNames { english?: string | null; romaji?: string | null; native?: string | null }
+
+// Anime and manga name in the chosen language, else the next one a source has.
+export function pickTitle(names: TitleNames, language: TitleLanguage): string {
+	const order: TitleLanguage[] = language === 'romaji' ? ['romaji', 'english', 'native']
+		: language === 'native' ? ['native', 'romaji', 'english'] : ['english', 'romaji', 'native']
+	for (const key of order) {
+		const name = names[key]?.trim()
+		if (name) return name
+	}
+	return ''
 }

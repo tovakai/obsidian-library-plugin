@@ -11,7 +11,7 @@ import {
 	type SettingDefinitionItem,
 } from "obsidian";
 import type LibraryPlugin from "./main";
-import type { ICategory, IStatsTop } from "./constants";
+import type { ICategory, IStatsTop, TitleLanguage } from "./constants";
 import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
 import { isContentType, type ContentType } from "./providers/types";
 import type { WatchSite } from "./watchSites";
@@ -312,6 +312,31 @@ export class LibrarySettingTab extends PluginSettingTab {
 					{ name: tr("anilist.name"), desc: tr("settings.anilist.desc"), render: (row) => this.anilistAccount(row) },
 					{ name: tr("mal.name"), desc: tr("settings.mal.desc"), render: (row) => this.malAccount(row) },
 					{ name: tr("kitsu.name"), desc: tr("settings.kitsu.desc"), render: (row) => this.kitsuAccount(row) },
+					{
+						name: tr("settings.titleLanguage.name"),
+						desc: tr("settings.titleLanguage.desc"),
+						render: (row) => {
+							row.addDropdown((dropdown) => {
+								for (const language of ["english", "romaji", "native"] as const) dropdown.addOption(language, tr(`settings.titleLanguage.${language}`));
+								dropdown.setValue(settings.titleLanguage).onChange(async (value) => {
+									settings.titleLanguage = value as TitleLanguage;
+									await this.plugin.saveSettings();
+								});
+							});
+						},
+					},
+					{
+						name: tr("settings.adultTitles.name"),
+						desc: tr("settings.adultTitles.desc"),
+						render: (row) => {
+							row.addToggle((toggle) =>
+								toggle.setValue(settings.adultTitles).onChange(async (value) => {
+									settings.adultTitles = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
 				],
 			},
 			{

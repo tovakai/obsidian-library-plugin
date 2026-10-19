@@ -1,11 +1,15 @@
 import { requestUrl } from 'obsidian'
 import { externalIdsFor } from '../kitsuSync'
 import type { SearchResult } from './types'
+import type { ILibrarySettings } from '../constants'
+import { pickTitle } from '../util'
 
 // Kitsu's own search. The ids map back to AniList's so the note contract holds
 // (Source stays anilist); unmapped hits are dropped rather than guessed.
 export class KitsuProvider {
 	readonly id = 'kitsu'
+
+	constructor(private prefs: () => Pick<ILibrarySettings, 'titleLanguage'>) {}
 
 	async search(query: string): Promise<SearchResult[]> {
 		const resp = await requestUrl({
@@ -29,7 +33,9 @@ export class KitsuProvider {
 			const attrs = anime.attributes ?? {}
 			const poster = attrs.posterImage as { medium?: string } | null | undefined
 			const start = typeof attrs.startDate === 'string' ? attrs.startDate : undefined
-			const title = typeof attrs.canonicalTitle === 'string' ? attrs.canonicalTitle : ''
+			const titles = (attrs.titles ?? {}) as Record<string, string | null | undefined>
+			const canonical = typeof attrs.canonicalTitle === 'string' ? attrs.canonicalTitle : ''
+			const title = pickTitle({ english: titles.en, romaji: titles.en_jp, native: titles.ja_jp }, this.prefs().titleLanguage) || canonical
 			out.push({
 				provider: this.id,
 				sourceId,
