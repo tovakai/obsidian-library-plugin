@@ -439,7 +439,9 @@ export class LibraryRenderer {
 		// Your taste: the horizontal panel, placed as it was, on its own row of the statistics.
 		if (taste) {
 			// one more block among the tops, three cells wide, so the grid packs it with them
-			const row = (columns.length > 0 || showDiary ? box : body).createDiv({ cls: 'library-stats-taste' })
+			const inTops = columns.length > 0 || showDiary
+			body.toggleClass('has-taste', !inTops)
+			const row = (inTops ? box : body).createDiv({ cls: 'library-stats-taste' })
 			const panel = row.createDiv({ cls: 'library-profile-body' }).createDiv({ cls: 'library-profile-panel library-taste' })
 			const side = panel.createDiv({ cls: 'library-taste-side' })
 			const lead = side.createDiv({ cls: 'library-taste-lead' })

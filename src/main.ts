@@ -1598,13 +1598,17 @@ export default class LibraryPlugin extends Plugin {
 		if (!traktExpired(tokens)) return tokens.access
 		if (!this.traktRefreshing) {
 			this.traktRefreshing = (async () => {
-				// refresh tokens are single-use: the new pair is saved at once
-				const next = await refreshTraktTokens(tokens.refresh)
-				if (!next) return Date.now() < tokens.expiresAt ? tokens.access : null
-				this.settings.traktTokens = next
-				await this.saveSettings()
-				return next.access
-			})().finally(() => { this.traktRefreshing = null })
+				try {
+					// refresh tokens are single-use: the new pair is saved at once
+					const next = await refreshTraktTokens(tokens.refresh)
+					if (!next) return Date.now() < tokens.expiresAt ? tokens.access : null
+					this.settings.traktTokens = next
+					await this.saveSettings()
+					return next.access
+				} finally {
+					this.traktRefreshing = null
+				}
+			})()
 		}
 		return this.traktRefreshing
 	}
