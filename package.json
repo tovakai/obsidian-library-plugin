@@ -1,7 +1,7 @@
 {
 	"name": "library",
-	"version": "2.4.11",
-	"description": "Keep movies, series, anime, manga, books, games, comics and music as notes in a gallery of covers. Search fills in the details, and AniList, MyAnimeList, Kitsu, IMDb, Netflix, PlayStation, Steam and Nintendo sync your lists.",
+	"version": "2.4.12",
+	"description": "Keep movies, series, anime, manga, books, games, comics and music as notes in a gallery of covers. Search fills in the details, and AniList, MyAnimeList, Kitsu, IMDb, Trakt, Netflix, PlayStation, Steam and Nintendo sync your lists.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

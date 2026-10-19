@@ -44,6 +44,27 @@ export function trCount(key: string, count: number): string {
 	return tr(key + (hasFew ? '5' : '2'), vars)
 }
 
+// "today"/"yesterday" in the reader's language; an older day shows its own date.
+export function relativeDay(iso: string, today: string): string {
+	const dayNumber = (value: string): number => {
+		const parts = value.split('-')
+		return Math.round(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 86400000)
+	}
+	const diff = dayNumber(iso) - dayNumber(today)
+	// Tr() rather than Intl.RelativeTimeFormat: rare locales (kab, la, dv…) fall back to English there.
+	if (diff === 0) return tr('diary.today')
+	if (diff === -1) return tr('diary.yesterday')
+	const parts = iso.split('-')
+	const year = Number(parts[0])
+	const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
+	if (year !== new Date().getFullYear()) options.year = 'numeric'
+	try {
+		return new Date(year, Number(parts[1]) - 1, Number(parts[2])).toLocaleDateString(getLanguage() + '-u-nu-latn', options)
+	} catch {
+		return iso
+	}
+}
+
 // Reader's grouping/decimal mark (12 345, 0,9), but Latin digits everywhere (-u-nu-latn).
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
 	try {

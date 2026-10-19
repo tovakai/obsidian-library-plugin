@@ -385,6 +385,21 @@ export function coverValue(fm: Record<string, unknown>, property = 'Cover'): unk
 	return undefined
 }
 
+// The property that holds the cover, in coverValue's order.
+export function coverKey(fm: Record<string, unknown>, property = 'Cover'): string | null {
+	for (const key of [property, 'Cover', 'Image', 'Baner']) {
+		if (key && !isEmptyValue(fm[key])) return key
+	}
+	return null
+}
+
+// File extension for a downloaded image, from its content type; null when it is not one.
+export function imageExtension(contentType: string): string | null {
+	const type = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
+	const known: Record<string, string> = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif' }
+	return known[type] ?? null
+}
+
 export function coverSrc(app: App, raw: unknown): string | null {
 	const value = toStr(raw).trim()
 	if (!value) return null

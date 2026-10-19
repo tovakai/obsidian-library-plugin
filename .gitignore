@@ -1,32 +1,22 @@
-# vscode
-.vscode 
-
-# Intellij
-*.iml
+# Editors
+.vscode
 .idea
+*.iml
 
 # npm
 node_modules
 
-# Don't include the compiled main.js file in the repo.
-# They should be uploaded to GitHub releases instead.
+# Build output: main.js ships with each GitHub release, not with the repository
 main.js
-
-# Exclude sourcemaps
 *.map
 
-# obsidian
+# Plugin settings, with sign-in tokens and keys
 data.json
 
-# Exclude macOS Finder (System Explorer) View States
+# macOS
 .DS_Store
 
-# Local tooling output
-graphify-out/
-.qoder/
-.scratch/
+# Local tests and drafts
 tests/
 vitest.config.ts
-docs/agents/
-CLAUDE.md
-AGENTS.md
+.scratch/

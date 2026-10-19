@@ -76,6 +76,7 @@ Source ID: steam:1245620
 | `Progress` | `done/total`: episodes, chapters, pages, tracks, or issues; for games, the share of trophies or achievements as `n/100`. Movies have none; see [[Progress and statistics|Progress-and-statistics]]. |
 | `Complete` | `true` once you finish a movie, an album, a comic, or a game. Series, anime, and books have none: they are done when their progress is full. |
 | `My Rating` | Your score from 1 to 10. With rated episodes, seasons, or chapters, their average. |
+| `Log` | The [[diary|Progress-and-statistics#diary]]: one line per episode, season, or chapter you ticked and per title you finished, such as `2026-10-18 S2E5`. |
 | `Date` | The day you added the note, as `dd.mm.yyyy`. A game moves it back to the day you first played it. Sorting by date uses it. |
 | `Source` | The source family that filled the note. |
 | `Source ID` | The title's id at that source. Refresh and sync use it. |
@@ -145,6 +146,8 @@ Notes from older versions can have another `Source`, such as `rawg` or `steam`. 
 ## Cover
 
 Settings → Library → Cover property renames the cover field, for example to `image` if you already use that name. Notes keep working after a rename, because Library also reads `Cover` and `Image`. A cover can be an image address, or an image in your vault written as a path or an internal link.
+
+Turn on Settings → Library → Keep covers in the vault to keep covers offline. Library downloads each note's cover, one at a time in the background, into a Covers folder in your library folder, and points the cover property at the file, such as `[[Library/Covers/Dune.jpg]]`. New notes get theirs right away. A cover that can't be downloaded stays an address. Turning the setting off leaves the downloaded files and links as they are.
 
 ## Refresh
 

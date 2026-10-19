@@ -162,10 +162,35 @@ export class LibrarySettingTab extends PluginSettingTab {
 			note(tr("settings.stats.desc")),
 			{
 				name: tr("stats.watchTime"),
+				desc: tr("stats.watchTime.desc"),
 				render: (row) => {
 					row.addToggle((toggle) =>
 						toggle.setValue(settings.stats.watchTime).onChange(async (value) => {
 							settings.stats.watchTime = value;
+							await this.plugin.saveSettings();
+						}),
+					);
+				},
+			},
+			{
+				name: tr("settings.profile.name"),
+				desc: tr("settings.profile.desc"),
+				render: (row) => {
+					row.addToggle((toggle) =>
+						toggle.setValue(settings.showProfile).onChange(async (value) => {
+							settings.showProfile = value;
+							await this.plugin.saveSettings();
+						}),
+					);
+				},
+			},
+			{
+				name: tr("settings.diary.name"),
+				desc: tr("settings.diary.desc"),
+				render: (row) => {
+					row.addToggle((toggle) =>
+						toggle.setValue(settings.showDiary).onChange(async (value) => {
+							settings.showDiary = value;
 							await this.plugin.saveSettings();
 						}),
 					);
@@ -235,6 +260,19 @@ export class LibrarySettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: tr("settings.localCovers.name"),
+						desc: tr("settings.localCovers.desc"),
+						render: (row) => {
+							row.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.localCovers).onChange(async (value) => {
+									this.plugin.settings.localCovers = value;
+									await this.plugin.saveSettings();
+									this.plugin.coverSweep();
+								}),
+							);
+						},
+					},
+					{
 						name: tr("settings.upNextInCategories.name"),
 						desc: tr("settings.upNextInCategories.desc"),
 						render: (row) => {
@@ -265,6 +303,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 				rows: [
 					{ name: "IMDb", desc: tr("settings.imdb.desc"), render: (row) => this.siteAccount(row, "imdb") },
 					{ name: "Netflix", desc: tr("settings.netflix.desc"), render: (row) => this.siteAccount(row, "netflix") },
+					{ name: "Trakt", desc: tr("settings.trakt.desc"), render: (row) => this.traktAccount(row) },
 				],
 			},
 			{
@@ -455,6 +494,30 @@ export class LibrarySettingTab extends PluginSettingTab {
 				} else {
 					// desktop opens the real Kitsu site; the plain form is the mobile path
 					await this.plugin.connectKitsu();
+				}
+				this.refresh();
+			});
+		});
+	}
+
+	private traktAccount(row: Setting): void {
+		const connected = this.plugin.settings.traktTokens !== null;
+		row.settingEl.addClass("library-platform-row");
+		const icon = createSpan({ cls: "library-platform-row-icon is-trakt" });
+		icon.appendChild(platformMark("trakt"));
+		row.nameEl.prepend(icon);
+		const status = row.nameEl.createSpan({ cls: `library-platform-status${connected ? " is-connected" : ""}` });
+		status.setText(tr(connected ? "settings.connected" : "settings.notConnected"));
+		row.addButton((button) => {
+			button.setButtonText(tr(connected ? "settings.disconnect" : "settings.connect"));
+			if (!connected) button.setCta();
+			button.onClick(async () => {
+				if (connected) {
+					this.plugin.settings.traktTokens = null;
+					this.plugin.settings.traktEcho = {};
+					await this.plugin.saveSettings();
+				} else {
+					await this.plugin.connectTrakt();
 				}
 				this.refresh();
 			});
