@@ -532,6 +532,7 @@ sort trigger, the chosen one in the accent colour. */
 }
 
 .library-view {
+	container: library / inline-size;
 	padding: 28px 36px 48px;
 	overflow-y: auto;
 	scrollbar-gutter: stable both-edges;
@@ -745,46 +746,69 @@ sort trigger, the chosen one in the accent colour. */
 }
 
 .library-stats-body {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 24px;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: "tops" "taste";
+	gap: 20px 24px;
+	align-items: stretch;
 	padding: 14px;
+}
+
+/* The time column is one column wide and two rows tall: the tops grid
+   beside it stretches to its height and splits it into equal rows. */
+.library-stats-body.has-time {
+	grid-template-columns: minmax(0, 1fr) 230px;
+	grid-template-areas: "tops time";
+}
+
+/* Taste is only a direct child of the body when there are no tops or diary
+   (time chart only): give it its own full row, or its own cell beside it. */
+.library-stats-body.has-time:has(> .library-stats-taste) {
+	grid-template-areas: "tops time" "taste taste";
+}
+
+.library-stats-body.has-time:has(> .library-stats-taste):not(:has(> .library-stats-tops)) {
+	grid-template-areas: "taste time";
 }
 
 .library-stats-body.collapsed {
 	display: none;
 }
 
-/* The top columns wrap among themselves; the chart keeps the right side. */
+/* Tops share the row as equal tracks; the taste panel spans three of them. */
 .library-stats-tops {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 24px;
-	flex: 1 1 420px;
+	grid-area: tops;
+	display: grid;
+	/* --stats-cols columns (enough for two rows) while each can be 180px wide, fewer when not */
+	grid-template-columns: repeat(auto-fit, minmax(max(180px, (100% - (var(--stats-cols, 4) - 1) * 24px) / var(--stats-cols, 4)), 1fr));
+	/* the tops row as tall as its lists, the second row takes the rest of the time column */
+	grid-template-rows: auto 1fr;
+	grid-auto-rows: auto;
+	grid-auto-flow: row dense;
+	gap: 20px 24px;
+	align-items: start;
 	min-width: 0;
 }
 
 
 .library-stats-col {
-	flex: 1 1 170px;
 	min-width: 0;
 }
 
 /* Wide enough for "1395 h 48 min · 90%"; anything longer wraps instead of
    running past the section's edge. */
 .library-time-col {
-	flex: 0 0 230px;
+	grid-area: time;
 	min-width: 0;
 }
 
-@media (max-width: 640px) {
-	.library-stats-body {
-		flex-direction: column;
+@container library (max-width: 640px) {
+	.library-stats-body.has-time {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: "time" "tops" "taste";
 	}
 
 	.library-time-col {
-		order: -1;
-		flex-basis: auto;
 		max-width: 300px;
 	}
 }
@@ -1646,4 +1670,185 @@ sort trigger, the chosen one in the accent colour. */
 	text-align: center;
 	user-select: all;
 	margin: 8px 0 4px;
+}
+
+/* Taste: the score and its facts beside the spread of scores. */
+.library-profile-body {
+	max-width: 980px;
+}
+
+.library-taste {
+	display: grid;
+	grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.2fr);
+	gap: 28px;
+	align-items: end;
+}
+
+@container library (max-width: 760px) {
+	.library-taste {
+		grid-template-columns: 1fr;
+	}
+}
+
+.library-profile-panel {
+	padding: 18px 20px;
+	border-radius: 12px;
+	background: var(--background-secondary);
+}
+
+/* Taste: always a horizontal block, one row tall and three columns wide
+   (the full width when the grid has fewer); alone in the body without tops. */
+.library-stats-taste {
+	grid-area: taste;
+	min-width: 0;
+}
+
+.library-stats-tops .library-stats-taste {
+	/* the start of the second row; the other blocks fill the free cells around it */
+	grid-area: 2 / 1 / auto / span 3;
+	align-self: stretch;
+}
+
+/* Three 180px cells no longer fit beside the time column: taste takes the full width. */
+@container library (max-width: 960px) {
+	.library-stats-tops .library-stats-taste {
+		grid-area: auto / 1 / auto / -1;
+	}
+}
+
+.library-stats-taste .library-profile-body {
+	height: 100%;
+	max-width: none;
+}
+
+.library-stats-taste .library-taste {
+	height: 100%;
+	box-sizing: border-box;
+	grid-template-columns: minmax(220px, 1fr) minmax(200px, 1.2fr);
+	gap: 24px;
+	align-items: stretch;
+	padding: 14px 18px;
+}
+
+.library-stats-taste .library-taste-side {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-width: 0;
+}
+
+.library-stats-taste .library-taste-verdict {
+	margin-top: 0;
+}
+
+.library-stats-taste .library-taste-bars {
+	height: auto;
+	min-height: 72px;
+	margin: 0;
+}
+
+/* Genres and decade side by side, so the block keeps to one row. */
+.library-stats-taste .library-taste-facts {
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 6px 20px;
+	margin-top: auto;
+	padding-top: 10px;
+}
+
+.library-taste-lead {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+}
+
+.library-taste-average {
+	font-size: 2.6em;
+	line-height: 1;
+	font-weight: var(--font-bold);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+	color: var(--text-accent);
+}
+
+.library-taste-label {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.library-taste-count,
+.library-taste-score,
+.library-taste-fact-name {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.library-taste-verdict {
+	margin-top: 12px;
+	color: var(--text-normal);
+}
+
+.library-taste-bars {
+	display: grid;
+	grid-template-columns: repeat(10, 1fr);
+	align-items: end;
+	gap: 6px;
+	height: 150px;
+}
+
+.library-taste-bar {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 6px;
+}
+
+.library-taste-fill {
+	width: 100%;
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--interactive-accent) 38%, transparent);
+	transition: background-color 120ms ease-out;
+}
+
+.library-taste-bar.is-peak .library-taste-fill,
+.library-taste-bar:hover .library-taste-fill {
+	background: var(--interactive-accent);
+}
+
+.library-taste-score {
+	font-variant-numeric: tabular-nums;
+}
+
+.library-taste-facts {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.library-taste-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 4px;
+}
+
+.library-taste-chip {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 3px 10px;
+	border-radius: 999px;
+	background: var(--background-modifier-hover);
+	font-size: var(--font-ui-small);
+}
+
+.library-taste-chip-score {
+	color: var(--text-accent);
+	font-weight: var(--font-semibold);
+	font-variant-numeric: tabular-nums;
 }

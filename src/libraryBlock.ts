@@ -81,14 +81,14 @@ export class LibraryBlock extends MarkdownRenderChild {
 		const root = el.createDiv({ cls: 'library-view library-block' })
 		const query = parseBlock(this.source)
 		const renderer = new LibraryRenderer(this.plugin.app, this.plugin)
-		if (query.show === 'stats') {
-			if (!renderer.renderStats(root)) root.createDiv({ cls: 'library-block-empty', text: tr('block.empty') })
-			return
-		}
 		const categories = this.plugin.settings.categories.filter(category => !query.category
 			|| [category.name, category.typeValue, categoryLabel(category)].some(name => toStr(name).toLowerCase() === query.category))
 		let cards: CardData[] = []
 		for (const category of categories) cards = cards.concat(renderer.collectCards(category))
+		if (query.show === 'stats') {
+			if (!renderer.renderStats(root, cards)) root.createDiv({ cls: 'library-block-empty', text: tr('block.empty') })
+			return
+		}
 		if (query.show === 'soon') {
 			renderer.renderComingSoon(root, cards)
 			if (!root.hasChildNodes()) root.createDiv({ cls: 'library-block-empty', text: tr('block.empty') })

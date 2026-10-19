@@ -53,6 +53,8 @@ import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRed
 import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { LibraryBlock } from './libraryBlock'
+import { addLog, tickLabel, todayIso } from './diary'
+import { libraryMap } from './libraryMap'
 import { TraktLoginModal } from './ui/traktLoginModal'
 import { refreshTraktTokens, traktChanges, traktData, traktExpired, traktHistory, traktSend, type TraktEcho } from './trakt'
 import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
@@ -205,6 +207,7 @@ export default class LibraryPlugin extends Plugin {
 	// unfolded seasons per note; screen state only
 	private openSeasons = new Map<string, Set<number>>()
 	private coverQueue = new Set<string>()
+	private completeSeen = new Map<string, boolean>()
 	private coverWorking = false
 	private coverFailed = new Set<string>()
 	private trophyLists = new Map<string, { trophies: PsnTrophy[]; total: number } | null>()
@@ -300,6 +303,7 @@ export default class LibraryPlugin extends Plugin {
 			this.registerInterval(window.setTimeout(() => this.watchSyncTick(), 60000))
 			this.registerInterval(window.setInterval(() => this.watchSyncTick(), 3600000))
 			this.registerInterval(window.setTimeout(() => void this.airingIfDue(), 30000))
+			this.seedComplete()
 			this.registerInterval(window.setTimeout(() => this.coverSweep(), 20000))
 			// notes not yet on Trakt, e.g. a pass cut short by a restart
 			this.registerInterval(window.setTimeout(() => void this.traktBackfill(), 90000))
@@ -441,6 +445,12 @@ export default class LibraryPlugin extends Plugin {
 			id: 'kitsu-pull',
 			name: tr('cmd.kitsuPull'),
 			callback: () => { void this.kitsuPull() }
+		})
+
+		this.addCommand({
+			id: 'build-map',
+			name: tr('cmd.libraryMap'),
+			callback: () => { void this.buildLibraryMap() }
 		})
 
 		this.addCommand({
@@ -840,11 +850,66 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
+	// A title you mark finished goes into its diary; an import's finishes are history, not today.
+	private async logFinish(file: TFile, fm: Record<string, unknown>): Promise<void> {
+		const done = fm.Complete === true || toStr(fm.Complete) === 'true'
+		const before = this.completeSeen.get(file.path)
+		this.completeSeen.set(file.path, done)
+		if (before !== false || !done || this.anyImporting()) return
+		await this.app.fileManager.processFrontMatter(file, (current: Record<string, unknown>) => addLog(current, todayIso(), ''))
+	}
+
+	// A canvas of the library: titles joined by the people they share.
+	async buildLibraryMap(): Promise<void> {
+		const titles: { path: string; name: string; cover: string; people: string[] }[] = []
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (isTemplateFile(file.path)) continue
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			const kind = fm ? this.kindOf(fm) : undefined
+			if (!fm || !kind) continue
+			const people = [...toStrArray(fm.Creator), ...toStrArray(fm.Cast)].map(linkLabel).filter(Boolean)
+			if (people.length === 0) continue
+			// a cover from the web as an image link, one in the vault as an embed
+			const raw = toStr(coverValue(fm, this.coverProperty())).trim()
+			const local = /^!?\[\[([^\]|#]+)/.exec(raw)?.[1]
+			const web = safeUrl(raw)
+			const cover = web ? `![](${web})` : local ? `![[${local}]]` : ''
+			titles.push({ path: file.path, name: toStr(fm.Name) || file.basename, cover, people })
+		}
+		const canvas = libraryMap(titles)
+		if (canvas.edges.length === 0) {
+			new Notice(tr('notice.map.empty'))
+			return
+		}
+		const path = `${this.settings.libraryFolder ? `${this.settings.libraryFolder}/` : ''}Library map.canvas`
+		if (this.settings.libraryFolder) await this.ensureFolder(this.settings.libraryFolder)
+		const text = JSON.stringify(canvas, null, '\t')
+		const existing = this.app.vault.getFileByPath(path)
+		const file = existing ? (await this.app.vault.modify(existing, text), existing) : await this.app.vault.create(path, text)
+		// a canvas already on screen keeps its old nodes, so close it and open the fresh one
+		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
+			if (leaf.getViewState().state?.file === file.path) leaf.detach()
+		}
+		await this.app.workspace.getLeaf(true).openFile(file)
+	}
+
+	private seedComplete(): void {
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (fm) this.completeSeen.set(file.path, fm.Complete === true || toStr(fm.Complete) === 'true')
+		}
+	}
+
+	private anyImporting(): boolean {
+		return this.watchImporting || this.malImporting || this.anilistImporting || this.kitsuImporting || this.gameImporting()
+	}
+
 	private async syncNote(file: TFile): Promise<void> {
 		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
 		if (!fm) return
 		if (!this.settings.categories.some(c => c.typeValue === toStr(fm.Type))) return
 		try {
+			await this.logFinish(file, fm)
 			await this.syncTracking(file, fm)
 			await this.syncLinkFields(file, fm)
 			this.queueCover(file)
@@ -3716,8 +3781,10 @@ export default class LibraryPlugin extends Plugin {
 
 	private async changeEpisodes(file: TFile, change: EpisodeChange, kind: TrackKind): Promise<void> {
 		try {
-			await this.app.fileManager.processFrontMatter(file, (fm) => {
-				applyEpisodeChange(fm as Record<string, unknown>, change, kind)
+			await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+				const label = tickLabel(fm, change, kind)
+				applyEpisodeChange(fm, change, kind)
+				if (label !== null) addLog(fm, todayIso(), label)
 			})
 		} catch (e) {
 			console.error('Library: episode update error', file.path, e)
@@ -3775,6 +3842,8 @@ export default class LibraryPlugin extends Plugin {
 		if (!this.settings.traktEcho || typeof this.settings.traktEcho !== 'object') this.settings.traktEcho = {}
 		if (typeof this.settings.traktLastImport !== 'number') this.settings.traktLastImport = 0
 		if (typeof this.settings.comingSoonCollapsed !== 'boolean') this.settings.comingSoonCollapsed = false
+		if (typeof this.settings.showDiary !== 'boolean') this.settings.showDiary = true
+		if (typeof this.settings.showProfile !== 'boolean') this.settings.showProfile = true
 		if (!this.settings.airing || typeof this.settings.airing !== 'object' || Object.values(this.settings.airing).some(value => !Array.isArray(value))) {
 			this.settings.airing = {}
 			this.settings.airingChecked = 0

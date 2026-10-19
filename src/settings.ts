@@ -162,10 +162,35 @@ export class LibrarySettingTab extends PluginSettingTab {
 			note(tr("settings.stats.desc")),
 			{
 				name: tr("stats.watchTime"),
+				desc: tr("stats.watchTime.desc"),
 				render: (row) => {
 					row.addToggle((toggle) =>
 						toggle.setValue(settings.stats.watchTime).onChange(async (value) => {
 							settings.stats.watchTime = value;
+							await this.plugin.saveSettings();
+						}),
+					);
+				},
+			},
+			{
+				name: tr("settings.profile.name"),
+				desc: tr("settings.profile.desc"),
+				render: (row) => {
+					row.addToggle((toggle) =>
+						toggle.setValue(settings.showProfile).onChange(async (value) => {
+							settings.showProfile = value;
+							await this.plugin.saveSettings();
+						}),
+					);
+				},
+			},
+			{
+				name: tr("settings.diary.name"),
+				desc: tr("settings.diary.desc"),
+				render: (row) => {
+					row.addToggle((toggle) =>
+						toggle.setValue(settings.showDiary).onChange(async (value) => {
+							settings.showDiary = value;
 							await this.plugin.saveSettings();
 						}),
 					);
