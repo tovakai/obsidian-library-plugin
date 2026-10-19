@@ -12,7 +12,7 @@ Adding a title that is already there opens its note instead, and imports look fo
 
 ## The cover is missing
 
-Check Settings → Library → Cover property: notes may keep the cover under another name. A vault image needs a path or an internal link to a file that exists. Some sources have no cover for older or rare titles; paste any image address into the cover property.
+Check Settings → Library → Cover property: notes may keep the cover under another name. A vault image needs a path or an internal link to a file that exists. Some sources have no cover for older or rare titles; paste any image address into the cover property. To keep covers when you are offline, turn on Keep covers in the vault; see [[Note properties|Frontmatter-reference#cover]].
 
 ## A refresh or an import changed my values
 
@@ -46,7 +46,7 @@ When you search, refresh, sync, or share; when you open a library note, at most 
 
 ## Does it work on mobile?
 
-Yes: search, the Library tab, notes, statistics, and sharing work as on desktop. AniList and MyAnimeList connect through your browser, and Kitsu with your email or username and password. IMDb, Netflix, PlayStation, Steam, and Nintendo connect only on desktop, and the daily imports run there.
+Yes: search, the Library tab, notes, statistics, and sharing work as on desktop. AniList and MyAnimeList connect through your browser, and Kitsu with your email or username and password. Trakt connects with a code, so it works on mobile too. IMDb, Netflix, PlayStation, Steam, and Nintendo connect only on desktop, and the daily imports run there.
 
 ## Something else is wrong
 

@@ -1,4 +1,4 @@
-Library keeps your movies, series, anime and manga, books, games, comics, and music as plain Markdown notes in your vault and shows them as a gallery of covers. Search a title, pick it, and the note fills itself in. Connect AniList, MyAnimeList, Kitsu, IMDb, Netflix, PlayStation, Steam, or Nintendo, and your lists and play history arrive as notes too.
+Library keeps your movies, series, anime and manga, books, games, comics, and music as plain Markdown notes in your vault and shows them as a gallery of covers. Search a title, pick it, and the note fills itself in. Connect AniList, MyAnimeList, Kitsu, IMDb, Netflix, Trakt, PlayStation, Steam, or Nintendo, and your lists and play history arrive as notes too.
 
 The [README](https://github.com/venvk/obsidian-library-plugin#readme) is the short tour. This wiki has the setup steps and the reference.
 
@@ -9,12 +9,14 @@ The [README](https://github.com/venvk/obsidian-library-plugin#readme) is the sho
 - [[Connected accounts|Connected-accounts]]: what each service brings in and sends back, when it syncs, and where sign-ins are kept.
   - [[Anime and manga sync|Anime-sync]]: AniList, MyAnimeList, and Kitsu.
   - [[IMDb and Netflix|IMDb-and-Netflix]]: ratings, watchlist, viewing history.
+  - [[Trakt]]: watch history, ratings, and watchlist, both ways.
   - [[Game libraries|Game-libraries]]: PlayStation, Steam, and Nintendo Switch, with playtime, trophies, and achievements.
 
 ### Use
 
 - [[The Library tab and the note header|Library-tab-and-note-header]]: sections, filters, sorting, the note header, recommendations, and sharing.
-- [[Progress and statistics|Progress-and-statistics]]: episodes, chapters, your scores, Up next, Soon, and the statistics panel.
+- [[Progress and statistics|Progress-and-statistics]]: episodes, chapters, your scores, Up next, Soon, the diary, and the statistics panel with your taste.
+- [[Library blocks and map|Library-blocks-and-map]]: cards and statistics inside any note, and a canvas map of your library.
 - [[Templates and skipped properties|Templates-and-skipped-properties]]: start new notes from a note of your own, and keep source fields out.
 
 ### Reference

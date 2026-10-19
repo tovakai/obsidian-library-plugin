@@ -51,6 +51,20 @@ A title counts as watching when you have ticked at least one episode, and, for a
 
 Settings → Library → Soon hides it.
 
+## Diary
+
+Ticking an episode, a season, or a chapter in the note header, or marking a title complete, writes the day into the note's `Log` property, one line per event:
+
+```yaml
+Log:
+  - 2026-10-18 S2E5
+  - 2026-10-19
+```
+
+A line with only a date is a title you finished. Imports from connected accounts don't write diary lines, so a synced history doesn't all land on today. The diary starts from your first tick; there are no dates before it.
+
+The statistics panel shows your three latest diary lines, newest first. Settings → Library → Statistics → Diary hides them; your notes keep their `Log`.
+
 ## Statistics panel
 
 The panel at the top of the Library tab shows the columns you pick in Settings → Library → Statistics. Add top offers:
@@ -58,6 +72,10 @@ The panel at the top of the Library tab shows the columns you pick in Settings �
 - a category: its three highest-rated titles, by your score, or by the IMDb rating while you haven't scored them;
 - a property: the three most common values of any property your notes use, such as genres, creators, actors, or a `Shelf` from your [[template|Templates-and-skipped-properties]];
 - a platform you connected: PlayStation (games, time played, trophy level, and trophies by grade), MyAnimeList (anime and manga on your lists), and Nintendo Switch (games and time played).
+
+Your taste shows your average score and how it compares with other viewers (IMDb, or RAWG and Metacritic for games), a chart of how often you gave each score, your favourite genres (the highest average over at least three titles), and the decade most of your titles come from. It appears once you have scored five titles. Settings → Library → Statistics → Your taste hides it.
+
+Each top, platform, and the diary take one cell of the panel, your taste takes three, and time spent sits on the right. A new column goes into an empty cell before it starts a new row.
 
 Time spent shows the hours you spent on movies, series, anime, and games, per category, and below it one comparison a day, such as how many times Apollo 11 could have flown to the Moon and back. Turn it off with the Time spent switch.
 
