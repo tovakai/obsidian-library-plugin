@@ -140,7 +140,7 @@ interface FolderMove {
 const ENRICH_STEP_DELAY = 700
 
 // an anime note: its id on each site, one resolved through AniList
-type RemoteSite = 'anilist' | 'mal' | 'kitsu' | 'trakt' | 'imdb'
+type RemoteSite = 'anilist' | 'mal' | 'kitsu' | 'trakt' | 'imdb' | 'netflix'
 
 // A deleted note, as its cached frontmatter named it.
 interface Removal {
@@ -150,6 +150,7 @@ interface Removal {
 	anime: { anilist: number | null; mal: number | null } | null
 	manga: { anilist: number | null; mal: number | null } | null
 	imdb: string | null
+	netflix: number | null
 	kind: 'movie' | 'series'
 	sites: RemoteSite[]
 }
@@ -1243,6 +1244,8 @@ export default class LibraryPlugin extends Plugin {
 			let updated = 0
 			for (const title of titles.titles) {
 				if (this.unloaded) return
+				// deleted here and kept by Netflix: no new note, unless one with that id came back
+				if (title.netflixId && this.settings.netflixIgnored.indexOf(title.netflixId) >= 0 && !this.netflixNoteHeld(title.netflixId)) continue
 				try {
 					const result = await this.importWatched(title)
 					if (result === 'created') created++
@@ -1781,8 +1784,11 @@ export default class LibraryPlugin extends Plugin {
 			// IMDb is reached through a page: desktop only
 			if (this.settings.watchSites.imdb.connected && Platform.isDesktopApp) sites.push('imdb')
 		}
+		const netflix = Number(toStr(fm['Netflix ID']))
+		const netflixId = Number.isSafeInteger(netflix) && netflix > 0 ? netflix : null
+		if (netflixId !== null && this.settings.watchSites.netflix.connected) sites.push('netflix')
 		if (sites.length === 0) return
-		this.removals.push({ name: toStr(fm.Name) || file.basename, key: `${source}|${sourceId}`, anime, manga, imdb, kind: this.kindOf(fm) === 'movie' ? 'movie' : 'series', sites })
+		this.removals.push({ name: toStr(fm.Name) || file.basename, key: sourceId ? `${source}|${sourceId}` : '', anime, manga, imdb, netflix: netflixId, kind: this.kindOf(fm) === 'movie' ? 'movie' : 'series', sites })
 		window.clearTimeout(this.removalTimer)
 		this.removalTimer = window.setTimeout(() => this.offerRemoval(), 1000)
 	}
@@ -1793,14 +1799,16 @@ export default class LibraryPlugin extends Plugin {
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
 			if (!fm) continue
-			held.add(`${toStr(fm.Source)}|${toStr(fm['Source ID'])}`)
+			if (toStr(fm['Source ID'])) held.add(`${toStr(fm.Source)}|${toStr(fm['Source ID'])}`)
 			const imdb = this.imdbIdOf(fm)
 			if (imdb) held.add(imdb)
+			const netflix = toStr(fm['Netflix ID'])
+			if (netflix) held.add(`netflix:${netflix}`)
 		}
 		const items = this.removals.splice(0).filter(item => !this.stillHeld(item, held))
 		if (items.length === 0 || this.unloaded) return
-		const names: Record<RemoteSite, string> = { anilist: tr('anilist.name'), mal: tr('mal.name'), kitsu: tr('kitsu.name'), trakt: 'Trakt', imdb: 'IMDb' }
-		const order: RemoteSite[] = ['anilist', 'mal', 'kitsu', 'trakt', 'imdb']
+		const names: Record<RemoteSite, string> = { anilist: tr('anilist.name'), mal: tr('mal.name'), kitsu: tr('kitsu.name'), trakt: 'Trakt', imdb: 'IMDb', netflix: tr('remoteDelete.netflix') }
+		const order: RemoteSite[] = ['anilist', 'mal', 'kitsu', 'trakt', 'imdb', 'netflix']
 		const sites = order.filter(site => items.some(item => item.sites.includes(site))).map(id => ({ id, name: names[id] }))
 		new RemoteDeleteModal(this.app, items.map(item => item.name), sites, chosen => {
 			void (async () => {
@@ -1813,7 +1821,8 @@ export default class LibraryPlugin extends Plugin {
 							console.error('Library: removal error', site, item.name, e)
 							return false
 						})
-						;(ok ? done : failed).add(names[site])
+						// Netflix only learns to skip the title here: not a removal to report
+						if (site !== 'netflix') (ok ? done : failed).add(names[site])
 					}
 				}
 				await this.persistSettings()
@@ -1823,12 +1832,20 @@ export default class LibraryPlugin extends Plugin {
 		}).open()
 	}
 
+	private netflixNoteHeld(id: number): boolean {
+		return this.app.vault.getMarkdownFiles().some(file => toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.['Netflix ID']) === String(id))
+	}
+
 	private stillHeld(item: Removal, held: Set<string>): boolean {
-		return held.has(item.key) || (item.imdb !== null && held.has(item.imdb))
+		return (item.key !== '' && held.has(item.key)) || (item.imdb !== null && held.has(item.imdb)) || (item.netflix !== null && held.has(`netflix:${String(item.netflix)}`))
 	}
 
 	// One title off one site; true when it is gone there.
 	private async removeFrom(site: RemoteSite, item: Removal): Promise<boolean> {
+		if (site === 'netflix' && item.netflix !== null) {
+			if (this.settings.netflixIgnored.indexOf(item.netflix) < 0) this.settings.netflixIgnored.push(item.netflix)
+			return true
+		}
 		const ids = item.anime ?? item.manga
 		const isAnime = item.anime !== null
 		if (site === 'anilist' && ids) {
@@ -3989,6 +4006,7 @@ export default class LibraryPlugin extends Plugin {
 		if (!['english', 'romaji', 'native'].includes(this.settings.titleLanguage)) this.settings.titleLanguage = 'english'
 		if (typeof this.settings.adultTitles !== 'boolean') this.settings.adultTitles = false
 		if (typeof this.settings.offerRemoteDelete !== 'boolean') this.settings.offerRemoteDelete = true
+		if (!Array.isArray(this.settings.netflixIgnored)) this.settings.netflixIgnored = []
 		const trakt = this.settings.traktTokens
 		if (trakt && (typeof trakt.access !== 'string' || typeof trakt.refresh !== 'string' || typeof trakt.expiresAt !== 'number')) this.settings.traktTokens = null
 		if (!this.settings.traktEcho || typeof this.settings.traktEcho !== 'object') this.settings.traktEcho = {}

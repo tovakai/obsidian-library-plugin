@@ -440,6 +440,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'remoteDelete.many1': '{count} note was deleted from the vault. Remove it from these sites as well? Scores, progress and history there are lost.',
 		'remoteDelete.many2': '{count} notes were deleted from the vault. Remove them from these sites as well? Scores, progress and history there are lost.',
 		'remoteDelete.many5': '{count} notes were deleted from the vault. Remove them from these sites as well? Scores, progress and history there are lost.',
+		'remoteDelete.netflix': 'Netflix: skip on import (a title cannot be removed there)',
 		'remoteDelete.remove': 'Remove',
 		'remoteDelete.keep': 'Keep',
 		'notice.remoteDelete.done': 'Removed from {sites}',
@@ -31659,6 +31660,8 @@ export interface ILibrarySettings {
 	titleLanguage: TitleLanguage
 	// after a library note is deleted, offer to take it off the connected sites
 	offerRemoteDelete: boolean
+	// Netflix titles deleted here: Netflix keeps them, so its import skips them
+	netflixIgnored: number[]
 	// adult titles in anime and manga search
 	adultTitles: boolean
 	comingSoonCollapsed: boolean
@@ -31723,6 +31726,7 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	localCovers: false,
 	titleLanguage: 'english',
 	offerRemoteDelete: true,
+	netflixIgnored: [],
 	adultTitles: false,
 	comingSoonCollapsed: false,
 	showDiary: true,
