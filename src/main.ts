@@ -1452,14 +1452,22 @@ export default class LibraryPlugin extends Plugin {
 	private async importWatched(title: WatchedTitle): Promise<'created' | 'updated' | null> {
 		const url = title.id ? `https://www.imdb.com/title/${title.id}/` : ''
 		const typeValues = this.settings.categories.filter(c => c.contentType === title.kind).map(c => c.typeValue)
-		const existing = this.app.vault.getMarkdownFiles().find(file => {
-			if (isTemplateFile(file.path)) return false
-			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
-			if (!fm || typeValues.indexOf(toStr(fm.Type)) < 0) return false
+		// a Netflix id, and a guessed title's name, are looked for among movies and series both
+		const watchTypes = this.settings.categories.filter(c => c.contentType === 'movie' || c.contentType === 'series').map(c => c.typeValue)
+		const notes = this.app.vault.getMarkdownFiles().filter(file => !isTemplateFile(file.path))
+		const fmOf = (file: TFile): Record<string, unknown> | undefined => this.app.metadataCache.getFileCache(file)?.frontmatter
+		const byNetflix = title.netflixId ? notes.find(file => {
+			const fm = fmOf(file)
+			return !!fm && watchTypes.indexOf(toStr(fm.Type)) >= 0 && toStr(fm['Netflix ID']) === String(title.netflixId)
+		}) : undefined
+		const existing = byNetflix ?? notes.find(file => {
+			const fm = fmOf(file)
+			if (!fm || (title.guessed ? watchTypes : typeValues).indexOf(toStr(fm.Type)) < 0) return false
 			if (title.id) return toStr(fm['Source ID']) === title.id || toStr(fm.URL) === url
-			if (title.netflixId && toStr(fm['Netflix ID']) === String(title.netflixId)) return true
 			return sameTitle(toStr(fm.Name) || file.basename, title.name)
 		})
+		// no viewing, no note: not enough to make one, and a series would come in as a movie
+		if (!existing && title.guessed) return null
 		const watched = title.watched
 		const key = `${title.kind}:${title.id || title.name.toLowerCase()}`
 		if (existing) {
@@ -1468,7 +1476,8 @@ export default class LibraryPlugin extends Plugin {
 			const seen = (title.trakt ? this.settings.traktEcho : this.settings.imdbEcho)[title.id]
 			const rerated = !!seen && seen.r > 0 && title.rating !== null && Math.round(title.rating) !== seen.r && Math.round(Number(toStr(fm?.['My Rating']))) === seen.r
 			const rate = title.rating !== null && (isEmptyValue(fm?.['My Rating']) || rerated)
-			const finish = title.kind === 'movie' && watched && fm?.Complete !== true
+			// a guessed title may be a series: only a viewing finishes a movie
+			const finish = title.kind === 'movie' && watched && !title.guessed && fm?.Complete !== true
 			const link = !!title.netflixId && (toStr(fm?.['Netflix ID']) !== String(title.netflixId) || toStrArray(fm?.Platforms).indexOf('Netflix') < 0)
 			this.noteImdbHas(title)
 			if (title.listed && (title.watched || (fm && this.isStarted(fm)))) await this.unlist(title)
@@ -1487,6 +1496,21 @@ export default class LibraryPlugin extends Plugin {
 		if (!provider) return null
 		// Netflix gives only a name: the source's best match for it, else a bare note
 		const sourceId = title.id || (await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[]))[0]?.sourceId || ''
+		// Netflix's name found a note the library already has under another name: link it, no second note
+		const same = !title.id && sourceId ? notes.find(file => {
+			const fm = fmOf(file)
+			return !!fm && typeValues.indexOf(toStr(fm.Type)) >= 0 && toStr(fm['Source ID']) === sourceId
+		}) : undefined
+		if (same && title.netflixId) {
+			this.watchNotes.set(key, same)
+			await this.app.fileManager.processFrontMatter(same, (current: Record<string, unknown>) => {
+				if (title.rating !== null && isEmptyValue(current['My Rating'])) current['My Rating'] = title.rating
+				current['Netflix ID'] = title.netflixId
+				addPlatform(current, 'Netflix', null)
+			})
+			this.noteImdbHas({ ...title, id: '' })
+			return 'updated'
+		}
 		const meta = sourceId ? await provider.fetch(sourceId, title.kind) : null
 		const category = await this.categoryFor(title.kind)
 		const extra: Record<string, unknown> = {}
@@ -1805,7 +1829,10 @@ export default class LibraryPlugin extends Plugin {
 			const netflix = toStr(fm['Netflix ID'])
 			if (netflix) held.add(`netflix:${netflix}`)
 		}
-		const items = this.removals.splice(0).filter(item => !this.stillHeld(item, held))
+		// each site keeps what another note still holds
+		const items = this.removals.splice(0)
+			.map(item => ({ ...item, sites: item.sites.filter(site => !this.stillHeld(site, item, held)) }))
+			.filter(item => item.sites.length > 0)
 		if (items.length === 0 || this.unloaded) return
 		const names: Record<RemoteSite, string> = { anilist: tr('anilist.name'), mal: tr('mal.name'), kitsu: tr('kitsu.name'), trakt: 'Trakt', imdb: 'IMDb', netflix: tr('remoteDelete.netflix') }
 		const order: RemoteSite[] = ['anilist', 'mal', 'kitsu', 'trakt', 'imdb', 'netflix']
@@ -1835,8 +1862,10 @@ export default class LibraryPlugin extends Plugin {
 		return this.app.vault.getMarkdownFiles().some(file => toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.['Netflix ID']) === String(id))
 	}
 
-	private stillHeld(item: Removal, held: Set<string>): boolean {
-		return (item.key !== '' && held.has(item.key)) || (item.imdb !== null && held.has(item.imdb)) || (item.netflix !== null && held.has(`netflix:${String(item.netflix)}`))
+	private stillHeld(site: RemoteSite, item: Removal, held: Set<string>): boolean {
+		if (site === 'netflix') return item.netflix !== null && held.has(`netflix:${String(item.netflix)}`)
+		if (site === 'trakt' || site === 'imdb') return item.imdb !== null && held.has(item.imdb)
+		return item.key !== '' && held.has(item.key)
 	}
 
 	// One title off one site; true when it is gone there.

@@ -85,6 +85,8 @@ export interface WatchedTitle {
 	listed?: boolean
 	// From Trakt: its echo and watchlist, not IMDb's.
 	trakt?: boolean
+	// Netflix rated it but shows no viewing: movie or series is unknown
+	guessed?: boolean
 }
 
 const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']
@@ -316,8 +318,8 @@ export function netflixTitles(viewed: NetflixViewed[], rated: NetflixRated[]): N
 		if (!item.movieID || !score) continue
 		const known = titles.get(item.movieID)
 		if (known) known.rating = score
-		// rated without a viewing in the history: kind unknown, a movie is the safer guess
-		else if (item.title) titles.set(item.movieID, { id: '', netflixId: item.movieID, name: item.title, kind: 'movie', year: null, rating: score, when: '', watched: true })
+		// rated without a viewing in the history (a series' id, often): it only fills a note that has it
+		else if (item.title) titles.set(item.movieID, { id: '', netflixId: item.movieID, name: item.title, kind: 'movie', year: null, rating: score, when: '', watched: true, guessed: true })
 	}
 	return { titles: [...titles.values()], episodes }
 }
