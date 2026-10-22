@@ -115,6 +115,20 @@ export async function pushEntry(
 	return !!json?.data?.SaveMediaListEntry?.id
 }
 
+// Takes the title off the viewer's list; true when it is gone or was never there.
+export async function deleteEntry(token: string, userId: number, mediaId: number): Promise<boolean> {
+	// a Page answers an empty list where MediaList alone would answer 404
+	const found = await gql<{ data?: { Page?: { mediaList?: { id: number }[] } } }>(token,
+		'query ($userId: Int, $mediaId: Int) { Page(perPage: 1) { mediaList(userId: $userId, mediaId: $mediaId) { id } } }', { userId, mediaId })
+	const list = found?.data?.Page?.mediaList
+	if (!list) return false
+	const entryId = list[0]?.id
+	if (!entryId) return true
+	const json = await gql<{ data?: { DeleteMediaListEntry?: { deleted?: boolean } } }>(token,
+		'mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }', { id: entryId })
+	return !!json?.data?.DeleteMediaListEntry?.deleted
+}
+
 export type AniListMediaKind = 'ANIME' | 'MANGA'
 
 interface ListCollectionResponse {

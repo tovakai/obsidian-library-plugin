@@ -433,6 +433,17 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'settings.titleLanguage.native': 'Original',
 		'settings.adultTitles.name': 'Adult titles in search',
 		'settings.adultTitles.desc': 'Shows anime and manga marked as adult in search results.',
+		'settings.remoteDelete.name': 'Offer to remove deleted notes from sites',
+		'settings.remoteDelete.desc': 'After you delete a library note, asks whether to take the title off AniList, MyAnimeList, Kitsu, Trakt and IMDb too. Nothing is removed without your answer.',
+		'remoteDelete.title': 'Remove from your sites too?',
+		'remoteDelete.one': '{name} was deleted from the vault. Remove it from these sites as well? Its score, progress and history there are lost.',
+		'remoteDelete.many1': '{count} note was deleted from the vault. Remove it from these sites as well? Scores, progress and history there are lost.',
+		'remoteDelete.many2': '{count} notes were deleted from the vault. Remove them from these sites as well? Scores, progress and history there are lost.',
+		'remoteDelete.many5': '{count} notes were deleted from the vault. Remove them from these sites as well? Scores, progress and history there are lost.',
+		'remoteDelete.remove': 'Remove',
+		'remoteDelete.keep': 'Keep',
+		'notice.remoteDelete.done': 'Removed from {sites}',
+		'notice.remoteDelete.failed': 'Could not remove from {sites}',
 		'settings.localCovers.name': 'Keep covers in the vault',
 		'settings.localCovers.desc': 'Downloads cover images into a Covers folder in the library folder, so the library shows them offline. The note then links the file.',
 		'settings.comingSoon.name': 'Soon',
@@ -31646,6 +31657,8 @@ export interface ILibrarySettings {
 	localCovers: boolean
 	// anime and manga names: english, romaji or native, the first one a source has
 	titleLanguage: TitleLanguage
+	// after a library note is deleted, offer to take it off the connected sites
+	offerRemoteDelete: boolean
 	// adult titles in anime and manga search
 	adultTitles: boolean
 	comingSoonCollapsed: boolean
@@ -31709,6 +31722,7 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	showComingSoon: true,
 	localCovers: false,
 	titleLanguage: 'english',
+	offerRemoteDelete: true,
 	adultTitles: false,
 	comingSoonCollapsed: false,
 	showDiary: true,

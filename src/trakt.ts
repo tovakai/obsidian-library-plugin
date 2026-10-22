@@ -241,3 +241,30 @@ export async function traktSend(token: string, imdb: string, kind: 'movie' | 'se
 	if (!ok) console.error('Library: Trakt push failed', imdb, results.map(result => result.status))
 	return ok
 }
+
+// Takes a title off Trakt: its plays (every episode of a show), its scores and
+// the watchlist. `rated` are the episodes ("season:episode") scored from here.
+export async function traktRemove(token: string, imdb: string, kind: 'movie' | 'series', rated: string[]): Promise<boolean> {
+	if (!IMDB_ID.test(imdb)) return false
+	const ids = { imdb }
+	const group = kind === 'movie' ? 'movies' : 'shows'
+	const calls = [
+		post(`${API}/sync/history/remove`, { [group]: [{ ids }] }, token),
+		post(`${API}/sync/ratings/remove`, { [group]: [{ ids }] }, token),
+		post(`${API}/sync/watchlist/remove`, { [group]: [{ ids }] }, token),
+	]
+	if (kind === 'series' && rated.length > 0) {
+		const by = new Map<number, { number: number }[]>()
+		for (const key of rated) {
+			const season = Number(key.split(':')[0])
+			const episode = Number(key.split(':')[1])
+			by.set(season, [...(by.get(season) ?? []), { number: episode }])
+		}
+		const seasons = [...by.entries()].map(([number, episodes]) => ({ number, episodes }))
+		calls.push(post(`${API}/sync/ratings/remove`, { shows: [{ ids, seasons }] }, token))
+	}
+	const results = await Promise.all(calls)
+	const ok = results.every(result => result.status === 200)
+	if (!ok) console.error('Library: Trakt removal failed', imdb, results.map(result => result.status))
+	return ok
+}

@@ -9,6 +9,7 @@ import {
 	Platform,
 	getLanguage,
 	requestUrl,
+	type CachedMetadata,
 } from 'obsidian'
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
@@ -45,18 +46,19 @@ import { LibrarySearchModal } from './ui/librarySearchModal'
 import { PromptModal } from './ui/promptModal'
 import { DuplicateRemovalModal, type DuplicateGroup } from './ui/duplicateModal'
 import { ShareModal, shareTargetFromFile } from './ui/shareModal'
-import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
+import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, deleteEntry, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
-import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
+import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbRatingDelete, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
 import { earnedAchievements, gameAchievements, ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamLanguage, steamSession, type SteamSession } from './steamLibrary'
-import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
-import { externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
+import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, deleteMalEntry, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
+import { deleteKitsuEntry, externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
 import { LibraryView, LIBRARY_VIEW_TYPE } from './view'
 import { LibraryBlock } from './libraryBlock'
 import { addLog, tickLabel, todayIso } from './diary'
 import { libraryMap } from './libraryMap'
 import { TraktLoginModal } from './ui/traktLoginModal'
-import { refreshTraktTokens, traktChanges, traktData, traktExpired, traktHistory, traktSend, type TraktEcho } from './trakt'
+import { RemoteDeleteModal } from './ui/remoteDeleteModal'
+import { refreshTraktTokens, traktChanges, traktData, traktExpired, traktHistory, traktRemove, traktSend, type TraktEcho } from './trakt'
 import { airingDate, airingLabel, animeSchedules, seriesSchedule, type Airing } from './airing'
 import { cleanPsnName, exchangePsnCode, psnEarnedTrophies, psnExpired, psnLanguage, psnOwnedGames, psnPlayedGames, psnTrophyIdsFor, psnTrophySummary, psnTrophyTitles, refreshPsnTokens, type PsnOwnedGame, type PsnPlayedGame, type PsnTrophy, type PsnTrophySummary, type PsnTrophyTitle } from './psn'
 import { PsnLoginModal, psnSilentCode } from './ui/psnLoginModal'
@@ -138,6 +140,20 @@ interface FolderMove {
 const ENRICH_STEP_DELAY = 700
 
 // an anime note: its id on each site, one resolved through AniList
+type RemoteSite = 'anilist' | 'mal' | 'kitsu' | 'trakt' | 'imdb'
+
+// A deleted note, as its cached frontmatter named it.
+interface Removal {
+	name: string
+	// Source|Source ID: another note with the same key keeps the title on the sites
+	key: string
+	anime: { anilist: number | null; mal: number | null } | null
+	manga: { anilist: number | null; mal: number | null } | null
+	imdb: string | null
+	kind: 'movie' | 'series'
+	sites: RemoteSite[]
+}
+
 interface AnimeNote {
 	file: TFile
 	anilist: number | null
@@ -196,6 +212,9 @@ export default class LibraryPlugin extends Plugin {
 	private kitsuRefreshing: Promise<string | null> | null = null
 	private traktRefreshing: Promise<string | null> | null = null
 	private watchPushing = false
+	// notes deleted in the last second, offered together for removal from the sites
+	private removals: Removal[] = []
+	private removalTimer = 0
 	private enrichTimer: number | null = null
 	private enrichSleepTimer: number | null = null
 	private enrichWait: (() => void) | null = null
@@ -293,6 +312,7 @@ export default class LibraryPlugin extends Plugin {
 					this.armTraktPush(file)
 				})
 			)
+			this.registerEvent(this.app.metadataCache.on('deleted', (file, prev) => this.noteDeleted(file, prev)))
 			this.refreshBanner()
 			this.scheduleEnrich(ENRICH_START_DELAY)
 			// MAL then AniList: two imports at once could create the same note twice
@@ -487,6 +507,7 @@ export default class LibraryPlugin extends Plugin {
 		this.unloaded = true
 		if (this.refreshTimer) window.clearTimeout(this.refreshTimer)
 		if (this.bannerTimer) window.clearTimeout(this.bannerTimer)
+		window.clearTimeout(this.removalTimer)
 		for (const timer of this.linkTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.malPushTimers.values()) window.clearTimeout(timer)
 		for (const timer of this.imdbPushTimers.values()) window.clearTimeout(timer)
@@ -1737,6 +1758,130 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			this.traktPushing = false
 		}
+	}
+
+	// A library note left the vault: queue it for the removal offer.
+	private noteDeleted(file: TFile, prev: CachedMetadata | null): void {
+		const fm = prev?.frontmatter
+		if (!this.settings.offerRemoteDelete || !fm || isTemplateFile(file.path)) return
+		if (!this.settings.categories.some(c => c.typeValue === toStr(fm.Type))) return
+		const source = toStr(fm.Source)
+		const sourceId = toStr(fm['Source ID'])
+		const anime = source === 'anilist' ? animeIds(sourceId) : null
+		const manga = source === 'comics' ? mangaIds(sourceId) : null
+		const imdb = this.imdbIdOf(fm)
+		const sites: RemoteSite[] = []
+		if (anime || manga) {
+			if (this.settings.anilistToken.trim()) sites.push('anilist')
+			if (this.settings.malTokens) sites.push('mal')
+			if (anime && this.settings.kitsuTokens) sites.push('kitsu')
+		}
+		if (imdb) {
+			if (this.settings.traktTokens) sites.push('trakt')
+			// IMDb is reached through a page: desktop only
+			if (this.settings.watchSites.imdb.connected && Platform.isDesktopApp) sites.push('imdb')
+		}
+		if (sites.length === 0) return
+		this.removals.push({ name: toStr(fm.Name) || file.basename, key: `${source}|${sourceId}`, anime, manga, imdb, kind: this.kindOf(fm) === 'movie' ? 'movie' : 'series', sites })
+		window.clearTimeout(this.removalTimer)
+		this.removalTimer = window.setTimeout(() => this.offerRemoval(), 1000)
+	}
+
+	private offerRemoval(): void {
+		// a title another note still holds stays on the sites: a removed duplicate, or a note deleted on one device only
+		const held = new Set<string>()
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (!fm) continue
+			held.add(`${toStr(fm.Source)}|${toStr(fm['Source ID'])}`)
+			const imdb = this.imdbIdOf(fm)
+			if (imdb) held.add(imdb)
+		}
+		const items = this.removals.splice(0).filter(item => !this.stillHeld(item, held))
+		if (items.length === 0 || this.unloaded) return
+		const names: Record<RemoteSite, string> = { anilist: tr('anilist.name'), mal: tr('mal.name'), kitsu: tr('kitsu.name'), trakt: 'Trakt', imdb: 'IMDb' }
+		const order: RemoteSite[] = ['anilist', 'mal', 'kitsu', 'trakt', 'imdb']
+		const sites = order.filter(site => items.some(item => item.sites.includes(site))).map(id => ({ id, name: names[id] }))
+		new RemoteDeleteModal(this.app, items.map(item => item.name), sites, chosen => {
+			void (async () => {
+				const done = new Set<string>()
+				const failed = new Set<string>()
+				for (const item of items) {
+					for (const site of item.sites) {
+						if (!chosen.has(site) || this.unloaded) continue
+						const ok = await this.removeFrom(site, item).catch((e: unknown) => {
+							console.error('Library: removal error', site, item.name, e)
+							return false
+						})
+						;(ok ? done : failed).add(names[site])
+					}
+				}
+				await this.persistSettings()
+				if (done.size > 0) new Notice(tr('notice.remoteDelete.done', { sites: [...done].join(', ') }))
+				if (failed.size > 0) new Notice(tr('notice.remoteDelete.failed', { sites: [...failed].join(', ') }))
+			})()
+		}).open()
+	}
+
+	private stillHeld(item: Removal, held: Set<string>): boolean {
+		return held.has(item.key) || (item.imdb !== null && held.has(item.imdb))
+	}
+
+	// One title off one site; true when it is gone there.
+	private async removeFrom(site: RemoteSite, item: Removal): Promise<boolean> {
+		const ids = item.anime ?? item.manga
+		const isAnime = item.anime !== null
+		if (site === 'anilist' && ids) {
+			const token = this.settings.anilistToken.trim()
+			const viewer = token ? await aniListViewer(token) : null
+			let mediaId = ids.anilist
+			if (mediaId === null && ids.mal !== null) mediaId = (await (isAnime ? anilistIdsFor : anilistMangaIdsFor)([ids.mal]))?.get(ids.mal) ?? null
+			return !!viewer && mediaId !== null && await deleteEntry(token, viewer.id, mediaId)
+		}
+		if (site === 'mal' && ids) {
+			const token = await this.malToken()
+			let malId = ids.mal
+			if (malId === null && ids.anilist !== null) malId = (await (isAnime ? malIdsFor : malMangaIdsFor)([ids.anilist]))?.get(ids.anilist) ?? null
+			return !!token && malId !== null && await deleteMalEntry(token, malId, isAnime ? 'anime' : 'manga')
+		}
+		if (site === 'kitsu' && item.anime) {
+			const token = await this.kitsuToken()
+			const viewer = token ? await kitsuViewer(token) : null
+			const kitsuId = await this.kitsuIdFor(item.anime)
+			return !!token && !!viewer && kitsuId !== null && await deleteKitsuEntry(token, viewer.id, kitsuId)
+		}
+		if (site === 'trakt' && item.imdb) {
+			const token = await this.traktToken()
+			const ok = !!token && await traktRemove(token, item.imdb, item.kind, Object.keys(this.settings.traktEcho[item.imdb]?.e ?? {}))
+			if (ok) delete this.settings.traktEcho[item.imdb]
+			return ok
+		}
+		if (site === 'imdb' && item.imdb) {
+			const id = item.imdb
+			// without an echo nothing is known: try the score and the watchlist both
+			const had: ImdbEcho | undefined = this.settings.imdbEcho[id]
+			while (this.watchImporting || this.watchPushing) await this.pause(1000)
+			this.watchPushing = true
+			try {
+				const results: boolean[] = []
+				if (!had || had.r > 0) results.push(await imdbRatingDelete(id))
+				if (!had || had.l) results.push(await imdbWatchlistRemove(id))
+				const bySeason = new Map<number, Map<number, string>>()
+				for (const key of Object.keys(had?.e ?? {})) {
+					const season = Number(key.split(':')[0])
+					const episode = Number(key.split(':')[1])
+					if (!bySeason.has(season)) bySeason.set(season, await imdbSeason(id, season))
+					const episodeId = bySeason.get(season)?.get(episode)
+					results.push(!!episodeId && await imdbRatingDelete(episodeId))
+				}
+				const ok = had ? results.every(Boolean) : results.some(Boolean)
+				if (ok) delete this.settings.imdbEcho[id]
+				return ok
+			} finally {
+				this.watchPushing = false
+			}
+		}
+		return false
 	}
 
 	private armTraktPush(file: TFile): void {
@@ -3843,6 +3988,7 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.localCovers !== 'boolean') this.settings.localCovers = false
 		if (!['english', 'romaji', 'native'].includes(this.settings.titleLanguage)) this.settings.titleLanguage = 'english'
 		if (typeof this.settings.adultTitles !== 'boolean') this.settings.adultTitles = false
+		if (typeof this.settings.offerRemoteDelete !== 'boolean') this.settings.offerRemoteDelete = true
 		const trakt = this.settings.traktTokens
 		if (trakt && (typeof trakt.access !== 'string' || typeof trakt.refresh !== 'string' || typeof trakt.expiresAt !== 'number')) this.settings.traktTokens = null
 		if (!this.settings.traktEcho || typeof this.settings.traktEcho !== 'object') this.settings.traktEcho = {}

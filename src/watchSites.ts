@@ -231,6 +231,11 @@ export async function imdbWatchlistRemove(id: string): Promise<boolean> {
 	return (await imdbAsk(`mutation { removeElementFromPredefinedList(input: {classType: WATCH_LIST, itemElementId: "${id}"}) { __typename } }`)) !== null
 }
 
+export async function imdbRatingDelete(id: string): Promise<boolean> {
+	if (!IMDB_ID.test(id)) return false
+	return (await imdbAsk(`mutation { deleteTitleRating(input: {titleId: "${id}"}) { __typename } }`)) !== null
+}
+
 export async function imdbWatchlistAdd(id: string): Promise<boolean> {
 	if (!IMDB_ID.test(id)) return false
 	return (await imdbAsk(`mutation { addItemToPredefinedList(input: {classType: WATCH_LIST, item: {itemElementId: "${id}"}}) { __typename } }`)) !== null
