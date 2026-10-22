@@ -323,7 +323,8 @@ export function netflixTitles(viewed: NetflixViewed[], rated: NetflixRated[]): N
 }
 
 // The account pages' Falcor endpoint, paged; the profile is the signed-in one.
-const NETFLIX_READ = `(async () => {
+// The page's own account calls, shared by the reader and the hide below.
+const NETFLIX_PRELUDE = `
 	const context = window.netflix?.reactContext;
 	if (!context) return '';
 	const user = context.models?.userInfo?.data;
@@ -346,7 +347,9 @@ const NETFLIX_READ = `(async () => {
 			if (got.length < 100) break;
 		}
 		return items;
-	};
+	};`
+
+const NETFLIX_READ = `(async () => {${NETFLIX_PRELUDE}
 	return JSON.stringify({ viewed: await all('viewingActivity', 'viewedItems'), rated: await all('ratingHistory', 'ratingItems') });
 })().catch(() => '')`
 
@@ -359,6 +362,23 @@ export async function netflixHistory(): Promise<NetflixHistory | 'signed-out' | 
 	} catch {
 		return null
 	}
+}
+
+// Hides a title from the profile's viewing history, every episode of a show: the
+// "hide" of the Viewing activity page. 'none' when it was never there.
+export async function netflixHideViewing(netflixId: number): Promise<boolean> {
+	if (!Number.isSafeInteger(netflixId) || netflixId <= 0) return false
+	const code = `(async () => {${NETFLIX_PRELUDE}
+	const id = ${String(netflixId)};
+	const item = (await all('viewingActivity', 'viewedItems')).find(v => v.series === id || v.movieID === id);
+	if (!item) return 'none';
+	const body = JSON.stringify({ operationName: 'HideTitleViewing', variables: { input: { videoId: String(item.movieID), hideAllEpisodes: item.series === id, profileGuid: user.guid } }, extensions: { persistedQuery: { id: '573bcc5d-b976-4302-8b57-c3f99479532d', version: 102 } } });
+	const r = await window.fetch('/graphql', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body });
+	const answer = r.ok ? await r.json() : null;
+	return answer && !answer.errors?.length && answer.data?.hideTitleViewing?.result ? 'hidden' : '';
+})().catch(() => '')`
+	const answer = await readPage('https://www.netflix.com/viewingactivity', code, 90000)
+	return answer === 'hidden' || answer === 'none'
 }
 
 // A thumb on the title (a show's id for a series), by the page's safelisted mutation.

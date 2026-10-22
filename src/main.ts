@@ -48,7 +48,7 @@ import { DuplicateRemovalModal, type DuplicateGroup } from './ui/duplicateModal'
 import { ShareModal, shareTargetFromFile } from './ui/shareModal'
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, deleteEntry, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
-import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbRatingDelete, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
+import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbRatingDelete, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, netflixHideViewing, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
 import { earnedAchievements, gameAchievements, ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamLanguage, steamSession, type SteamSession } from './steamLibrary'
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, deleteMalEntry, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { deleteKitsuEntry, externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
@@ -1821,8 +1821,7 @@ export default class LibraryPlugin extends Plugin {
 							console.error('Library: removal error', site, item.name, e)
 							return false
 						})
-						// Netflix only learns to skip the title here: not a removal to report
-						if (site !== 'netflix') (ok ? done : failed).add(names[site])
+						;(ok ? done : failed).add(site === 'netflix' ? 'Netflix' : names[site])
 					}
 				}
 				await this.persistSettings()
@@ -1843,8 +1842,17 @@ export default class LibraryPlugin extends Plugin {
 	// One title off one site; true when it is gone there.
 	private async removeFrom(site: RemoteSite, item: Removal): Promise<boolean> {
 		if (site === 'netflix' && item.netflix !== null) {
+			// the score stays on Netflix, and its import would bring the note back: skip the title there
 			if (this.settings.netflixIgnored.indexOf(item.netflix) < 0) this.settings.netflixIgnored.push(item.netflix)
-			return true
+			// the viewing history is reached through a page: desktop only
+			if (!Platform.isDesktopApp) return true
+			while (this.watchImporting || this.watchPushing) await this.pause(1000)
+			this.watchPushing = true
+			try {
+				return await netflixHideViewing(item.netflix)
+			} finally {
+				this.watchPushing = false
+			}
 		}
 		const ids = item.anime ?? item.manga
 		const isAnime = item.anime !== null

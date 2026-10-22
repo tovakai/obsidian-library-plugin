@@ -440,7 +440,7 @@ export const I18N: Record<SupportedLocale, Record<string, string>> = {
 		'remoteDelete.many1': '{count} note was deleted from the vault. Remove it from these sites as well? Scores, progress and history there are lost.',
 		'remoteDelete.many2': '{count} notes were deleted from the vault. Remove them from these sites as well? Scores, progress and history there are lost.',
 		'remoteDelete.many5': '{count} notes were deleted from the vault. Remove them from these sites as well? Scores, progress and history there are lost.',
-		'remoteDelete.netflix': 'Netflix: skip on import (a title cannot be removed there)',
+		'remoteDelete.netflix': 'Netflix: viewing history. The score stays there, so its import skips the title',
 		'remoteDelete.remove': 'Remove',
 		'remoteDelete.keep': 'Keep',
 		'notice.remoteDelete.done': 'Removed from {sites}',
