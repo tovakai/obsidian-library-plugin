@@ -203,17 +203,27 @@ export interface TraktPush {
 	rating: number | null
 	list: boolean | null
 	movieWatched: boolean
+	// unticked here after Trakt had them: taken off its history
+	movieUnwatched?: boolean
+	unwatched?: { season: number; episode: number }[]
 	episodes: { season: number; episode: number }[]
 	episodeRatings: { season: number; episode: number; rating: number }[]
 }
 
-export function traktChanges(want: TraktEcho, had: TraktEcho, kind: 'movie' | 'series'): TraktPush {
-	const seen = new Set(had.w ?? [])
+// `listed`: every episode the note has ("season:episode"); one Trakt has and the note leaves unticked was unticked here.
+export function traktChanges(want: TraktEcho, had: TraktEcho, kind: 'movie' | 'series', listed: string[] = []): TraktPush {
+	const ticked = new Set(want.w ?? [])
+	const shown = new Set(listed)
+	const off = (had.w ?? []).filter(key => shown.has(key) && !ticked.has(key))
+	const seen = new Set((had.w ?? []).filter(key => off.indexOf(key) < 0))
+	const movieUnwatched = kind === 'movie' && !!had.m && !want.m
 	const split = (key: string): { season: number; episode: number } => ({ season: Number(key.split(':')[0]), episode: Number(key.split(':')[1]) })
 	return {
 		rating: want.r > 0 && want.r !== had.r ? want.r : null,
-		list: want.l && !had.l && had.r === 0 && !had.m && seen.size === 0 ? true : !want.l && had.l ? false : null,
+		list: want.l && !had.l && had.r === 0 && (!had.m || movieUnwatched) && seen.size === 0 ? true : !want.l && had.l ? false : null,
 		movieWatched: kind === 'movie' && !!want.m && !had.m,
+		movieUnwatched,
+		unwatched: off.map(split),
 		episodes: (want.w ?? []).filter(key => !seen.has(key)).map(split),
 		episodeRatings: Object.keys(want.e ?? {}).filter(key => want.e?.[key] !== had.e?.[key]).map(key => ({ ...split(key), rating: want.e?.[key] ?? 0 })),
 	}
@@ -234,6 +244,8 @@ export async function traktSend(token: string, imdb: string, kind: 'movie' | 'se
 	if (change.list === true) calls.push(post(`${API}/sync/watchlist`, { [group]: [{ ids }] }, token))
 	if (change.list === false) calls.push(post(`${API}/sync/watchlist/remove`, { [group]: [{ ids }] }, token))
 	if (change.movieWatched) calls.push(post(`${API}/sync/history`, { movies: [{ ids }] }, token))
+	if (change.movieUnwatched) calls.push(post(`${API}/sync/history/remove`, { movies: [{ ids }] }, token))
+	if (change.unwatched?.length) calls.push(post(`${API}/sync/history/remove`, { shows: [{ ids, seasons: seasons(change.unwatched) }] }, token))
 	if (change.episodes.length > 0) calls.push(post(`${API}/sync/history`, { shows: [{ ids, seasons: seasons(change.episodes) }] }, token))
 	if (change.episodeRatings.length > 0) calls.push(post(`${API}/sync/ratings`, { shows: [{ ids, seasons: seasons(change.episodeRatings) }] }, token))
 	const results = await Promise.all(calls)

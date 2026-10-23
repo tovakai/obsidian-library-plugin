@@ -31652,6 +31652,10 @@ export interface ILibrarySettings {
 	imdbEcho: Record<string, ImdbEcho>
 	// The thumb Netflix last got for a title, by Netflix id: 1 down, 2 up, 3 way up.
 	netflixEcho: Record<string, number>
+	// per show's Netflix ID: the note's episodes ("season:episode" indexes) Netflix has a viewing of, with that viewing's id
+	netflixSeen: Record<string, Record<string, number>>
+	// shows put on My List after every episode was unticked here
+	netflixListed: number[]
 	showRecommendations: boolean
 	showUpNext: boolean
 	showComingSoon: boolean
@@ -31720,6 +31724,8 @@ export const DEFAULT_SETTINGS: ILibrarySettings = {
 	watchSites: { imdb: { connected: false, lastImport: 0 }, netflix: { connected: false, lastImport: 0 } },
 	imdbEcho: {},
 	netflixEcho: {},
+	netflixSeen: {},
+	netflixListed: [],
 	showRecommendations: true,
 	showUpNext: true,
 	showComingSoon: true,

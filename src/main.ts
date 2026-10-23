@@ -48,7 +48,7 @@ import { DuplicateRemovalModal, type DuplicateGroup } from './ui/duplicateModal'
 import { ShareModal, shareTargetFromFile } from './ui/shareModal'
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, deleteEntry, fetchList, listStatus, pushEntry, toTenPoint, tokenFromRedirect, type AniListEntry } from './anilistSync'
 import { recommendationsFor, type Recommendation } from './recommendations'
-import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbRatingDelete, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, netflixHideViewing, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
+import { SITE_SIGN_IN, imdbHistory, netflixHistory, netflixRate, thumbOf, type NetflixEpisode, imdbRate, imdbRatingDelete, imdbSeason, imdbWatchlistAdd, imdbWatchlistRemove, netflixAddToList, netflixHideEpisodes, netflixHideViewing, seasonIndex, signedInAt, type EpisodeRating, type ImdbEcho, type WatchSite, type WatchedTitle } from './watchSites'
 import { earnedAchievements, gameAchievements, ownedGames, playtimeHours, steamAuthUrl, steamIdFromRedirect, steamLanguage, steamSession, type SteamSession } from './steamLibrary'
 import { MAL_CLIENT_ID, anilistIdsFor, anilistMangaIdsFor, animeIds, codeFromRedirect, deleteMalEntry, exchangeCode, fetchMalList, isExpired, makeVerifier, mangaIds, malAuthUrl, malClientPair, malIdsFor, malMangaIdsFor, malStatus, pushMalEntry, refreshTokens, type MalEntry } from './malSync'
 import { deleteKitsuEntry, externalIdsFor, fetchKitsuList, findKitsuEntry, isKitsuExpired, KITSU_SESSION_PROBE, kitsuIdsFor, kitsuPasswordGrant, kitsuRefreshGrant, kitsuStatus, kitsuViewer, pushKitsuEntry, tokensFromKitsuSession, type KitsuEntry, type KitsuTokens } from './kitsuSync'
@@ -188,6 +188,10 @@ export default class LibraryPlugin extends Plugin {
 	private watchImporting = false
 	// Notes an import just found or made, before the metadata cache knows the new ones
 	private watchNotes = new Map<string, TFile>()
+	// shows whose note got its Netflix ID in this import: their viewings tick, nothing to undo yet
+	private netflixFresh = new Set<number>()
+	// per show, in this import: a first pass over a note that had the ID before (unticked = unticked by hand)
+	private netflixSeeding = new Map<number, boolean>()
 	private malImporting = false
 	private anilistImporting = false
 	// our own MAL write coming back: no echo push
@@ -1270,8 +1274,10 @@ export default class LibraryPlugin extends Plugin {
 		} finally {
 			this.watchImporting = false
 			this.watchNotes.clear()
+			this.netflixFresh.clear()
+			this.netflixSeeding.clear()
 		}
-		void (site === 'imdb' ? this.imdbBackfill() : this.netflixBackfill())
+		void (site === 'imdb' ? this.imdbBackfill() : this.netflixBackfill().then(() => this.netflixUnwatchAll()))
 	}
 
 	// A rated episode ticks and scores the matching episode in its series note, made if missing.
@@ -1304,16 +1310,28 @@ export default class LibraryPlugin extends Plugin {
 		if (!file) return null
 		const plain = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 		let changed = false
+		const show = viewed.series.netflixId ?? 0
+		const seen = this.settings.netflixSeen[String(show)] ?? {}
+		if (!this.netflixSeeding.has(show)) this.netflixSeeding.set(show, !this.settings.netflixSeen[String(show)] && !this.netflixFresh.has(show))
+		const seeding = this.netflixSeeding.get(show) === true
 		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
 			const seasons = seasonsOf(fm)
 			const index = seasonIndex(seasons.map(s => s.name), viewed.season)
 			const cut = viewed.title.endsWith('...') || viewed.title.endsWith('…')
 			const wanted = plain(viewed.title.replace(/(\.\.\.|…)$/, ''))
 			const at = seasons[index]?.episodes.findIndex(e => cut ? plain(e.title).startsWith(wanted) : plain(e.title) === wanted) ?? -1
-			if (at < 0 || seasons[index]?.episodes[at]?.watched) return
+			if (at < 0) return
+			const key = `${String(index)}:${String(at)}`
+			const known = key in seen
+			if (show && viewed.id) seen[key] = viewed.id
+			// unticked after Netflix had it, or on a note that had the show before and from a viewing older than
+			// the last import (that one would have ticked it): unticked by hand, hidden later
+			const old = seeding && viewed.when <= this.settings.watchSites.netflix.lastImport
+			if (seasons[index]?.episodes[at]?.watched || known || old) return
 			applyEpisodeChange(fm, { season: index, episode: at, watched: true })
 			changed = true
 		})
+		if (show) this.settings.netflixSeen[String(show)] = seen
 		return changed ? 'updated' : null
 	}
 
@@ -1361,8 +1379,46 @@ export default class LibraryPlugin extends Plugin {
 		if (existing) window.clearTimeout(existing)
 		this.imdbPushTimers.set(file.path, window.setTimeout(() => {
 			this.imdbPushTimers.delete(file.path)
-			void this.imdbPush(file).then(() => this.netflixPush(file))
+			void this.imdbPush(file).then(() => this.netflixPush(file)).then(() => this.netflixUnwatch(file))
 		}, 1500))
+	}
+
+	// Episodes unticked here that Netflix has a viewing of: taken off its viewing history; a show left
+	// with nothing ticked goes on My List, as not watched yet.
+	private async netflixUnwatch(file: TFile, force = false): Promise<void> {
+		if (!this.settings.watchSites.netflix.connected || !Platform.isDesktopApp) return
+		if (!force && (this.watchImporting || this.watchPushing)) { this.armImdbPush(file); return }
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const show = toStr(fm?.['Netflix ID'])
+		const seen = show ? this.settings.netflixSeen[show] : undefined
+		if (!fm || !seen) return
+		const seasons = seasonsOf(fm)
+		const off = Object.keys(seen).filter(key => {
+			const [season, episode] = [Number(key.split(':')[0]), Number(key.split(':')[1])]
+			const item = seasons[season]?.episodes[episode]
+			return !!item && !item.watched
+		})
+		const id = Number(show)
+		const untouched = !isFinished(fm, 'series') && seasons.every(season => season.episodes.every(episode => !episode.watched))
+		const list = untouched && this.settings.netflixListed.indexOf(id) < 0
+		if (off.length === 0 && !list) return
+		this.watchPushing = true
+		try {
+			const hidden = off.length > 0 ? await netflixHideEpisodes(off.map(key => seen[key] ?? 0)) : []
+			for (const key of off) if (hidden.indexOf(seen[key] ?? 0) >= 0) delete seen[key]
+			if (list && await netflixAddToList(id)) this.settings.netflixListed.push(id)
+			await this.persistSettings()
+		} finally {
+			this.watchPushing = false
+		}
+	}
+
+	private async netflixUnwatchAll(): Promise<void> {
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (this.unloaded || !this.settings.watchSites.netflix.connected) return
+			const show = toStr(this.app.metadataCache.getFileCache(file)?.frontmatter?.['Netflix ID'])
+			if (show && this.settings.netflixSeen[show]) await this.netflixUnwatch(file, true)
+		}
 	}
 
 	// Library to Netflix: the note's score as a thumb on the title its Netflix ID names.
@@ -1490,12 +1546,28 @@ export default class LibraryPlugin extends Plugin {
 					addPlatform(current, 'Netflix', null)
 				}
 			})
+			if (link && title.netflixId && toStr(fm?.['Netflix ID']) !== String(title.netflixId)) this.netflixFresh.add(title.netflixId)
 			return 'updated'
 		}
 		const provider = this.registry.forType(title.kind)
 		if (!provider) return null
 		// Netflix gives only a name: the source's best match for it, else a bare note
-		const sourceId = title.id || (await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[]))[0]?.sourceId || ''
+		const results = title.id ? [] : await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[])
+		let sourceId = title.id || results[0]?.sourceId || ''
+		let picked: NormalizedMetadata | null = null
+		// two shows of one name (a cartoon and its remake): the one whose episodes Netflix played
+		const named = results.filter(result => sameTitle(result.title, title.name)).slice(0, 4)
+		if (title.kind === 'series' && title.episodeTitles?.length && named.length > 1) {
+			const plain = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+			const played = new Set(title.episodeTitles.map(plain))
+			let best = -1
+			for (const result of named) {
+				const meta = await provider.fetch(result.sourceId, title.kind, result.raw)
+				const listed = seasonsOf({ Seasons: meta?.fields.Seasons }).reduce((all, season) => all.concat(season.episodes.map(e => plain(e.title))), [] as string[])
+				const hits = listed.filter(name => played.has(name)).length
+				if (meta && hits > best) { best = hits; sourceId = result.sourceId; picked = meta }
+			}
+		}
 		// Netflix's name found a note the library already has under another name: link it, no second note
 		const same = !title.id && sourceId ? notes.find(file => {
 			const fm = fmOf(file)
@@ -1503,6 +1575,7 @@ export default class LibraryPlugin extends Plugin {
 		}) : undefined
 		if (same && title.netflixId) {
 			this.watchNotes.set(key, same)
+			if (toStr(fmOf(same)?.['Netflix ID']) !== String(title.netflixId)) this.netflixFresh.add(title.netflixId)
 			await this.app.fileManager.processFrontMatter(same, (current: Record<string, unknown>) => {
 				if (title.rating !== null && isEmptyValue(current['My Rating'])) current['My Rating'] = title.rating
 				current['Netflix ID'] = title.netflixId
@@ -1511,7 +1584,7 @@ export default class LibraryPlugin extends Plugin {
 			this.noteImdbHas({ ...title, id: '' })
 			return 'updated'
 		}
-		const meta = sourceId ? await provider.fetch(sourceId, title.kind) : null
+		const meta = picked ?? (sourceId ? await provider.fetch(sourceId, title.kind) : null)
 		const category = await this.categoryFor(title.kind)
 		const extra: Record<string, unknown> = {}
 		if (title.rating !== null) extra['My Rating'] = title.rating
@@ -1525,6 +1598,7 @@ export default class LibraryPlugin extends Plugin {
 		const name = toStr(meta?.fields.Name) || title.name
 		const file = await this.newNote(category, provider.id, sourceId, name, meta ?? { fields: { Name: title.name, Year: title.year }, progressTotal: null, imdbId: null }, extra)
 		this.watchNotes.set(key, file)
+		if (title.netflixId) this.netflixFresh.add(title.netflixId)
 		this.noteImdbHas(title)
 		if (title.listed && title.watched) await this.unlist(title)
 		return 'created'
@@ -1756,6 +1830,20 @@ export default class LibraryPlugin extends Plugin {
 		return { r: base.r, l: base.l, e: base.e, w, m: kind === 'movie' && isFinished(fm, 'movie') }
 	}
 
+	// Every episode a series note lists, in Trakt's "season:episode" numbering.
+	private traktListed(fm: Record<string, unknown>): string[] {
+		const out: string[] = []
+		if (this.kindOf(fm) !== 'series') return out
+		const seasons = seasonsOf(fm)
+		const names = seasons.map(s => s.name)
+		seasons.forEach((season, index) => {
+			const numbered = Number(/\d+/.exec(season.name)?.[0])
+			const number = seasonIndex(names, numbered) === index ? numbered : index + 1
+			season.episodes.forEach((_, at) => out.push(`${String(number)}:${String(at + 1)}`))
+		})
+		return out
+	}
+
 	// Library to Trakt: a new score, a new unwatched title (watchlist), ticked episodes, episode scores.
 	private async traktPush(file: TFile): Promise<void> {
 		if (!this.settings.traktTokens) return
@@ -1767,8 +1855,9 @@ export default class LibraryPlugin extends Plugin {
 		const kind = this.kindOf(fm) === 'movie' ? 'movie' : 'series'
 		const want = this.traktWanted(fm)
 		const had: TraktEcho = this.settings.traktEcho[id] ?? { r: 0 }
-		const change = traktChanges(want, had, kind)
-		if (change.rating === null && change.list === null && !change.movieWatched && change.episodes.length === 0 && change.episodeRatings.length === 0) return
+		const change = traktChanges(want, had, kind, this.traktListed(fm))
+		const off = (change.unwatched ?? []).map(item => `${String(item.season)}:${String(item.episode)}`)
+		if (change.rating === null && change.list === null && !change.movieWatched && !change.movieUnwatched && off.length === 0 && change.episodes.length === 0 && change.episodeRatings.length === 0) return
 		const token = await this.traktToken()
 		if (!token) return
 		this.traktPushing = true
@@ -1777,8 +1866,8 @@ export default class LibraryPlugin extends Plugin {
 			this.settings.traktEcho[id] = {
 				r: change.rating ?? had.r,
 				l: change.list === null ? had.l : change.list,
-				m: !!had.m || change.movieWatched,
-				w: [...new Set([...(had.w ?? []), ...(want.w ?? [])])],
+				m: (!!had.m && !change.movieUnwatched) || change.movieWatched,
+				w: [...new Set([...(had.w ?? []).filter(key => off.indexOf(key) < 0), ...(want.w ?? [])])],
 				e: { ...had.e, ...want.e },
 			}
 			await this.persistSettings()
@@ -1878,7 +1967,9 @@ export default class LibraryPlugin extends Plugin {
 			while (this.watchImporting || this.watchPushing) await this.pause(1000)
 			this.watchPushing = true
 			try {
-				return await netflixHideViewing(item.netflix)
+				const ok = await netflixHideViewing(item.netflix)
+				if (ok) delete this.settings.netflixSeen[String(item.netflix)]
+				return ok
 			} finally {
 				this.watchPushing = false
 			}
@@ -4044,6 +4135,8 @@ export default class LibraryPlugin extends Plugin {
 		if (typeof this.settings.adultTitles !== 'boolean') this.settings.adultTitles = false
 		if (typeof this.settings.offerRemoteDelete !== 'boolean') this.settings.offerRemoteDelete = true
 		if (!Array.isArray(this.settings.netflixIgnored)) this.settings.netflixIgnored = []
+		if (!this.settings.netflixSeen || typeof this.settings.netflixSeen !== 'object') this.settings.netflixSeen = {}
+		if (!Array.isArray(this.settings.netflixListed)) this.settings.netflixListed = []
 		const trakt = this.settings.traktTokens
 		if (trakt && (typeof trakt.access !== 'string' || typeof trakt.refresh !== 'string' || typeof trakt.expiresAt !== 'number')) this.settings.traktTokens = null
 		if (!this.settings.traktEcho || typeof this.settings.traktEcho !== 'object') this.settings.traktEcho = {}
