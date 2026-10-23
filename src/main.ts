@@ -1661,6 +1661,8 @@ export default class LibraryPlugin extends Plugin {
 			})
 			return 'updated'
 		}
+		// rated, never viewed: no note, as for movies and series
+		if (title.guessed) return null
 		const provider = this.registry.forType('anime')
 		if (!provider) return null
 		const meta = await provider.fetch(sourceId, 'anime')
