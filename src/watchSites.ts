@@ -391,7 +391,7 @@ export async function netflixHideEpisodes(ids: number[]): Promise<number[]> {
 	if (clean.length === 0) return []
 	const code = `(async () => {${NETFLIX_PRELUDE}${NETFLIX_HIDE}
 	const done = [];
-	for (const id of ${JSON.stringify(clean)}) if (await hide(id, false)) done.push(id);
+	for (const id of [${clean.map(id => String(id)).join(',')}]) if (await hide(id, false)) done.push(id);
 	return JSON.stringify(done);
 })().catch(() => '')`
 	try {
