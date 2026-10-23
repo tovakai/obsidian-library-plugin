@@ -50,7 +50,7 @@ Connect an account in the plugin settings. Your lists arrive as notes, and anime
 - <img src="assets/connectors/myanimelist.svg" width="18" height="18" alt=""> **MyAnimeList**: anime and manga lists, progress and scores; changes go back on save
 - <img src="assets/connectors/kitsu.svg" width="18" height="18" alt=""> **Kitsu**: anime list, progress and ratings; changes go back on save
 - <img src="assets/connectors/imdb.svg" width="18" height="18" alt=""> **IMDb**: ratings, episode ratings and watchlist; scores and new watchlist titles go back
-- <img src="assets/connectors/netflix.svg" width="18" height="18" alt=""> **Netflix**: viewing history and thumbs; scores go back as thumbs, unticked episodes leave the history, and series you haven't started go to My List
+- <img src="assets/connectors/netflix.svg" width="18" height="18" alt=""> **Netflix**: viewing history and thumbs, anime into the anime category; scores go back as thumbs, unticked episodes leave the history, and series you haven't started go to My List
 - <img src="assets/connectors/trakt.svg" width="18" height="18" alt=""> **Trakt**: watch history, ratings and watchlist; scores, ticked and unticked episodes and new watchlist titles go back
 - <img src="assets/connectors/playstation.svg" width="18" height="18" alt=""> **PlayStation**: played games, playtime and trophies
 - <img src="assets/connectors/steam.svg" width="18" height="18" alt=""> **Steam**: library, playtime and achievements

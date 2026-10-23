@@ -33,6 +33,7 @@ IMDb knows a note by its IMDb id, in `Source ID` (such as `tt4574334`) or in `UR
 What comes in:
 
 - Your viewing history. A movie you watched becomes a note marked `Complete`. A series becomes a note, and the episodes you watched are ticked. Netflix gives only a title's name and its Netflix ID, so Library looks the ID up on Wikidata for the IMDb id. When Wikidata doesn't know the title, Library searches by name and, among series with the same name, picks the one whose episode titles match what you watched. A title you only rated, never watched, updates a note you have but doesn't make one.
+- Anime. When Wikidata gives the title an AniList or MyAnimeList id, it becomes an anime note instead of a series. The episodes you watched count into `Progress`, which only moves forward; Netflix doesn't number them, so every season counts toward one note. An anime already kept as a series note with that `Netflix ID` stays where it is.
 - Your thumbs, as scores: thumbs down is 3, thumbs up is 7, and two thumbs up is 9. They fill `My Rating` only while it is empty.
 
 Each note gets the `Netflix ID` and Netflix in `Platforms`.
