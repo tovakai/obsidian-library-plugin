@@ -421,8 +421,9 @@ export async function netflixAddToList(netflixId: number): Promise<boolean> {
 	const body = JSON.stringify({ operationName: 'AddToPlaylist', variables: { entityId: String(netflixId), trackId: null, signature: null }, extensions: { persistedQuery: { id: '5426b5a2-bb59-4b4a-a1f1-d04290c1160f', version: 102 } } })
 	const code = `window.fetch('/graphql', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: ${JSON.stringify(body)} }).then(r => r.ok ? r.text() : '').catch(() => '')`
 	try {
-		const answer = JSON.parse(await readPage('https://www.netflix.com/robots.txt', code)) as { data?: { addEntityToPlaylist?: unknown }; errors?: unknown[] }
-		return !answer.errors?.length && !!answer.data?.addEntityToPlaylist
+		// any data without errors counts: the result field's name is not pinned down
+		const answer = JSON.parse(await readPage('https://www.netflix.com/robots.txt', code)) as { data?: Record<string, unknown> | null; errors?: unknown[] }
+		return !answer.errors?.length && !!answer.data && Object.values(answer.data).some(Boolean)
 	} catch {
 		return false
 	}
