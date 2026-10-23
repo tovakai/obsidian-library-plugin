@@ -1935,9 +1935,10 @@ export default class LibraryPlugin extends Plugin {
 			.map(item => ({ ...item, sites: item.sites.filter(site => !this.stillHeld(site, item, held)) }))
 			.filter(item => item.sites.length > 0)
 		if (items.length === 0 || this.unloaded) return
-		const names: Record<RemoteSite, string> = { anilist: tr('anilist.name'), mal: tr('mal.name'), kitsu: tr('kitsu.name'), trakt: 'Trakt', imdb: 'IMDb', netflix: tr('remoteDelete.netflix') }
+		const names: Record<RemoteSite, string> = { anilist: tr('anilist.name'), mal: tr('mal.name'), kitsu: tr('kitsu.name'), trakt: 'Trakt', imdb: 'IMDb', netflix: 'Netflix' }
 		const order: RemoteSite[] = ['anilist', 'mal', 'kitsu', 'trakt', 'imdb', 'netflix']
-		const sites = order.filter(site => items.some(item => item.sites.includes(site))).map(id => ({ id, name: names[id] }))
+		const sites = order.filter(site => items.some(item => item.sites.includes(site)))
+			.map(id => ({ id, name: names[id], desc: id === 'netflix' ? tr('remoteDelete.netflixNote') : '' }))
 		new RemoteDeleteModal(this.app, items.map(item => item.name), sites, chosen => {
 			void (async () => {
 				const done = new Set<string>()
