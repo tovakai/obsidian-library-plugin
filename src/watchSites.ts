@@ -91,6 +91,8 @@ export interface WatchedTitle {
 	episodeTitles?: string[]
 	// Netflix: the IMDb id Wikidata gives its Netflix ID. Not `id`: that one says IMDb holds the title's score.
 	imdb?: string
+	// Netflix: an anime note's Source ID, when Wikidata gives the title an AniList or MyAnimeList id
+	anime?: string
 }
 
 const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']
@@ -391,7 +393,7 @@ export async function netflixHideEpisodes(ids: number[]): Promise<number[]> {
 	if (clean.length === 0) return []
 	const code = `(async () => {${NETFLIX_PRELUDE}${NETFLIX_HIDE}
 	const done = [];
-	for (const id of ${JSON.stringify(clean)}) if (await hide(id, false)) done.push(id);
+	for (const id of [${clean.map(id => String(id)).join(',')}]) if (await hide(id, false)) done.push(id);
 	return JSON.stringify(done);
 })().catch(() => '')`
 	try {

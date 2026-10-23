@@ -35,7 +35,7 @@ import { MangaProvider } from './providers/manga'
 import { SteamProvider } from './providers/steam'
 import { WikidataGameProvider } from './providers/wikidataGames'
 import { TmdbEnricher } from './providers/tmdb'
-import { RottenTomatoesEnricher, imdbIdsForNetflix } from './providers/wikidata'
+import { RottenTomatoesEnricher, idsForNetflix } from './providers/wikidata'
 import { isContentType } from './providers/types'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './providers/types'
 import { PickTypeModal, type AddChoice } from './ui/pickTypeModal'
@@ -1244,10 +1244,14 @@ export default class LibraryPlugin extends Plugin {
 				return
 			}
 			if (!titles) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
-			// Netflix gives a name only: Wikidata knows the IMDb id of most Netflix IDs
+			// Netflix gives a name only: Wikidata knows the IMDb id of most Netflix IDs, and an anime's AniList id
 			if (site === 'netflix') {
-				const imdb = await imdbIdsForNetflix(titles.titles.map(title => title.netflixId ?? 0))
-				for (const title of titles.titles) if (title.netflixId) title.imdb = imdb.get(title.netflixId)
+				const known = await idsForNetflix(titles.titles.map(title => title.netflixId ?? 0))
+				for (const title of titles.titles) {
+					const ids = title.netflixId ? known.get(title.netflixId) : undefined
+					title.imdb = ids?.imdb
+					title.anime = ids?.anilist ? String(ids.anilist) : ids?.mal ? `${MalProvider.PREFIX}${String(ids.mal)}` : undefined
+				}
 			}
 			let created = 0
 			let updated = 0
@@ -1263,8 +1267,16 @@ export default class LibraryPlugin extends Plugin {
 					console.error('Library: watch import error', title.name, e)
 				}
 			}
+			// an anime note counts its episodes; it has no season list to tick
+			const animeSeen = new Map<WatchedTitle, Set<string>>()
 			for (const episode of titles.episodes as Array<EpisodeRating | NetflixEpisode>) {
 				if (this.unloaded) return
+				if (!('rating' in episode) && episode.series.anime && this.watchNotes.has(`anime:${String(episode.series.netflixId)}`)) {
+					const seen = animeSeen.get(episode.series) ?? new Set<string>()
+					seen.add(`${String(episode.season)}:${episode.title}`)
+					animeSeen.set(episode.series, seen)
+					continue
+				}
 				try {
 					const result = 'rating' in episode ? await this.importEpisode(episode) : await this.importViewedEpisode(episode)
 					if (result === 'created') created++
@@ -1272,6 +1284,10 @@ export default class LibraryPlugin extends Plugin {
 				} catch (e) {
 					console.error('Library: episode import error', episode.series.name, e)
 				}
+			}
+			for (const [series, seen] of animeSeen) {
+				if (this.unloaded) return
+				if (await this.netflixAnimeProgress(series, seen.size) === 'updated') updated++
 			}
 			this.settings.watchSites[site].lastImport = Date.now()
 			await this.saveSettings()
@@ -1521,6 +1537,7 @@ export default class LibraryPlugin extends Plugin {
 			const fm = fmOf(file)
 			return !!fm && watchTypes.indexOf(toStr(fm.Type)) >= 0 && toStr(fm['Netflix ID']) === String(title.netflixId)
 		}) : undefined
+		if (!byNetflix && title.anime) return this.importNetflixAnime(title, title.anime)
 		// an IMDb id names one title, movie or series
 		const imdbUrl = title.imdb ? `https://www.imdb.com/title/${title.imdb}/` : ''
 		const byImdb = !byNetflix && title.imdb ? notes.find(file => {
@@ -1614,6 +1631,73 @@ export default class LibraryPlugin extends Plugin {
 		this.noteImdbHas(title)
 		if (title.listed && title.watched) await this.unlist(title)
 		return 'created'
+	}
+
+	// A Netflix anime goes to the anime category, under its AniList (or MyAnimeList) id.
+	private async importNetflixAnime(title: WatchedTitle, sourceId: string): Promise<'created' | 'updated' | null> {
+		const typeValues = this.settings.categories.filter(c => c.contentType === 'anime').map(c => c.typeValue)
+		const ids = animeIds(sourceId)
+		const existing = this.app.vault.getMarkdownFiles().find(file => {
+			if (isTemplateFile(file.path)) return false
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+			if (!fm || typeValues.indexOf(toStr(fm.Type)) < 0) return false
+			const own = animeIds(toStr(fm['Source ID']))
+			return toStr(fm['Netflix ID']) === String(title.netflixId)
+				|| (!!own && ((own.anilist !== null && own.anilist === ids?.anilist) || (own.mal !== null && own.mal === ids?.mal)))
+				|| sameTitle(toStr(fm.Name) || file.basename, title.name)
+		})
+		const key = `anime:${String(title.netflixId)}`
+		if (existing) {
+			this.watchNotes.set(key, existing)
+			const fm = this.app.metadataCache.getFileCache(existing)?.frontmatter
+			const rate = title.rating !== null && isEmptyValue(fm?.['My Rating'])
+			const link = toStr(fm?.['Netflix ID']) !== String(title.netflixId) || toStrArray(fm?.Platforms).indexOf('Netflix') < 0
+			this.noteImdbHas({ ...title, id: '' })
+			if (!rate && !link) return null
+			await this.app.fileManager.processFrontMatter(existing, (current: Record<string, unknown>) => {
+				if (rate) current['My Rating'] = title.rating
+				current['Netflix ID'] = title.netflixId
+				addPlatform(current, 'Netflix', null)
+			})
+			return 'updated'
+		}
+		// rated, never viewed: no note, as for movies and series
+		if (title.guessed) return null
+		const provider = this.registry.forType('anime')
+		if (!provider) return null
+		const meta = await provider.fetch(sourceId, 'anime')
+		const category = await this.categoryFor('anime')
+		const extra: Record<string, unknown> = { 'Netflix ID': title.netflixId, Platforms: ['Netflix'] }
+		if (title.rating !== null) extra['My Rating'] = title.rating
+		// a film is one episode, watched in full
+		if (title.kind === 'movie' && title.watched) {
+			extra.Progress = `${String(meta?.progressTotal ?? 1)}/${String(meta?.progressTotal ?? 1)}`
+			extra.Complete = true
+		}
+		const when = title.when ? dmyOf(title.when) : ''
+		if (when) extra.Date = when
+		const name = toStr(meta?.fields.Name) || title.name
+		const file = await this.newNote(category, provider.id, sourceId, name, meta ?? { fields: { Name: title.name, Year: title.year }, progressTotal: null, imdbId: null }, extra)
+		this.watchNotes.set(key, file)
+		this.noteImdbHas({ ...title, id: '' })
+		return 'created'
+	}
+
+	// Netflix episodes of an anime move its Progress forward, never past the total.
+	// ponytail: counts every episode Netflix played, all seasons in one; fine while an AniList entry spans the show
+	private async netflixAnimeProgress(title: WatchedTitle, episodes: number): Promise<'updated' | null> {
+		const file = this.watchNotes.get(`anime:${String(title.netflixId)}`)
+		if (!file || episodes <= 0) return null
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter
+		const match = toStr(fm?.Progress).match(progressPattern)
+		const total = match ? Number(match[2]) : 0
+		const watched = Math.max(parseWatched(fm?.Progress), total > 0 ? Math.min(episodes, total) : episodes)
+		if (watched <= parseWatched(fm?.Progress)) return null
+		await this.app.fileManager.processFrontMatter(file, (current: Record<string, unknown>) => {
+			current.Progress = `${String(watched)}/${String(Math.max(total, watched))}`
+			if (total > 0 && watched >= total) current.Complete = true
+		})
+		return 'updated'
 	}
 
 	// A watched title leaves the watchlist of the site it came from.
