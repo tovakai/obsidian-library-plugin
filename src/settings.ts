@@ -260,6 +260,18 @@ export class LibrarySettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: tr("settings.remoteDelete.name"),
+						desc: tr("settings.remoteDelete.desc"),
+						render: (row) => {
+							row.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.offerRemoteDelete).onChange(async (value) => {
+									this.plugin.settings.offerRemoteDelete = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
+					{
 						name: tr("settings.localCovers.name"),
 						desc: tr("settings.localCovers.desc"),
 						render: (row) => {

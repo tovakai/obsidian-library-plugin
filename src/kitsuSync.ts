@@ -186,6 +186,26 @@ export async function findKitsuEntry(token: string, userId: string, kitsuId: num
 	return item ? { entryId: Number(item.id) } : null
 }
 
+// Takes the anime off the account's library; true when it is gone or was never there.
+export async function deleteKitsuEntry(token: string, userId: string, kitsuId: number): Promise<boolean> {
+	const page = await api<Page>(token, `/library-entries?filter%5Buser_id%5D=${userId}&filter%5Banime_id%5D=${String(kitsuId)}&page%5Blimit%5D=1`)
+	if (!page) return false
+	const item = page.data?.[0]
+	if (!item) return true
+	try {
+		const resp = await requestUrl({
+			url: `${API}/library-entries/${item.id}`,
+			method: 'DELETE',
+			headers: { Accept: ACCEPT, Authorization: `Bearer ${token}` },
+			throw: false
+		})
+		return resp.status === 204 || resp.status === 200 || resp.status === 404
+	} catch (e) {
+		console.error('Library: Kitsu request error', e)
+		return false
+	}
+}
+
 // Kitsu ratings are 1–10 with halves. A null status or rating is left as the
 // entry has it: a push never downgrades or clears what the note does not name.
 export async function pushKitsuEntry(

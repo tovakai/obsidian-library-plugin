@@ -38,6 +38,12 @@ Press Connect next to the service. On desktop, a sign-in window opens inside Obs
 - Games: playtime, last played, trophies, and achievements follow the platform, and so does `Progress`, the share of trophies or achievements you have. `Complete`, once on, stays on.
 - An import never deletes a note. A title it finds no note for gets a new one.
 
+## Deleting a note
+
+When you delete a library note, Library asks whether to remove the title from the services that have it: AniList, MyAnimeList, Kitsu, Trakt, IMDb, and Netflix. Turn off any service you want to keep it on, then press Remove; closing the window keeps everything. A service is left out when another note still holds the title. Settings → Library → Offer to remove deleted notes from sites turns the question off.
+
+Removing takes away the entry, its score, its progress, and its history. Netflix keeps the thumb, so Library hides the viewing history there (on desktop) and skips the title on later imports.
+
 ## Where sign-ins are kept
 
 - Tokens, and the Steam account id, are in the plugin's settings file, `.obsidian/plugins/library/data.json` in your vault. If you sync or share your `.obsidian` folder, they go with it.

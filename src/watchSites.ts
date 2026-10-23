@@ -85,6 +85,12 @@ export interface WatchedTitle {
 	listed?: boolean
 	// From Trakt: its echo and watchlist, not IMDb's.
 	trakt?: boolean
+	// Netflix rated it but shows no viewing: movie or series is unknown
+	guessed?: boolean
+	// Netflix: the names of the episodes viewed, to tell two shows of one name apart
+	episodeTitles?: string[]
+	// Netflix: the IMDb id Wikidata gives its Netflix ID. Not `id`: that one says IMDb holds the title's score.
+	imdb?: string
 }
 
 const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']
@@ -231,6 +237,11 @@ export async function imdbWatchlistRemove(id: string): Promise<boolean> {
 	return (await imdbAsk(`mutation { removeElementFromPredefinedList(input: {classType: WATCH_LIST, itemElementId: "${id}"}) { __typename } }`)) !== null
 }
 
+export async function imdbRatingDelete(id: string): Promise<boolean> {
+	if (!IMDB_ID.test(id)) return false
+	return (await imdbAsk(`mutation { deleteTitleRating(input: {titleId: "${id}"}) { __typename } }`)) !== null
+}
+
 export async function imdbWatchlistAdd(id: string): Promise<boolean> {
 	if (!IMDB_ID.test(id)) return false
 	return (await imdbAsk(`mutation { addItemToPredefinedList(input: {classType: WATCH_LIST, item: {itemElementId: "${id}"}}) { __typename } }`)) !== null
@@ -253,6 +264,10 @@ export async function imdbSeason(seriesId: string, season: number): Promise<Map<
 // A watched Netflix episode, by name: Netflix knows no IMDb ids.
 export interface NetflixEpisode {
 	series: WatchedTitle
+	// the episode's own Netflix id, for hiding its viewing
+	id: number
+	// ms since epoch of the viewing, 0 when unknown
+	when: number
 	season: number
 	// Netflix cuts a long name short with "...": a prefix then.
 	title: string
@@ -303,7 +318,9 @@ export function netflixTitles(viewed: NetflixViewed[], rated: NetflixRated[]): N
 		const title = titles.get(id)
 		if (series && title && item.episodeTitle) {
 			const season = Number(SEASON_NUMBER.exec(item.seasonDescriptor ?? '')?.[1] ?? 1)
-			episodes.push({ series: title, season, title: item.episodeTitle })
+			episodes.push({ series: title, id: item.movieID ?? 0, when: item.date ?? 0, season, title: item.episodeTitle })
+			if (!title.episodeTitles) title.episodeTitles = []
+			title.episodeTitles.push(item.episodeTitle)
 		}
 	}
 	for (const item of rated) {
@@ -311,14 +328,15 @@ export function netflixTitles(viewed: NetflixViewed[], rated: NetflixRated[]): N
 		if (!item.movieID || !score) continue
 		const known = titles.get(item.movieID)
 		if (known) known.rating = score
-		// rated without a viewing in the history: kind unknown, a movie is the safer guess
-		else if (item.title) titles.set(item.movieID, { id: '', netflixId: item.movieID, name: item.title, kind: 'movie', year: null, rating: score, when: '', watched: true })
+		// rated without a viewing in the history (a series' id, often): it only fills a note that has it
+		else if (item.title) titles.set(item.movieID, { id: '', netflixId: item.movieID, name: item.title, kind: 'movie', year: null, rating: score, when: '', watched: true, guessed: true })
 	}
 	return { titles: [...titles.values()], episodes }
 }
 
 // The account pages' Falcor endpoint, paged; the profile is the signed-in one.
-const NETFLIX_READ = `(async () => {
+// The page's own account calls, shared by the reader and the hide below.
+const NETFLIX_PRELUDE = `
 	const context = window.netflix?.reactContext;
 	if (!context) return '';
 	const user = context.models?.userInfo?.data;
@@ -341,7 +359,9 @@ const NETFLIX_READ = `(async () => {
 			if (got.length < 100) break;
 		}
 		return items;
-	};
+	};`
+
+const NETFLIX_READ = `(async () => {${NETFLIX_PRELUDE}
 	return JSON.stringify({ viewed: await all('viewingActivity', 'viewedItems'), rated: await all('ratingHistory', 'ratingItems') });
 })().catch(() => '')`
 
@@ -353,6 +373,59 @@ export async function netflixHistory(): Promise<NetflixHistory | 'signed-out' | 
 		return netflixTitles(data.viewed ?? [], data.rated ?? [])
 	} catch {
 		return null
+	}
+}
+
+// The Viewing activity page's own "hide": one viewing, or every episode of its show.
+const NETFLIX_HIDE = `
+	const hide = async (videoId, all) => {
+		const body = JSON.stringify({ operationName: 'HideTitleViewing', variables: { input: { videoId: String(videoId), hideAllEpisodes: all, profileGuid: user.guid } }, extensions: { persistedQuery: { id: '573bcc5d-b976-4302-8b57-c3f99479532d', version: 102 } } });
+		const r = await window.fetch('/graphql', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body });
+		const answer = r.ok ? await r.json() : null;
+		return !!(answer && !answer.errors?.length && answer.data?.hideTitleViewing?.result);
+	};`
+
+// Hides single episodes' viewings by their Netflix ids; the ids it hid.
+export async function netflixHideEpisodes(ids: number[]): Promise<number[]> {
+	const clean = ids.filter(id => Number.isSafeInteger(id) && id > 0)
+	if (clean.length === 0) return []
+	const code = `(async () => {${NETFLIX_PRELUDE}${NETFLIX_HIDE}
+	const done = [];
+	for (const id of ${JSON.stringify(clean)}) if (await hide(id, false)) done.push(id);
+	return JSON.stringify(done);
+})().catch(() => '')`
+	try {
+		return (JSON.parse(await readPage('https://www.netflix.com/viewingactivity', code, 90000)) as number[]).filter(id => clean.indexOf(id) >= 0)
+	} catch {
+		return []
+	}
+}
+
+// Hides a title from the profile's viewing history, every episode of a show: the
+// "hide" of the Viewing activity page. 'none' when it was never there.
+export async function netflixHideViewing(netflixId: number): Promise<boolean> {
+	if (!Number.isSafeInteger(netflixId) || netflixId <= 0) return false
+	const code = `(async () => {${NETFLIX_PRELUDE}
+	const id = ${String(netflixId)};
+	const item = (await all('viewingActivity', 'viewedItems')).find(v => v.series === id || v.movieID === id);
+	if (!item) return 'none';${NETFLIX_HIDE}
+	return await hide(item.movieID, item.series === id) ? 'hidden' : '';
+})().catch(() => '')`
+	const answer = await readPage('https://www.netflix.com/viewingactivity', code, 90000)
+	return answer === 'hidden' || answer === 'none'
+}
+
+// Adds a title (a show's id for a series) to My List, by the page's safelisted mutation.
+export async function netflixAddToList(netflixId: number): Promise<boolean> {
+	if (!Number.isSafeInteger(netflixId) || netflixId <= 0) return false
+	const body = JSON.stringify({ operationName: 'AddToPlaylist', variables: { entityId: String(netflixId), trackId: null, signature: null }, extensions: { persistedQuery: { id: '5426b5a2-bb59-4b4a-a1f1-d04290c1160f', version: 102 } } })
+	const code = `window.fetch('/graphql', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: ${JSON.stringify(body)} }).then(r => r.ok ? r.text() : '').catch(() => '')`
+	try {
+		// any data without errors counts: the result field's name is not pinned down
+		const answer = JSON.parse(await readPage('https://www.netflix.com/robots.txt', code)) as { data?: Record<string, unknown> | null; errors?: unknown[] }
+		return !answer.errors?.length && !!answer.data && Object.values(answer.data).some(Boolean)
+	} catch {
+		return false
 	}
 }
 

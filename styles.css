@@ -1538,8 +1538,20 @@ sort trigger, the chosen one in the accent colour. */
 	gap: 8px;
 }
 
+/* folded: one row that scrolls sideways, as the category grids do */
 .library-view .library-soon-list.collapsed {
-	display: none;
+	grid-template-columns: none;
+	grid-auto-flow: column;
+	grid-auto-columns: 240px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	scroll-snap-type: x proximity;
+	padding-bottom: 10px;
+}
+
+.library-view .library-soon-list.collapsed .library-soon-row {
+	scroll-snap-align: start;
 }
 
 .library-view .library-soon-row {

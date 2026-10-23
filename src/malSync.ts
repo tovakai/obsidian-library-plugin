@@ -158,6 +158,22 @@ export async function pushMalEntry(token: string, malId: number, kind: 'anime' |
 	return !!json?.status
 }
 
+// Takes the title off the list; a 404 means it was not on it.
+export async function deleteMalEntry(token: string, malId: number, kind: 'anime' | 'manga'): Promise<boolean> {
+	try {
+		const resp = await requestUrl({
+			url: `${API}/${kind}/${String(malId)}/my_list_status`,
+			method: 'DELETE',
+			headers: { Authorization: `Bearer ${token}` },
+			throw: false
+		})
+		return resp.status === 200 || resp.status === 404
+	} catch (e) {
+		console.error('Library: MyAnimeList request error', e)
+		return false
+	}
+}
+
 interface MalListPage {
 	data?: { node: { id: number; title?: string; num_episodes?: number; num_chapters?: number }; list_status?: { status?: string; num_episodes_watched?: number; num_chapters_read?: number; score?: number } }[]
 	paging?: { next?: string }
