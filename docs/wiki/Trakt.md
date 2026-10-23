@@ -24,7 +24,7 @@ An import doesn't write [[diary|Progress-and-statistics#diary]] entries, so a sy
 A moment after you change a note, on desktop or mobile:
 
 - `My Rating`, rounded to a whole number from 1 to 10.
-- Episodes you ticked, into your Trakt history, and the scores of rated episodes.
+- Episodes you ticked, into your Trakt history, and the scores of rated episodes. Episodes you untick leave the history.
 - A movie you marked complete, into your Trakt history.
 - Titles you haven't started, to your Trakt watchlist, unless Trakt already has a score or a watch for them. A title leaves the watchlist once you watch it.
 

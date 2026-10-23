@@ -32,12 +32,16 @@ IMDb knows a note by its IMDb id, in `Source ID` (such as `tt4574334`) or in `UR
 
 What comes in:
 
-- Your viewing history. A movie you watched becomes a note marked `Complete`. A series becomes a note, and the episodes you watched are ticked. Netflix gives only a title's name, so Library takes the best match from search, or makes a bare note when there is none.
+- Your viewing history. A movie you watched becomes a note marked `Complete`. A series becomes a note, and the episodes you watched are ticked. Netflix gives only a title's name and its Netflix ID, so Library looks the ID up on Wikidata for the IMDb id. When Wikidata doesn't know the title, Library searches by name and, among series with the same name, picks the one whose episode titles match what you watched. A title you only rated, never watched, updates a note you have but doesn't make one.
 - Your thumbs, as scores: thumbs down is 3, thumbs up is 7, and two thumbs up is 9. They fill `My Rating` only while it is empty.
 
 Each note gets the `Netflix ID` and Netflix in `Platforms`.
 
-What goes back: `My Rating`, as a thumb, for notes with a `Netflix ID`. A score of 8 or more is two thumbs up, 5 to 7.9 is thumbs up, and below 5 is thumbs down. After you connect, older rated notes are sent one at a time in the background.
+What goes back, for notes with a `Netflix ID`:
+
+- `My Rating`, as a thumb. A score of 8 or more is two thumbs up, 5 to 7.9 is thumbs up, and below 5 is thumbs down. After you connect, older rated notes are sent one at a time in the background.
+- Episodes you untick leave your Netflix viewing history.
+- A series with nothing ticked, and not finished, goes to My List.
 
 ## A title in both
 

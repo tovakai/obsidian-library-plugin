@@ -49,7 +49,7 @@ Soon, near the top of the Library tab, lists the next episodes of the series and
 
 A title counts as watching when you have ticked at least one episode, and, for a series, while it has no `End Year`. Air dates come from Cinemeta for series and from AniList or MyAnimeList for anime, and are checked twice a day.
 
-Settings → Library → Soon hides it.
+The arrow next to the title folds it into one row that scrolls sideways. Settings → Library → Soon hides it.
 
 ## Diary
 
