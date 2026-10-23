@@ -106,7 +106,8 @@ import {
 	toLinks,
 	coverKey,
 	imageExtension,
-	publicHttpsUrl
+	publicHttpsUrl,
+	plainCopy
 } from './util'
 
 // Genre, Creator and Cast hold [[links]]: each linked note lists the title as a
@@ -4217,7 +4218,7 @@ export default class LibraryPlugin extends Plugin {
 		const saved: unknown = await this.loadData()
 		const data = saved && typeof saved === 'object' ? (saved as Partial<ILibrarySettings>) : null
 		// a copy: the defaults' arrays and maps must not become the live settings
-		const defaults = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as ILibrarySettings
+		const defaults = plainCopy(DEFAULT_SETTINGS)
 		this.settings = Object.assign({}, defaults, data)
 		if (!Array.isArray(this.settings.categories)) this.settings.categories = []
 		this.settings.categories = this.settings.categories.filter(cat => !!cat && typeof cat === 'object')

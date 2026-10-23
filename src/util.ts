@@ -465,3 +465,12 @@ export function pickTitle(names: TitleNames, language: TitleLanguage): string {
 	}
 	return ''
 }
+
+// A deep copy of plain data: objects, arrays and primitives.
+export function plainCopy<T>(value: T): T {
+	if (Array.isArray(value)) return value.map(item => plainCopy(item as unknown)) as unknown as T
+	if (!value || typeof value !== 'object') return value
+	const out: Record<string, unknown> = {}
+	for (const key of Object.keys(value)) out[key] = plainCopy((value as Record<string, unknown>)[key])
+	return out as T
+}
