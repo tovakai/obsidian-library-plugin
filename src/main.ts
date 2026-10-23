@@ -35,7 +35,7 @@ import { MangaProvider } from './providers/manga'
 import { SteamProvider } from './providers/steam'
 import { WikidataGameProvider } from './providers/wikidataGames'
 import { TmdbEnricher } from './providers/tmdb'
-import { RottenTomatoesEnricher } from './providers/wikidata'
+import { RottenTomatoesEnricher, imdbIdsForNetflix } from './providers/wikidata'
 import { isContentType } from './providers/types'
 import type { ContentProvider, ContentType, NormalizedMetadata, SearchResult } from './providers/types'
 import { PickTypeModal, type AddChoice } from './ui/pickTypeModal'
@@ -1244,6 +1244,11 @@ export default class LibraryPlugin extends Plugin {
 				return
 			}
 			if (!titles) { if (loud) new Notice(tr('notice.site.failed', { site: name })); return }
+			// Netflix gives a name only: Wikidata knows the IMDb id of most Netflix IDs
+			if (site === 'netflix') {
+				const imdb = await imdbIdsForNetflix(titles.titles.map(title => title.netflixId ?? 0))
+				for (const title of titles.titles) if (title.netflixId) title.imdb = imdb.get(title.netflixId)
+			}
 			let created = 0
 			let updated = 0
 			for (const title of titles.titles) {
@@ -1516,12 +1521,18 @@ export default class LibraryPlugin extends Plugin {
 			const fm = fmOf(file)
 			return !!fm && watchTypes.indexOf(toStr(fm.Type)) >= 0 && toStr(fm['Netflix ID']) === String(title.netflixId)
 		}) : undefined
-		const existing = byNetflix ?? notes.find(file => {
+		// an IMDb id names one title, movie or series
+		const imdbUrl = title.imdb ? `https://www.imdb.com/title/${title.imdb}/` : ''
+		const byImdb = !byNetflix && title.imdb ? notes.find(file => {
+			const fm = fmOf(file)
+			return !!fm && watchTypes.indexOf(toStr(fm.Type)) >= 0 && (toStr(fm['Source ID']) === title.imdb || toStr(fm.URL) === imdbUrl)
+		}) : undefined
+		const existing = byNetflix ?? byImdb ?? (title.imdb ? undefined : notes.find(file => {
 			const fm = fmOf(file)
 			if (!fm || (title.guessed ? watchTypes : typeValues).indexOf(toStr(fm.Type)) < 0) return false
 			if (title.id) return toStr(fm['Source ID']) === title.id || toStr(fm.URL) === url
 			return sameTitle(toStr(fm.Name) || file.basename, title.name)
-		})
+		}))
 		// no viewing, no note: not enough to make one, and a series would come in as a movie
 		if (!existing && title.guessed) return null
 		const watched = title.watched
@@ -1552,8 +1563,9 @@ export default class LibraryPlugin extends Plugin {
 		const provider = this.registry.forType(title.kind)
 		if (!provider) return null
 		// Netflix gives only a name: the source's best match for it, else a bare note
-		const results = title.id ? [] : await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[])
-		let sourceId = title.id || results[0]?.sourceId || ''
+		const known = title.id || title.imdb || ''
+		const results = known ? [] : await within(provider.search(title.name, title.kind), SEARCH_BUDGET_MS * 2, [] as SearchResult[])
+		let sourceId = known || results[0]?.sourceId || ''
 		let picked: NormalizedMetadata | null = null
 		// two shows of one name (a cartoon and its remake): the one whose episodes Netflix played
 		const named = results.filter(result => sameTitle(result.title, title.name)).slice(0, 4)
@@ -1569,7 +1581,7 @@ export default class LibraryPlugin extends Plugin {
 			}
 		}
 		// Netflix's name found a note the library already has under another name: link it, no second note
-		const same = !title.id && sourceId ? notes.find(file => {
+		const same = !known && sourceId ? notes.find(file => {
 			const fm = fmOf(file)
 			return !!fm && typeValues.indexOf(toStr(fm.Type)) >= 0 && toStr(fm['Source ID']) === sourceId
 		}) : undefined

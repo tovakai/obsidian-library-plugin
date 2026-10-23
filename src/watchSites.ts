@@ -89,6 +89,8 @@ export interface WatchedTitle {
 	guessed?: boolean
 	// Netflix: the names of the episodes viewed, to tell two shows of one name apart
 	episodeTitles?: string[]
+	// Netflix: the IMDb id Wikidata gives its Netflix ID. Not `id`: that one says IMDb holds the title's score.
+	imdb?: string
 }
 
 const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']

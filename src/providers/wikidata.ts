@@ -195,3 +195,28 @@ export function yearIn(text: string | null): number | null {
 	const match = text?.match(/\b(1[89]\d\d|20\d\d)\b/)
 	return match ? Number(match[1]) : null
 }
+
+// IMDb ids of Netflix titles, by Wikidata's "Netflix ID" (P1874); a title it lacks is left out.
+export async function imdbIdsForNetflix(netflixIds: number[]): Promise<Map<number, string>> {
+	const out = new Map<number, string>()
+	const ids = netflixIds.filter(id => Number.isSafeInteger(id) && id > 0)
+	for (let i = 0; i < ids.length; i += 40) {
+		const chunk = ids.slice(i, i + 40)
+		const found = await api<{ query?: { search?: { title: string }[] } }>({
+			action: 'query', list: 'search', srprop: '', srlimit: '50',
+			srsearch: 'haswbstatement:' + chunk.map(id => `P1874=${String(id)}`).join('|'),
+		})
+		const items = (found?.query?.search ?? []).map(hit => hit.title).filter(title => /^Q\d+$/.test(title))
+		if (items.length === 0) continue
+		const data = await api<{ entities?: Record<string, WikidataEntity> }>({ action: 'wbgetentities', ids: items.join('|'), props: 'claims' })
+		for (const entity of Object.values(data?.entities ?? {})) {
+			const imdb = entity.claims?.P345?.map(claim => claim.mainsnak?.datavalue?.value).find((value): value is string => typeof value === 'string' && /^tt\d+$/.test(value))
+			if (!imdb) continue
+			for (const claim of entity.claims?.P1874 ?? []) {
+				const id = Number(claim.mainsnak?.datavalue?.value)
+				if (chunk.indexOf(id) >= 0 && !out.has(id)) out.set(id, imdb)
+			}
+		}
+	}
+	return out
+}
