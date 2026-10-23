@@ -196,10 +196,18 @@ export function yearIn(text: string | null): number | null {
 	return match ? Number(match[1]) : null
 }
 
-// IMDb ids of Netflix titles, by Wikidata's "Netflix ID" (P1874); a title it lacks is left out.
-export async function imdbIdsForNetflix(netflixIds: number[]): Promise<Map<number, string>> {
-	const out = new Map<number, string>()
+// What Wikidata knows of Netflix titles by its "Netflix ID" (P1874): the IMDb id (P345), and for
+// anime the AniList (P8729) and MyAnimeList (P4086) ids. A title it lacks is left out.
+export interface NetflixIds {
+	imdb?: string
+	anilist?: number
+	mal?: number
+}
+
+export async function idsForNetflix(netflixIds: number[]): Promise<Map<number, NetflixIds>> {
+	const out = new Map<number, NetflixIds>()
 	const ids = netflixIds.filter(id => Number.isSafeInteger(id) && id > 0)
+	const first = (entity: WikidataEntity, prop: string): unknown => entity.claims?.[prop]?.map(claim => claim.mainsnak?.datavalue?.value).find(value => value !== undefined)
 	for (let i = 0; i < ids.length; i += 40) {
 		const chunk = ids.slice(i, i + 40)
 		const found = await api<{ query?: { search?: { title: string }[] } }>({
@@ -210,11 +218,17 @@ export async function imdbIdsForNetflix(netflixIds: number[]): Promise<Map<numbe
 		if (items.length === 0) continue
 		const data = await api<{ entities?: Record<string, WikidataEntity> }>({ action: 'wbgetentities', ids: items.join('|'), props: 'claims' })
 		for (const entity of Object.values(data?.entities ?? {})) {
-			const imdb = entity.claims?.P345?.map(claim => claim.mainsnak?.datavalue?.value).find((value): value is string => typeof value === 'string' && /^tt\d+$/.test(value))
-			if (!imdb) continue
+			const imdb = first(entity, 'P345')
+			const anilist = Number(first(entity, 'P8729'))
+			const mal = Number(first(entity, 'P4086'))
+			const known: NetflixIds = {}
+			if (typeof imdb === 'string' && /^tt\d+$/.test(imdb)) known.imdb = imdb
+			if (Number.isSafeInteger(anilist) && anilist > 0) known.anilist = anilist
+			if (Number.isSafeInteger(mal) && mal > 0) known.mal = mal
+			if (!known.imdb && !known.anilist && !known.mal) continue
 			for (const claim of entity.claims?.P1874 ?? []) {
 				const id = Number(claim.mainsnak?.datavalue?.value)
-				if (chunk.indexOf(id) >= 0 && !out.has(id)) out.set(id, imdb)
+				if (chunk.indexOf(id) >= 0 && !out.has(id)) out.set(id, known)
 			}
 		}
 	}

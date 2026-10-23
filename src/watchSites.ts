@@ -91,6 +91,8 @@ export interface WatchedTitle {
 	episodeTitles?: string[]
 	// Netflix: the IMDb id Wikidata gives its Netflix ID. Not `id`: that one says IMDb holds the title's score.
 	imdb?: string
+	// Netflix: an anime note's Source ID, when Wikidata gives the title an AniList or MyAnimeList id
+	anime?: string
 }
 
 const IMDB_MOVIE = ['movie', 'tvMovie', 'video', 'short', 'tvShort', 'tvSpecial']
