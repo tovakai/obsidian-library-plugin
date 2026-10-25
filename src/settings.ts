@@ -12,10 +12,11 @@ import {
 } from "obsidian";
 import type LibraryPlugin from "./main";
 import type { ICategory, IStatsTop, TitleLanguage } from "./constants";
-import { isTemplateFile, rankableProperties, toStr, topLabel } from "./util";
+import { isTemplateFile, rankableProperties, sanitizeFilename, toStr, topLabel } from "./util";
+import { CATALOG_PROPERTY_TYPES, catalogProperties, validCatalogPropertyName, type CatalogCategory, type CatalogPropertyType } from "./catalogProperties";
 import { isContentType, type ContentType } from "./providers/types";
 import type { WatchSite } from "./watchSites";
-import { TYPE_DEFAULTS, addCategoryTop, categoryLabel, cleanFolder, isBuiltInCategory, isDefaultTypeValue, newCategory } from "./categories";
+import { TYPE_DEFAULTS, addCategoryTop, categoryLabel, cleanFolder, isBuiltInCategory, isDefaultTypeValue, joinFolder, newCategory } from "./categories";
 import { tr } from "./i18n";
 import { ANILIST_CLIENT_ID, aniListViewer, anilistAuthUrl, tokenFromInput } from "./anilistSync";
 import { codeFromInput, exchangeCode, makeVerifier, malAuthUrl, malClientPair } from "./malSync";
@@ -157,6 +158,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			categories.push({ group: true, rows: this.categoryRows(cat, index) });
 		});
 		categories.push({ group: true, rows: [{ name: tr("settings.addCategory"), render: (row) => this.addCategory(row) }] });
+		categories.push({ group: true, rows: [{ name: "Create custom category", desc: "Build a manual catalogue with its own name, folder and typed properties. No API needed.", render: (row) => this.addCustomCategory(row) }] });
 
 		const statsRows: Row[] = [
 			note(tr("settings.stats.desc")),
@@ -706,7 +708,82 @@ export class LibrarySettingTab extends PluginSettingTab {
 				},
 			},
 		];
+		if (cat.contentType === 'manual') {
+			rows.push({
+				name: "Properties",
+				desc: "Fields below become Obsidian properties on newly created notes. They are stored with this category. Existing notes are not changed.",
+				visible: () => unfolded(),
+				render: (row) => {
+					row.settingEl.addClass("library-settings-advanced-row");
+					row.addButton(button => button.setButtonText("Add property").onClick(async () => {
+						const custom = cat as CatalogCategory;
+						const fields = catalogProperties(cat);
+						const existing = new Set(fields.map(p => p.name.toLowerCase()));
+						let name = "New Property";
+						for (let n = 2; existing.has(name.toLowerCase()); n++) name = "New Property " + String(n);
+						custom.catalogProperties = [...fields, { name, type: "text", defaultValue: "" }];
+						await this.plugin.saveSettings();
+						this.refresh();
+					}));
+				}
+			});
+			for (const prop of catalogProperties(cat)) {
+				rows.push({
+					name: prop.name || "Unnamed property",
+					visible: () => unfolded(),
+					render: (row) => this.catalogPropertyRow(row, cat, prop)
+				});
+			}
+		}
 		return rows;
+	}
+
+	private catalogPropertyRow(row: Setting, cat: ICategory, prop: { name: string; type: CatalogPropertyType; defaultValue?: string | boolean }): void {
+		row.settingEl.addClass("library-settings-advanced-row");
+		row.addText(input => {
+			input.setPlaceholder("Property name").setValue(prop.name).onChange(async (value) => {
+				const name = value.trim();
+				const fields = catalogProperties(cat);
+				if (!validCatalogPropertyName(name) ||
+					fields.some(other => other !== prop && other.name.toLowerCase() === name.toLowerCase())) return;
+				prop.name = name;
+				row.setName(name);
+				await this.plugin.saveSettings();
+			});
+			input.inputEl.setAttribute("aria-label", "Property name");
+		});
+		row.addDropdown(dropdown => {
+			for (const type of CATALOG_PROPERTY_TYPES) dropdown.addOption(type, type.charAt(0).toUpperCase() + type.slice(1));
+			dropdown.setValue(prop.type).onChange(async value => {
+				if (!CATALOG_PROPERTY_TYPES.includes(value as CatalogPropertyType)) return;
+				prop.type = value as CatalogPropertyType;
+				prop.defaultValue = prop.type === "checkbox" ? false : "";
+				await this.plugin.saveSettings();
+				this.refresh();
+			});
+		});
+		if (prop.type === "checkbox") {
+			row.addToggle(toggle => toggle.setValue(prop.defaultValue === true).onChange(async value => {
+				prop.defaultValue = value;
+				await this.plugin.saveSettings();
+			}));
+		} else {
+			row.addText(input => {
+				input.setPlaceholder(prop.type === "list" ? "Comma-separated values" : "Default value (optional)");
+				input.setValue(typeof prop.defaultValue === "string" ? prop.defaultValue : "");
+				input.onChange(async value => {
+					prop.defaultValue = value;
+					await this.plugin.saveSettings();
+				});
+				input.inputEl.setAttribute("aria-label", "Default value");
+			});
+		}
+		row.addExtraButton(button => button.setIcon("trash").setTooltip("Remove property").onClick(async () => {
+			const custom = cat as CatalogCategory;
+			custom.catalogProperties = catalogProperties(cat).filter(field => field !== prop);
+			await this.plugin.saveSettings();
+			this.refresh();
+		}));
 	}
 
 	private folderInput(row: Setting, cat: ICategory): void {
@@ -850,6 +927,39 @@ export class LibrarySettingTab extends PluginSettingTab {
 		);
 	}
 
+	private addCustomCategory(row: Setting): void {
+		let desiredName = "";
+		row.addText(input => input
+			.setPlaceholder("e.g. Electronics, Plants, Records")
+			.onChange(value => { desiredName = value.trim(); })
+		);
+		row.addButton(button => button.setButtonText("Create").setCta().onClick(async () => {
+			if (!desiredName) {
+				new Notice("Enter a category name first.");
+				return;
+			}
+			const existing = this.plugin.settings.categories;
+			const usedNames = new Set(existing.map(cat => cat.name.toLowerCase()));
+			const usedTypes = new Set(existing.map(cat => cat.typeValue.toLowerCase()));
+			if (usedNames.has(desiredName.toLowerCase()) || usedTypes.has(desiredName.toLowerCase()) ||
+				isDefaultTypeValue(desiredName)) {
+				new Notice("A category with that name or Type already exists.");
+				return;
+			}
+			const cat = newCategory("manual", this.plugin.settings) as CatalogCategory;
+			cat.name = desiredName;
+			cat.typeValue = desiredName;
+			cat.folder = joinFolder(this.plugin.settings.libraryFolder, sanitizeFilename(desiredName));
+			cat.customManual = true;
+			cat.catalogProperties = [];
+			existing.push(cat);
+			this.expanded.add(cat);
+			addCategoryTop(this.plugin.settings, cat.typeValue);
+			await this.plugin.saveSettings();
+			this.refresh();
+		}));
+	}
+
 	// Candidates scan the vault: built only when the row is drawn.
 	private addTop(row: Setting): void {
 		const candidates = this.topCandidates();
@@ -892,6 +1002,11 @@ export class LibrarySettingTab extends PluginSettingTab {
 			["series", tr("settings.default.series") + " — Cinemeta, Wikidata, OMDb"],
 			["book", tr("settings.default.book") + " — Open Library, Google Books"],
 			["comic", tr("settings.default.comic") + " — Wikidata, AniList, Comic Vine"],
+			["mtg", tr("settings.default.mtg") + " — Scryfall"],
+			["people_private", tr("settings.default.people_private") + " — Local only"],
+			["people_public", tr("settings.default.people_public") + " — Wikidata"],
+			["place", tr("settings.default.place") + " — Wikidata"],
+			["misc", tr("settings.default.misc") + " — Manual"],
 			["game", tr("settings.default.game") + " — Steam, Wikidata, RAWG"],
 			["music", tr("settings.default.music") + " — Deezer"],
 			["anime", tr("settings.default.anime") + " — AniList, MyAnimeList"],

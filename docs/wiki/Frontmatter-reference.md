@@ -31,6 +31,9 @@ Seasons:
         my_rating: 9
       # ...7 more episodes
 Progress: 8/42
+Owned: false
+Owned Format: ""
+Storage: ""
 Netflix ID: 80057281
 Platforms: ["Netflix"]
 Date: 01.03.2026
@@ -62,6 +65,9 @@ Silver: 9
 Bronze: 25
 Achievements: 30/42
 Progress: 71/100
+Owned: true
+Owned Format: "Digital"
+Storage: "Steam library"
 Date: 03.03.2022
 Source: games
 Source ID: steam:1245620
@@ -73,6 +79,9 @@ Source ID: steam:1245620
 | Property | Meaning |
 | --- | --- |
 | `Type` | The category the note belongs to. It must equal the category's Type value. |
+| `Owned` | Checkbox (`true`/`false`), default `false` on new notes in **every category**. Manually maintained, except that MTG's note-header quantity buttons also update it. |
+| `Owned Format` | Free-text format of your copy, such as `DVD`, `Blu-ray`, `vinyl`, `CD`, `digital`, or `physical`. Default empty text; omitted for MTG, which tracks finishes with quantities. |
+| `Storage` | Free-text location of your copy, such as `Shelf A3`, `Storage box 2`, or `Deck binder`. Default empty text, including MTG. |
 | `Progress` | `done/total`: episodes, chapters, pages, tracks, or issues; for games, the share of trophies or achievements as `n/100`. Movies have none; see [[Progress and statistics|Progress-and-statistics]]. |
 | `Complete` | `true` once you finish a movie, an album, a comic, or a game. Series, anime, and books have none: they are done when their progress is full. |
 | `My Rating` | Your score from 1 to 10. With rated episodes, seasons, or chapters, their average. |
@@ -81,7 +90,9 @@ Source ID: steam:1245620
 | `Source` | The source family that filled the note. |
 | `Source ID` | The title's id at that source. Refresh and sync use it. |
 
-Renaming or removing one of these breaks refresh, statistics, or sync for that note.
+Most fields above are Library-managed. **Owned, Owned Format, and Storage are yours**; remote metadata refreshes and connected-account imports do not alter existing ownership or location values. New notes created through a custom category template keep any ownership defaults already present in that template. **People (Private), People (Public), and Places** do not receive ownership defaults. **Miscellaneous** does.
+
+Renaming or removing structural fields such as `Type`, `Source`, or `Source ID` breaks refresh, statistics, or sync for that note.
 
 ## Properties from the sources
 
@@ -136,6 +147,10 @@ These can't be skipped. See [[Connected accounts|Connected-accounts]] for what e
 | Comics | `comics` | A Wikidata item, `manga:` and an AniList id, or a Comic Vine id |
 | Anime | `anilist` | The AniList id, or `mal:` and the MyAnimeList id |
 | Music | `deezer` | The Deezer album id |
+| MTG | `scryfall` | Scryfall printing UUID, distinct from Oracle ID |
+| People (Public) | `wikidata` | Wikidata human item ID, such as `Q7259` |
+| Places | `wikidata` | Wikidata geolocated item ID, such as `Q60` |
+| People (Private), Misc | none | Manual notes, no remote source |
 
 Notes from older versions can have another `Source`, such as `rawg` or `steam`. They still refresh, because Library tells sources apart by the shape of `Source ID`.
 

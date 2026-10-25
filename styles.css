@@ -1860,3 +1860,37 @@ sort trigger, the chosen one in the accent colour. */
 	font-weight: var(--font-semibold);
 	font-variant-numeric: tabular-nums;
 }
+
+/* Card art uses a 63 x 88 ratio; other library posters remain unchanged. */
+.library-card.library-mtg-card .card-image {
+	aspect-ratio: 63 / 88;
+}
+
+/* Quick inventory controls in MTG card note headers. */
+.note-header-wrap .library-mtg-quantity-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+}
+.library-mtg-quantity-control {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.library-mtg-qty-button {
+	min-height: 26px;
+	min-width: 26px;
+	padding: 2px 7px;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+}
+
+
+/* Portraits and landscapes have different natural aspect ratios from movie posters. */
+.library-card.library-person-card .card-image {
+	aspect-ratio: 3 / 4;
+}
+.library-card.library-place-card .card-image {
+	aspect-ratio: 4 / 3;
+}

@@ -1,0 +1,78 @@
+# Copy this file to your Inventory folder as "MTG Collection.base" to use it.
+# It reads the notes created by the Library MTG category.
+filters:
+  and:
+    - 'Type == "MTG"'
+
+formulas:
+  total_copies: 'if(Quantity, Quantity, 0) + if(note["Foil Quantity"], note["Foil Quantity"], 0) + if(note["Etched Quantity"], note["Etched Quantity"], 0)'
+  value_eur: 'if(Quantity, Quantity, 0) * if(note["Price EUR"], note["Price EUR"], 0) + if(note["Foil Quantity"], note["Foil Quantity"], 0) * if(note["Price EUR Foil"], note["Price EUR Foil"], 0)'
+
+properties:
+  note.Name:
+    displayName: Card
+  note.Owned:
+    displayName: Owned
+  note.Storage:
+    displayName: Storage
+  note.Set:
+    displayName: Set
+  note["Set Code"]:
+    displayName: Edition
+  note["Collector Number"]:
+    displayName: Number
+  note.Quantity:
+    displayName: Normal
+  note["Foil Quantity"]:
+    displayName: Foil
+  note["Etched Quantity"]:
+    displayName: Etched
+  formula.total_copies:
+    displayName: Copies
+  formula.value_eur:
+    displayName: Value EUR (estimate)
+
+views:
+  - type: table
+    name: Owned
+    filters:
+      or:
+        - 'Owned == true'
+        - 'formula.total_copies > 0'
+    order:
+      - file.name
+      - note.Owned
+      - note.Storage
+      - note.Set
+      - note["Collector Number"]
+      - note.Quantity
+      - note["Foil Quantity"]
+      - note["Etched Quantity"]
+      - formula.total_copies
+      - formula.value_eur
+    summaries:
+      formula.total_copies: Sum
+      formula.value_eur: Sum
+  - type: table
+    name: Wishlist
+    filters:
+      and:
+        - 'Wishlist == true'
+    order:
+      - file.name
+      - note.Owned
+      - note.Storage
+      - note.Set
+      - note["Collector Number"]
+      - note["Price EUR"]
+      - note["Price EUR Foil"]
+  - type: table
+    name: Reference
+    order:
+      - file.name
+      - note.Owned
+      - note.Storage
+      - note.Set
+      - note["Collector Number"]
+      - note.Rarity
+      - formula.total_copies

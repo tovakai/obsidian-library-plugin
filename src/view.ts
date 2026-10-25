@@ -545,6 +545,9 @@ export class LibraryRenderer {
 				'aria-label': card.name
 			}
 		})
+		if (card.kind === 'mtg') cardEl.addClass('library-mtg-card')
+		if (card.kind === 'people_public' || card.kind === 'people_private') cardEl.addClass('library-person-card')
+		if (card.kind === 'place') cardEl.addClass('library-place-card')
 		cardEl.addEventListener('click', () => {
 			void this.app.workspace.getLeaf(false).openFile(file)
 		})
@@ -555,14 +558,20 @@ export class LibraryRenderer {
 			}
 		})
 
-		const cover = coverValue(fm, this.plugin.settings.coverProperty)
+		const cover = card.kind === 'people_private' && toStr(fm.Photo).trim()
+			? fm.Photo : coverValue(fm, this.plugin.settings.coverProperty)
 		const imgDiv = cardEl.createDiv({ cls: 'card-image' })
 		const cardCover = coverSrc(this.app, cover)
 		if (cardCover) {
 			imgDiv.createEl('img', { attr: { src: cardCover, alt: card.name, loading: 'lazy', decoding: 'async' } })
 		} else {
 			const type = toStr(fm.Type).toLowerCase()
-			const emoji = type === 'anime' ? '🎌'
+			const emoji = card.kind === 'people_private' ? '👤'
+				: card.kind === 'people_public' ? '👥'
+				: card.kind === 'place' ? '📍'
+				: card.kind === 'misc' ? '📦'
+				: type === 'mtg' ? '🃏'
+				: type === 'anime' ? '🎌'
 				: type === 'comic' ? '📚'
 				: type === 'book' ? '📖'
 				: type === 'game' ? '🎮'
@@ -582,6 +591,30 @@ export class LibraryRenderer {
 
 		const info = cardEl.createDiv({ cls: 'card-info' })
 		info.createDiv({ cls: 'card-title', text: card.name })
+		if (card.kind === 'people_private' || card.kind === 'people_public' || card.kind === 'place' || card.kind === 'misc') {
+			const subtitle = card.kind === 'people_private' ? toStr(fm.Relationship)
+				: card.kind === 'people_public' ? toStrArray(fm.Occupation).join(', ') || toStr(fm.Description)
+				: card.kind === 'place' ? [toStrArray(fm.Region).join(', '), toStrArray(fm.Country).join(', ')].filter(Boolean).join(' · ') || toStr(fm.Description)
+				: toStr(fm.Description)
+			if (subtitle) info.createDiv({ cls: 'card-author', text: subtitle })
+			if (card.kind === 'place' && fm.Visited === true) info.createDiv({ cls: 'card-rating', text: 'Visited' })
+			if (card.kind === 'misc') {
+				if (fm.Owned === true) info.createDiv({ cls: 'card-rating', text: 'Owned' })
+				const storage = toStr(fm.Storage)
+				if (storage) info.createDiv({ cls: 'card-year', text: storage })
+			}
+			return
+		}
+		if (card.kind === 'mtg') {
+			const printing = [toStr(fm['Set Code']), toStr(fm['Collector Number']) ? '#' + toStr(fm['Collector Number']) : '', toStr(fm.Rarity)].filter(Boolean).join(' · ')
+			if (printing) info.createDiv({ cls: 'card-author', text: printing })
+			const qty = Math.max(0, Number(fm.Quantity) || 0) + Math.max(0, Number(fm['Foil Quantity']) || 0) + Math.max(0, Number(fm['Etched Quantity']) || 0)
+			if (qty > 0) info.createDiv({ cls: 'card-rating', text: String(qty) + (qty === 1 ? ' copy owned' : ' copies owned') })
+			else if (fm.Wishlist === true) info.createDiv({ cls: 'card-author', text: 'Wishlist' })
+			const eur = Number(fm['Price EUR'])
+			if (Number.isFinite(eur) && fm['Price EUR'] !== undefined) info.createDiv({ cls: 'card-year', text: '€' + eur.toFixed(2) + ' / nonfoil' })
+			return
+		}
 
 		const author = toStrArray(fm.Author || fm.Creator || fm.Director || fm.Artist).map(linkLabel).join(', ')
 		if (author) info.createDiv({ cls: 'card-author', text: author })

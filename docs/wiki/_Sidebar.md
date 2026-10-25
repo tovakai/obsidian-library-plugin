@@ -1,6 +1,8 @@
 - [[Home]]
 - [[Getting started|Getting-started]]
 - [[Sources and API keys|Sources-and-API-keys]]
+- [[Magic: The Gathering and Scryfall|MTG-and-Scryfall]]
+- [[General-purpose catalog|General-catalog]]
 - [[Connected accounts|Connected-accounts]]
   - [[Anime and manga sync|Anime-sync]]
   - [[IMDb and Netflix|IMDb-and-Netflix]]

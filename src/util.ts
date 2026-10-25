@@ -218,14 +218,16 @@ function isComplete(fm: Record<string, unknown>): boolean {
 	return fm.Complete === true || toStr(fm.Complete) === 'true'
 }
 
-export type Tracking = 'progress' | 'watched' | 'both'
+export type Tracking = 'progress' | 'watched' | 'both' | 'none'
 
 export function trackingOf(kind: ContentType | undefined): Tracking {
+	if (kind === 'mtg' || kind === 'manual' || kind === 'people_private' || kind === 'people_public' || kind === 'place' || kind === 'misc') return 'none'
 	if (kind === 'series' || kind === 'anime' || kind === 'book') return 'progress'
 	return kind === 'movie' ? 'watched' : 'both'
 }
 
 export function isFinished(fm: Record<string, unknown>, kind?: ContentType): boolean {
+	if (trackingOf(kind) === 'none') return false
 	if (trackingOf(kind) !== 'progress') return isComplete(fm)
 	const match = toStr(fm.Progress).match(progressPattern)
 	const total = match ? Number(match[2]) : 0
@@ -240,7 +242,7 @@ export function hasEnded(fm: Record<string, unknown>, kind?: ContentType): boole
 // Null for movies; hidden when a title that won't grow is done, or Complete is on for other media.
 export function shownProgress(fm: Record<string, unknown>, kind?: ContentType): number | null {
 	const tracking = trackingOf(kind)
-	if (tracking === 'watched') return null
+	if (tracking === 'watched' || tracking === 'none') return null
 	const percent = Math.min(100, parseProgress(fm.Progress))
 	if (percent <= 0) return null
 	if (tracking === 'both') return isComplete(fm) ? null : percent
@@ -249,6 +251,7 @@ export function shownProgress(fm: Record<string, unknown>, kind?: ContentType): 
 
 // A rated title counts as seen, ticked or not.
 export function notStarted(fm: Record<string, unknown>, kind?: ContentType): boolean {
+	if (trackingOf(kind) === 'none') return false
 	if (isFinished(fm, kind) || parseWatched(fm.Progress) > 0) return false
 	if (Number(fm.Playtime) > 0) return false
 	const rating = fm['My Rating'] ?? fm.Rating
@@ -369,6 +372,11 @@ export function inferContentType(typeValue: string): ContentType {
 		case 'Music': return 'music'
 		case 'Anime': return 'anime'
 		case 'Comic': return 'comic'
+		case 'MTG': return 'mtg'
+		case 'Person (Private)': return 'people_private'
+		case 'Person (Public)': return 'people_public'
+		case 'Place': return 'place'
+		case 'Misc': return 'misc'
 		case 'Manual': return 'manual'
 		default: return 'movie'
 	}

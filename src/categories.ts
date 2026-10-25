@@ -7,13 +7,18 @@ export const TYPE_DEFAULTS: Record<string, string> = {
 	series: 'Series',
 	book: 'Book',
 	comic: 'Comic',
+	mtg: 'MTG',
+	people_private: 'Person (Private)',
+	people_public: 'Person (Public)',
+	place: 'Place',
+	misc: 'Misc',
 	game: 'Game',
 	music: 'Music',
 	anime: 'Anime',
 	manual: 'Manual',
 }
 
-export const MEDIA: ContentType[] = ['movie', 'series', 'book', 'comic', 'game', 'music', 'anime', 'manual']
+export const MEDIA: ContentType[] = ['movie', 'series', 'book', 'comic', 'game', 'music', 'anime', 'mtg', 'people_private', 'people_public', 'place', 'misc', 'manual']
 
 export function isBuiltInCategory(cat: ICategory): boolean {
 	return cat.contentType !== 'manual' && cat.typeValue === TYPE_DEFAULTS[cat.contentType]
@@ -68,11 +73,17 @@ export function newCategory(contentType: ContentType, settings: ILibrarySettings
 	const label = tr(`settings.default.${contentType}`)
 	let name = label
 	for (let n = 2; names.has(name); n++) name = `${label} ${String(n)}`
+	const folderNames: Partial<Record<ContentType, string>> = {
+		people_private: 'People (Private)',
+		people_public: 'People (Public)',
+		place: 'Places',
+		misc: 'Misc'
+	}
 	return {
 		name,
 		typeValue,
 		contentType,
-		folder: joinFolder(settings.libraryFolder, I18N.en[`settings.default.${contentType}`] ?? base),
+		folder: joinFolder(settings.libraryFolder, folderNames[contentType] ?? I18N.en[`settings.default.${contentType}`] ?? base),
 	}
 }
 
