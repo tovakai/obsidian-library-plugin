@@ -25,11 +25,16 @@ Use the new command **Library: Add catalog entry manually** to create a note **w
 ---
 Type: Person (Private)
 Name: Alex
+aliases: []
 Relationship: ""
-Contact: ""
+Phone Number: ""
+Email: ""
 Birthday: ""
+Photo: ""
 ---
 ~~~
+
+Use Obsidian's built-in `aliases` list to record nicknames, previous names or alternate spellings. `Phone Number` and `Email` are separate text properties. `Photo` accepts an image URL or a vault image path/wikilink (for example, `"[[People/Photos/Alex.jpg]]"`), which appears as the gallery portrait and note-header image. The photo stays in your vault when it refers to a local file. New entries leave these properties empty, and custom templates can provide their own values.
 
 Private People have no external metadata provider. The Library plugin does not look them up online and disables its built-in social-share control and Share Current Note command for this category. Obsidian Sync, other plugins, and user-chosen cloud backups may still copy the vault elsewhere.
 
@@ -39,6 +44,7 @@ Private People have no external metadata provider. The Library plugin does not l
 ---
 Type: Person (Public)
 Name: "Ada Lovelace"
+aliases: []
 Description: ""
 Occupation: []
 Citizenship: []
@@ -49,7 +55,7 @@ Source ID: Q7259
 ---
 ~~~
 
-Wikidata searches return documented human items and fill descriptions, occupations, citizenship, birth/death dates and Wikipedia portraits where available. Manually created notes do not require a source ID.
+Wikidata searches return documented human items and fill descriptions, occupations, citizenship, birth/death dates, native Obsidian aliases (from available Wikidata alternate names in your language/English), and Wikipedia portraits where available. Manually created notes do not require a source ID.
 
 ### Places
 

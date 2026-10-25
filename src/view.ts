@@ -558,7 +558,8 @@ export class LibraryRenderer {
 			}
 		})
 
-		const cover = coverValue(fm, this.plugin.settings.coverProperty)
+		const cover = card.kind === 'people_private' && toStr(fm.Photo).trim()
+			? fm.Photo : coverValue(fm, this.plugin.settings.coverProperty)
 		const imgDiv = cardEl.createDiv({ cls: 'card-image' })
 		const cardCover = coverSrc(this.app, cover)
 		if (cardCover) {

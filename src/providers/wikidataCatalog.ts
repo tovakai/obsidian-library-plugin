@@ -70,7 +70,7 @@ export class WikidataCatalogProvider implements ContentProvider {
 		if (!Q_ID.test(sourceId) || (type !== 'people_public' && type !== 'place')) return null
 		try {
 			const langs = languages()
-			const item = (await entities([sourceId], 'labels|descriptions|claims|sitelinks', langs))[sourceId]
+			const item = (await entities([sourceId], 'labels|aliases|descriptions|claims|sitelinks', langs))[sourceId]
 			if (!item) return null
 			// Never silently attach a similarly named place to a person, or vice versa.
 			if (type === 'people_public' && !itemIds(item, 'P31').includes('Q5')) return null
@@ -84,6 +84,12 @@ export class WikidataCatalogProvider implements ContentProvider {
 			}
 			const imageTask = wikipediaImages(article ? [article] : [])
 			if (type === 'people_public') {
+				// Obsidian's native aliases array supports alternate names in links/search.
+				// Keep these to the reader's preferred languages, not every Wikidata language.
+				const name = String(common.Name).toLocaleLowerCase()
+				const aliases = Array.from(new Set(langs.flatMap(lang =>
+					(item.aliases?.[lang] ?? []).map(alias => alias.value?.trim()).filter((value): value is string => !!value)
+				))).filter(alias => alias.toLocaleLowerCase() !== name).slice(0, 24)
 				const occupations = itemIds(item, 'P106')
 				const citizenship = itemIds(item, 'P27')
 				const [label, images] = await Promise.all([
@@ -91,6 +97,7 @@ export class WikidataCatalogProvider implements ContentProvider {
 				])
 				const fields = {
 					...common,
+					aliases,
 					Cover: article ? images[article] ?? null : null,
 					Occupation: label(occupations),
 					Citizenship: label(citizenship),

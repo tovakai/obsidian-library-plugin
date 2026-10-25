@@ -15,6 +15,7 @@ export interface WikidataClaim {
 
 export interface WikidataEntity {
 	labels?: Record<string, { value?: string }>
+	aliases?: Record<string, { value?: string }[]>
 	descriptions?: Record<string, { value?: string }>
 	claims?: Record<string, WikidataClaim[]>
 	sitelinks?: Record<string, { title?: string }>

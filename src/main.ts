@@ -148,8 +148,8 @@ function ensureOwnershipFields(fields: Record<string, unknown>, type: ContentTyp
 // Structured starting points without imposing a fixed schema on custom templates.
 function ensureCatalogFields(fields: Record<string, unknown>, type: ContentType): void {
 	const defaults: Partial<Record<ContentType, Record<string, unknown>>> = {
-		people_private: { Relationship: '', Contact: '', Birthday: '' },
-		people_public: { Description: '' },
+		people_private: { aliases: [], Relationship: '', 'Phone Number': '', Email: '', Birthday: '', Photo: '' },
+		people_public: { aliases: [], Description: '' },
 		place: { Visited: false, Address: '' },
 		misc: { Description: '' }
 	}
@@ -3749,7 +3749,10 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private buildNoteHeader(file: TFile, fm: Record<string, unknown>): HTMLElement {
-		const cover = coverValue(fm, this.coverProperty())
+		const kind = this.kindOf(fm)
+		// Private people's own photo overrides the generic media cover field.
+		const cover = kind === 'people_private' && toStr(fm.Photo).trim()
+			? fm.Photo : coverValue(fm, this.coverProperty())
 		const name = toStr(fm.Name) || file.basename
 		const creatorStr = toStrArray(fm.Creator || fm.Director || fm.Author || fm.Artist).map(linkLabel).join(', ')
 		const cast = toStrArray(fm.Cast).map(linkLabel)
@@ -3761,7 +3764,6 @@ export default class LibraryPlugin extends Plugin {
 		const ratingRawg = fm['Rating RAWG'] ? toStr(fm['Rating RAWG']) : ''
 		const ratingMc = fm['Rating MC'] ? toStr(fm['Rating MC']) : ''
 		const myRating = fm['My Rating'] ? toStr(fm['My Rating']) : ''
-		const kind = this.kindOf(fm)
 		const progressPercent = shownProgress(fm, kind)
 		const complete = (trackingOf(kind) === 'watched' || trackingOf(kind) === 'both') && fm.Complete === true
 		const url = safeUrl(fm.URL)
@@ -3894,10 +3896,13 @@ export default class LibraryPlugin extends Plugin {
 		}
 
 		if (kind === 'people_private') {
+			addRow('Aliases', toStrArray(fm.aliases).join(', '))
 			addRow('Relationship', toStr(fm.Relationship))
+			addRow('Phone number', toStr(fm['Phone Number']))
+			addRow('Email', toStr(fm.Email))
 			addRow('Birthday', toStr(fm.Birthday))
-			// Contact details remain only in the local note's editable properties.
 		} else if (kind === 'people_public') {
+			addRow('Aliases', toStrArray(fm.aliases).join(', '))
 			addRow('Born', toStr(fm.Born))
 			addRow('Died', toStr(fm.Died))
 			addRow('Occupation', toStrArray(fm.Occupation).join(', '))
