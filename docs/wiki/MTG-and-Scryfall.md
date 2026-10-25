@@ -28,7 +28,9 @@ The gallery uses card-art proportions and shows printing identifiers, copy count
 
 The price fields (Price EUR, Price EUR Foil, Price USD, etc.) are **estimates**, not sale offers, and may be absent. Library can refresh them from Scryfall when refreshing metadata; personal quantity, wishlist, and other hand-edited properties are never replaced by Scryfall. Refresh one note with **Refresh metadata for current note**.
 
-For an Obsidian Base inventory, create a view filtered to **Type = MTG** and quantities greater than zero. For value calculations, use the numeric EUR prices and multiply by each corresponding quantity. Keep collection value as a derived calculation, not as manually maintained duplicate metadata. A file with quantity zero is still useful as a reference entry.
+For an Obsidian Base inventory, copy [the included MTG Collection.base template](../../examples/MTG%20Collection.base) into your vault's **Inventory** folder. It provides **Owned**, **Wishlist**, and **Reference** views with total-copy and estimated EUR-value formulas. Its EUR total covers normal and foil copies; etched copies have no Scryfall EUR price field and are intentionally excluded from that estimate.
+
+Or create your own view filtered to **Type = MTG** and quantities greater than zero. For value calculations, use the numeric EUR prices and multiply by each corresponding quantity. Keep collection value as a derived calculation, not as manually maintained duplicate metadata. A file with quantity zero is still useful as a reference entry.
 
 ## API usage and limitations
 
