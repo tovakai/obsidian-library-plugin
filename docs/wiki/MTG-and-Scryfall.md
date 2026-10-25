@@ -8,7 +8,7 @@ The fork supports **MTG** as a Library content category. Cards are ordinary Mark
 2. Select **Magic: The Gathering**. The first saved card creates the MTG category and folder.
 3. Search for a card, and pick the set/collector-number printing you want. Results are newest-first and show set, number, and rarity.
 4. To narrow a popular name, use native [Scryfall search syntax](https://scryfall.com/docs/syntax): for example, **!"Sol Ring" set:who**, **name:Camellia set:blb**, **t:token**, or **!"Gilded Goose" cn:160**.
-5. Open its new note and edit the **Quantity**, **Foil Quantity**, and **Etched Quantity** frontmatter fields to describe the actual copies you own.
+5. Open its new note and use the **+ / − buttons** below the metadata to track **normal**, **foil**, and **etched** copies (or edit the corresponding frontmatter fields directly). The note header also has a **Wishlist** toggle.
 
 An ordinary name search targets paper printings. Queries with Scryfall operators run as written, so advanced searches can also request digital cards. Results show the first page (up to 75 printings); add a set or collector-number filter to reach older printings.
 

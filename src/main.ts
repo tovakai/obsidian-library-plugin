@@ -3808,6 +3808,40 @@ export default class LibraryPlugin extends Plugin {
 			addRow('Rarity', toStr(fm.Rarity))
 			addRow('Owned', String(Math.max(0, Number(fm.Quantity) || 0)) + ' normal · ' + String(Math.max(0, Number(fm['Foil Quantity']) || 0)) + ' foil · ' + String(Math.max(0, Number(fm['Etched Quantity']) || 0)) + ' etched')
 			if (fm['Price EUR'] !== undefined) addRow('EUR', toStr(fm['Price EUR']))
+			const controls = createDiv()
+			controls.classList.add('note-header-row', 'library-mtg-quantity-row')
+			for (const item of [
+				{ field: 'Quantity', label: 'Normal' },
+				{ field: 'Foil Quantity', label: 'Foil' },
+				{ field: 'Etched Quantity', label: 'Etched' }
+			]) {
+				const group = controls.createSpan({ cls: 'library-mtg-quantity-control' })
+				group.createSpan({ text: item.label + ': ' + String(Math.max(0, Number(fm[item.field]) || 0)) })
+				for (const delta of [-1, 1]) {
+					const button = group.createEl('button', { cls: 'library-mtg-qty-button', text: delta > 0 ? '+' : '−' })
+					button.setAttribute('type', 'button')
+					button.setAttribute('aria-label', (delta > 0 ? 'Add ' : 'Remove ') + item.label + ' copy')
+					button.addEventListener('click', (event) => {
+						event.preventDefault()
+						event.stopPropagation()
+						void this.app.fileManager.processFrontMatter(file, (current) => {
+							const previous = Number(current[item.field])
+							current[item.field] = Math.max(0, Math.trunc(Number.isFinite(previous) ? previous : 0) + delta)
+						}).then(() => this.refreshBanner()).catch(error => console.error('Library: MTG quantity update', error))
+					})
+				}
+			}
+			const wishlist = controls.createEl('button', { cls: 'library-mtg-qty-button', text: fm.Wishlist === true ? '★ Wishlist' : '☆ Wishlist' })
+			wishlist.setAttribute('type', 'button')
+			wishlist.setAttribute('aria-label', 'Toggle MTG wishlist')
+			wishlist.addEventListener('click', (event) => {
+				event.preventDefault()
+				event.stopPropagation()
+				void this.app.fileManager.processFrontMatter(file, (current) => {
+					current.Wishlist = current.Wishlist !== true
+				}).then(() => this.refreshBanner()).catch(error => console.error('Library: MTG wishlist update', error))
+			})
+			infoSide.appendChild(controls)
 		}
 
 		if (progressPercent !== null) {
