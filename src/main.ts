@@ -14,6 +14,7 @@ import {
 import { progressPattern, RATING_RT_ICON, type ICategory, type ILibrarySettings, type IStatsSettings, type IStatsTop, DEFAULT_SETTINGS } from './constants'
 import { formatNumber, tr, trCount } from './i18n'
 import { LibrarySettingTab } from './settings'
+import { applyCatalogProperties, type CatalogCategory } from './catalogProperties'
 import { ProviderRegistry } from './providers/registry'
 import { OmdbProvider } from './providers/omdb'
 import { OpenLibraryProvider, findChapters } from './providers/openlibrary'
@@ -714,8 +715,9 @@ export default class LibraryPlugin extends Plugin {
 					...(category.contentType === 'mtg' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
 					Date: todayDmy(),
 				})
-				ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
-			ensureCatalogFields(fm as Record<string, unknown>, category.contentType)
+				if (!(category as CatalogCategory).customManual) ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
+				ensureCatalogFields(fm as Record<string, unknown>, category.contentType)
+				applyCatalogProperties(fm as Record<string, unknown>, category)
 			})
 			await this.app.workspace.getLeaf(false).openFile(file)
 			new Notice(tr('notice.created', { name: title }))
@@ -777,8 +779,9 @@ export default class LibraryPlugin extends Plugin {
 				'Source ID': sourceId,
 			}, extra)
 			this.applyMetaFields(fm as Record<string, unknown>, meta)
-			ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
+			if (!(category as CatalogCategory).customManual) ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
 			ensureCatalogFields(fm as Record<string, unknown>, category.contentType)
+			applyCatalogProperties(fm as Record<string, unknown>, category)
 		})
 		return file
 	}

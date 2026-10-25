@@ -221,7 +221,7 @@ function isComplete(fm: Record<string, unknown>): boolean {
 export type Tracking = 'progress' | 'watched' | 'both' | 'none'
 
 export function trackingOf(kind: ContentType | undefined): Tracking {
-	if (kind === 'mtg' || kind === 'people_private' || kind === 'people_public' || kind === 'place' || kind === 'misc') return 'none'
+	if (kind === 'mtg' || kind === 'manual' || kind === 'people_private' || kind === 'people_public' || kind === 'place' || kind === 'misc') return 'none'
 	if (kind === 'series' || kind === 'anime' || kind === 'book') return 'progress'
 	return kind === 'movie' ? 'watched' : 'both'
 }

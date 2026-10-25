@@ -29,6 +29,28 @@ Keep templates in a folder named `Templates`, or in a folder or file whose name 
 
 If the template is moved or deleted, Library shows "Template not found" and creates the note without it.
 
+## Build a custom manual category in Settings
+
+You can now define a new type of thing without editing Markdown templates or changing code.
+
+1. Open **Settings → Library → Categories → Create custom category**.
+2. Enter a category name such as **Electronics**, **Plants**, **Pets**, or **Vinyl** and click **Create**.
+3. The new category expands. Click **Add property**, rename **New Property**, select a type, and optionally set a default.
+4. Repeat for all fields. A trash icon removes a field from the category definition.
+5. Use **Library → +** (or the manual-entry command) and choose your new category.
+
+The property builder supports **Text** (e.g. Location = Living Room), **Number** (Warranty Years = 3), **Checkbox** (Owned = true/false), **Date** (Purchase Date = 2026-10-25), and **List** (Tags = Vinyl, Soundtrack). List defaults are comma-separated.
+
+Definitions are stored in Library settings and applied when a new note is created. A generated note gets its own Type, Name and Date, plus the properties you specify. Custom categories do not inherit movie ratings, completion or progress controls, or unrelated ownership defaults unless you define them.
+
+Existing notes are **not** modified when you change a schema. Removing a field from the builder does not remove that property from older notes.
+
+### Combine with Markdown templates
+
+Custom categories can still use the category's **Template** path to copy note body content, headings and advanced YAML. If a field already exists in the Markdown template, that value wins over a default from the Settings builder.
+
+When a Date field has no initial value, you may need to select the Date property type in Obsidian's Properties UI after creating a note.
+
 ## Skipped properties
 
 Settings → Library → Skip properties takes the fields that notes should not get from the sources, separated by commas, for example `Cast, Gallery, Trailer`. New notes leave them out, and a refresh doesn't add them. Values already in your notes stay; delete them by hand if you want them gone.

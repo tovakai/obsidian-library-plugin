@@ -96,3 +96,7 @@ Public People and Places use existing Wikidata APIs and can refresh their extern
 We deliberately don't add the ownership checkbox to people or places. Owning a book is different from knowing a person or visiting a city. You can still add any property manually where needed.
 
 The Library plugin can avoid external lookups, but it cannot promise your vault is physically local. Other Obsidian plugins, cloud sync providers or manual sharing may transmit data. Store sensitive details only in a vault with appropriate access controls.
+
+## Build your own categories
+
+Under **Settings → Library → Categories → Create custom category**, define a manual category and its default properties (text, number, checkbox, date, list) without writing a template file. Each category appears in the Library category picker. See [category templates](Templates-and-skipped-properties.md#build-a-custom-manual-category-in-settings).
