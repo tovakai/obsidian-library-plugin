@@ -22,7 +22,7 @@ export class PickTypeModal extends FuzzySuggestModal<AddChoice> {
 	}
 
 	getItemText(choice: AddChoice): string {
-		if ('category' in choice) return `${choice.category.name} (${choice.category.typeValue})`
+		if ('category' in choice) return choice.category.name || choice.category.typeValue
 		return choice.type === 'manual' ? tr('settings.category.manual') : tr(`settings.default.${choice.type}`)
 	}
 
