@@ -29,6 +29,7 @@ import { AnimeProvider } from './providers/anime'
 import { MalProvider } from './providers/mal'
 import { KitsuProvider } from './providers/kitsu'
 import { ComicsProvider } from './providers/comics'
+import { ScryfallProvider } from './providers/scryfall'
 import { ComicsAggregatorProvider } from './providers/comicsAggregator'
 import { WikidataComicProvider } from './providers/wikidataComics'
 import { MangaProvider } from './providers/manga'
@@ -256,6 +257,7 @@ export default class LibraryPlugin extends Plugin {
 			new WikidataGameProvider()
 		))
 		this.registry.register(new DeezerProvider())
+		this.registry.register(new ScryfallProvider())
 		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(() => this.settings), new MalProvider(() => MAL_CLIENT_ID, () => this.settings), new KitsuProvider(() => this.settings)))
 		this.registry.register(new ComicsAggregatorProvider(
 			new ComicsProvider(() => this.settings.comicVineApiKey),
@@ -665,9 +667,10 @@ export default class LibraryPlugin extends Plugin {
 				Object.assign(fm, {
 					Type: category.typeValue,
 					Name: title,
-					'My Rating': null,
-					...(tracking !== 'progress' ? { Complete: false } : {}),
-					...(tracking !== 'watched' ? { Progress: '' } : {}),
+					...(tracking !== 'none' ? { 'My Rating': null } : {}),
+					...(tracking === 'watched' || tracking === 'both' ? { Complete: false } : {}),
+					...(tracking === 'progress' || tracking === 'both' ? { Progress: '' } : {}),
+					...(tracking === 'none' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
 					Date: todayDmy(),
 				})
 			})
@@ -702,7 +705,10 @@ export default class LibraryPlugin extends Plugin {
 
 			// the category is made only now, once a note is sure to follow
 			const category = await this.categoryFor(target)
-			const file = await this.newNote(category, provider.id, result.sourceId, result.title, meta)
+			const filename = typeOf(target) === 'mtg'
+				? result.title + ' (' + String(meta.fields['Set Code'] ?? '') + ' ' + String(meta.fields['Collector Number'] ?? '') + ')'
+				: result.title
+			const file = await this.newNote(category, provider.id, result.sourceId, filename, meta)
 			await this.app.workspace.getLeaf(false).openFile(file)
 			new Notice(tr('notice.created', { name: toStr(meta.fields.Name) || result.title }))
 		} catch (e) {
@@ -719,9 +725,10 @@ export default class LibraryPlugin extends Plugin {
 		await this.app.fileManager.processFrontMatter(file, (fm) => {
 			Object.assign(fm, {
 				Type: category.typeValue,
-				...(tracking !== 'watched' ? { Progress: meta.progressTotal ? `0/${String(meta.progressTotal)}` : '' } : {}),
-				'My Rating': null,
-				...(tracking !== 'progress' ? { Complete: false } : {}),
+				...(tracking === 'progress' || tracking === 'both' ? { Progress: meta.progressTotal ? `0/${String(meta.progressTotal)}` : '' } : {}),
+				...(tracking !== 'none' ? { 'My Rating': null } : {}),
+				...(tracking === 'watched' || tracking === 'both' ? { Complete: false } : {}),
+				...(tracking === 'none' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
 				Date: todayDmy(),
 				Source: source,
 				'Source ID': sourceId,
@@ -952,6 +959,7 @@ export default class LibraryPlugin extends Plugin {
 	// legacy shapes: a Complete from before 2.4.1 fills the progress and goes; a movie's Progress becomes Complete
 	private async syncTracking(file: TFile, fm: Record<string, unknown>): Promise<void> {
 		const tracking = trackingOf(this.kindOf(fm))
+		if (tracking === 'none') return
 		const match = toStr(fm.Progress).match(progressPattern)
 		const watched = match ? Number(match[1]) : 0
 		const total = match ? Number(match[2]) : 0
@@ -3640,6 +3648,8 @@ export default class LibraryPlugin extends Plugin {
 			else if (key === 'Runtime' && plausibleRuntime(present) === null && plausibleRuntime(value) !== null) current[target] = value
 			// a source's own score moves: refresh brings the current one, not the first
 			else if (SOURCE_SCORES.indexOf(key) >= 0) current[target] = value
+			// Scryfall prices are changing estimates; ownership fields remain user-controlled.
+			else if (toStr(current.Source) === 'scryfall' && key.startsWith('Price ')) current[target] = value
 		}
 		if (typeof meta.fields.Season === 'number' && meta.fields.Season > Number(current.Season || 0) && !this.skipped('Season')) {
 			current.Season = meta.fields.Season
@@ -3791,6 +3801,14 @@ export default class LibraryPlugin extends Plugin {
 		if (ratingRawg) addRow('RAWG', ratingRawg)
 		if (ratingMc) addRow('MC', ratingMc)
 		if (myRating) addRow(tr('header.myRating'), myRating)
+		if (kind === 'mtg') {
+			addRow('Set', [toStr(fm.Set), toStr(fm['Set Code']), toStr(fm['Collector Number'])].filter(Boolean).join(' · '))
+			addRow('Card type', toStr(fm['Card Type']))
+			addRow('Mana cost', toStr(fm['Mana Cost']))
+			addRow('Rarity', toStr(fm.Rarity))
+			addRow('Owned', String(Math.max(0, Number(fm.Quantity) || 0)) + ' normal · ' + String(Math.max(0, Number(fm['Foil Quantity']) || 0)) + ' foil · ' + String(Math.max(0, Number(fm['Etched Quantity']) || 0)) + ' etched')
+			if (fm['Price EUR'] !== undefined) addRow('EUR', toStr(fm['Price EUR']))
+		}
 
 		if (progressPercent !== null) {
 			const progRow = createDiv()
@@ -3827,7 +3845,7 @@ export default class LibraryPlugin extends Plugin {
 		this.buildMediaBlock(wrap, fm, name)
 		this.buildSeasonsBlock(wrap, fm, file)
 		this.buildTrophiesBlock(wrap, fm, file)
-		this.buildRecommendations(wrap, fm)
+		if (kind !== 'mtg') this.buildRecommendations(wrap, fm)
 		return wrap
 	}
 

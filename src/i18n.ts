@@ -2,6 +2,8 @@ import { getLanguage } from 'obsidian'
 import { localeMap, I18N, type SupportedLocale } from './constants'
 
 export function tr(key: string, vars?: Record<string, string | number>): string {
+	// Fork-specific labels live outside upstream's generated multilingual bundle.
+	if (key === 'settings.default.mtg') return 'Magic: The Gathering'
 	const language: string = getLanguage().toLowerCase()
 	// Longest subtag wins: 'zh-tw' → zh-TW, not zh; 'kab' does not match 'ka'.
 	const match: string | undefined = Object.keys(localeMap)

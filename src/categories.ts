@@ -7,13 +7,14 @@ export const TYPE_DEFAULTS: Record<string, string> = {
 	series: 'Series',
 	book: 'Book',
 	comic: 'Comic',
+	mtg: 'MTG',
 	game: 'Game',
 	music: 'Music',
 	anime: 'Anime',
 	manual: 'Manual',
 }
 
-export const MEDIA: ContentType[] = ['movie', 'series', 'book', 'comic', 'game', 'music', 'anime', 'manual']
+export const MEDIA: ContentType[] = ['movie', 'series', 'book', 'comic', 'game', 'music', 'anime', 'mtg', 'manual']
 
 export function isBuiltInCategory(cat: ICategory): boolean {
 	return cat.contentType !== 'manual' && cat.typeValue === TYPE_DEFAULTS[cat.contentType]

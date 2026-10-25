@@ -28,6 +28,7 @@
 - **A library view.** One section per kind of media, with filters and sorting by rating, date or progress, an "Up next" shelf, and a "Soon" list with the air dates of new episodes.
 - **Statistics.** How many titles you have, how many hours of watching or reading that is, and fun comparisons like "in that time you could have watched every Bond film". It also shows your taste (how your scores compare with other viewers, your favourite genres and decade) and your latest diary entries.
 - **A diary.** Tick an episode or a chapter, or mark a title complete, and the day goes into the note's `Log` property.
+- **Magic: The Gathering cards.** Search Scryfall printings (including tokens), save artwork and card metadata, and track normal, foil and etched copies without watch-progress fields. See [MTG and Scryfall](docs/wiki/MTG-and-Scryfall.md).
 - **Library blocks.** A `library` code block in any note shows cards picked by category, genre, year or score, what you are in the middle of, the Soon list or the statistics.
 - **A library map.** One command draws your library as a canvas, with posters grouped around the actors and creators they share.
 - **Covers offline.** Turn on "Keep covers in the vault" and covers are saved to a Covers folder, so the library looks the same without internet.
@@ -69,6 +70,7 @@ Each category searches open sources. An API key adds richer data, and its servic
 | Games | Steam, Wikidata | [RAWG](https://rawg.io/apidocs), [Twitch](https://dev.twitch.tv/console/apps) (game trailers) |
 | Anime, manga | AniList, MyAnimeList, Kitsu | None |
 | Comics | Wikidata, AniList | [Comic Vine](https://comicvine.gamespot.com/api/) |
+| MTG cards | [Scryfall](https://scryfall.com/docs/api) | None |
 | Music | Deezer | None |
 
 Anime and manga notes take English, romaji or original names, as you choose in the settings. Titles marked adult stay out of search until you turn them on.

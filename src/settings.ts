@@ -892,6 +892,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			["series", tr("settings.default.series") + " — Cinemeta, Wikidata, OMDb"],
 			["book", tr("settings.default.book") + " — Open Library, Google Books"],
 			["comic", tr("settings.default.comic") + " — Wikidata, AniList, Comic Vine"],
+			["mtg", tr("settings.default.mtg") + " — Scryfall"],
 			["game", tr("settings.default.game") + " — Steam, Wikidata, RAWG"],
 			["music", tr("settings.default.music") + " — Deezer"],
 			["anime", tr("settings.default.anime") + " — AniList, MyAnimeList"],

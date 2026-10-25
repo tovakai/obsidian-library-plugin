@@ -545,6 +545,7 @@ export class LibraryRenderer {
 				'aria-label': card.name
 			}
 		})
+		if (card.kind === 'mtg') cardEl.addClass('library-mtg-card')
 		cardEl.addEventListener('click', () => {
 			void this.app.workspace.getLeaf(false).openFile(file)
 		})
@@ -562,7 +563,8 @@ export class LibraryRenderer {
 			imgDiv.createEl('img', { attr: { src: cardCover, alt: card.name, loading: 'lazy', decoding: 'async' } })
 		} else {
 			const type = toStr(fm.Type).toLowerCase()
-			const emoji = type === 'anime' ? '🎌'
+			const emoji = type === 'mtg' ? '🃏'
+				: type === 'anime' ? '🎌'
 				: type === 'comic' ? '📚'
 				: type === 'book' ? '📖'
 				: type === 'game' ? '🎮'
@@ -572,7 +574,7 @@ export class LibraryRenderer {
 			imgDiv.createSpan({ text: emoji })
 		}
 		renderPlatforms(imgDiv, fm, 'card-platforms')
-		if (notStarted(fm, card.kind)) {
+		if (card.kind !== 'mtg' && notStarted(fm, card.kind)) {
 			const badge = imgDiv.createSpan({
 				cls: 'card-unstarted',
 				attr: { 'role': 'img', 'aria-label': tr('card.notStarted') }
@@ -582,6 +584,16 @@ export class LibraryRenderer {
 
 		const info = cardEl.createDiv({ cls: 'card-info' })
 		info.createDiv({ cls: 'card-title', text: card.name })
+		if (card.kind === 'mtg') {
+			const printing = [toStr(fm['Set Code']), toStr(fm['Collector Number']) ? '#' + toStr(fm['Collector Number']) : '', toStr(fm.Rarity)].filter(Boolean).join(' · ')
+			if (printing) info.createDiv({ cls: 'card-author', text: printing })
+			const qty = Math.max(0, Number(fm.Quantity) || 0) + Math.max(0, Number(fm['Foil Quantity']) || 0) + Math.max(0, Number(fm['Etched Quantity']) || 0)
+			if (qty > 0) info.createDiv({ cls: 'card-rating', text: String(qty) + (qty === 1 ? ' copy owned' : ' copies owned') })
+			else if (fm.Wishlist === true) info.createDiv({ cls: 'card-author', text: 'Wishlist' })
+			const eur = Number(fm['Price EUR'])
+			if (Number.isFinite(eur) && fm['Price EUR'] !== undefined) info.createDiv({ cls: 'card-year', text: '€' + eur.toFixed(2) + ' / nonfoil' })
+			return
+		}
 
 		const author = toStrArray(fm.Author || fm.Creator || fm.Director || fm.Artist).map(linkLabel).join(', ')
 		if (author) info.createDiv({ cls: 'card-author', text: author })

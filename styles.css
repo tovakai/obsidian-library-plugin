@@ -1860,3 +1860,8 @@ sort trigger, the chosen one in the accent colour. */
 	font-weight: var(--font-semibold);
 	font-variant-numeric: tabular-nums;
 }
+
+/* Card art uses a 63 x 88 ratio; other library posters remain unchanged. */
+.library-card.library-mtg-card .card-image {
+	aspect-ratio: 63 / 88;
+}
