@@ -134,6 +134,14 @@ function typeOf(target: Target): ContentType {
 	return typeof target === 'string' ? target : target.contentType
 }
 
+// Ownership belongs to the user, not a remote metadata provider.
+// Only fill missing keys: a custom category template may already define defaults.
+function ensureOwnershipFields(fields: Record<string, unknown>, type: ContentType): void {
+	if (!Object.prototype.hasOwnProperty.call(fields, 'Owned')) fields.Owned = false
+	if (!Object.prototype.hasOwnProperty.call(fields, 'Storage')) fields.Storage = ''
+	if (type !== 'mtg' && !Object.prototype.hasOwnProperty.call(fields, 'Owned Format')) fields['Owned Format'] = ''
+}
+
 interface FolderMove {
 	typeValue: string
 	from: string
@@ -673,6 +681,7 @@ export default class LibraryPlugin extends Plugin {
 					...(tracking === 'none' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
 					Date: todayDmy(),
 				})
+				ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
 			})
 			await this.app.workspace.getLeaf(false).openFile(file)
 			new Notice(tr('notice.created', { name: title }))
@@ -734,6 +743,7 @@ export default class LibraryPlugin extends Plugin {
 				'Source ID': sourceId,
 			}, extra)
 			this.applyMetaFields(fm as Record<string, unknown>, meta)
+			ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
 		})
 		return file
 	}
@@ -3827,6 +3837,8 @@ export default class LibraryPlugin extends Plugin {
 						void this.app.fileManager.processFrontMatter(file, (current) => {
 							const previous = Number(current[item.field])
 							current[item.field] = Math.max(0, Math.trunc(Number.isFinite(previous) ? previous : 0) + delta)
+							current.Owned = ['Quantity', 'Foil Quantity', 'Etched Quantity']
+								.some(field => Number(current[field]) > 0)
 						}).then(() => this.refreshBanner()).catch(error => console.error('Library: MTG quantity update', error))
 					})
 				}
