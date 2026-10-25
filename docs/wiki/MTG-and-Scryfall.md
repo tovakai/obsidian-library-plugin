@@ -8,11 +8,11 @@ The fork supports **MTG** as a Library content category. Cards are ordinary Mark
 2. Select **Magic: The Gathering**. The first saved card creates the MTG category and folder.
 3. Search for a card, and pick the set/collector-number printing you want. Results are newest-first and show set, number, and rarity.
 4. To narrow a popular name, use native [Scryfall search syntax](https://scryfall.com/docs/syntax): for example, **!"Sol Ring" set:who**, **name:Camellia set:blb**, **t:token**, or **!"Gilded Goose" cn:160**.
-5. Open its new note and use the **+ / − buttons** below the metadata to track **normal**, **foil**, and **etched** copies (or edit the corresponding frontmatter fields directly). The note header also has a **Wishlist** toggle.
+5. Open its new note and use the **+ / − buttons** below the metadata to track **normal**, **foil**, and **etched** copies (or edit the corresponding frontmatter fields directly). The note header also has a **Wishlist** toggle. The quantity buttons automatically update the **Owned** checkbox.
 
 An ordinary name search targets paper printings. Queries with Scryfall operators run as written, so advanced searches can also request digital cards. Results show the first page (up to 75 printings); add a set or collector-number filter to reach older printings.
 
-Cards can belong to your **reference library even if you own zero copies**. A card is owned when the sum of all three quantity fields is greater than zero. **Wishlist** is independent from ownership. The media Complete and Progress fields do not apply to cards.
+Cards can belong to your **reference library even if you own zero copies**. New MTG notes include an **Owned** checkbox (default false) and a **Storage** text property (default empty). **Owned Format** is omitted because normal, foil, and etched copies already have separate quantities. The **Owned** inventory view includes cards with the checkbox checked or a positive quantity. The quantity buttons keep the checkbox consistent with the count; if you edit quantities manually in frontmatter, update the checkbox yourself. **Wishlist** is independent from ownership. The media Complete and Progress fields do not apply to cards.
 
 ## Metadata
 
@@ -28,7 +28,7 @@ The gallery uses card-art proportions and shows printing identifiers, copy count
 
 The price fields (Price EUR, Price EUR Foil, Price USD, etc.) are **estimates**, not sale offers, and may be absent. Library can refresh them from Scryfall when refreshing metadata; personal quantity, wishlist, and other hand-edited properties are never replaced by Scryfall. Refresh one note with **Refresh metadata for current note**.
 
-For an Obsidian Base inventory, copy [the included MTG Collection.base template](../../examples/MTG%20Collection.base) into your vault's **Inventory** folder. It provides **Owned**, **Wishlist**, and **Reference** views with total-copy and estimated EUR-value formulas. Its EUR total covers normal and foil copies; etched copies have no Scryfall EUR price field and are intentionally excluded from that estimate.
+For an Obsidian Base inventory, copy [the included MTG Collection.base template](../../examples/MTG%20Collection.base) into your vault's **Inventory** folder. It provides **Owned**, **Wishlist**, and **Reference** views with total-copy and estimated EUR-value formulas. Its EUR total covers normal and foil copies; etched copies have no Scryfall EUR price field and are intentionally excluded from that estimate. The views also expose **Owned** and **Storage**.
 
 Or create your own view filtered to **Type = MTG** and quantities greater than zero. For value calculations, use the numeric EUR prices and multiply by each corresponding quantity. Keep collection value as a derived calculation, not as manually maintained duplicate metadata. A file with quantity zero is still useful as a reference entry.
 

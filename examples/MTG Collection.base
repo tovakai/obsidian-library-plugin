@@ -11,6 +11,10 @@ formulas:
 properties:
   note.Name:
     displayName: Card
+  note.Owned:
+    displayName: Owned
+  note.Storage:
+    displayName: Storage
   note.Set:
     displayName: Set
   note["Set Code"]:
@@ -32,10 +36,13 @@ views:
   - type: table
     name: Owned
     filters:
-      and:
+      or:
+        - 'Owned == true'
         - 'formula.total_copies > 0'
     order:
       - file.name
+      - note.Owned
+      - note.Storage
       - note.Set
       - note["Collector Number"]
       - note.Quantity
@@ -53,6 +60,8 @@ views:
         - 'Wishlist == true'
     order:
       - file.name
+      - note.Owned
+      - note.Storage
       - note.Set
       - note["Collector Number"]
       - note["Price EUR"]
@@ -61,6 +70,8 @@ views:
     name: Reference
     order:
       - file.name
+      - note.Owned
+      - note.Storage
       - note.Set
       - note["Collector Number"]
       - note.Rarity
