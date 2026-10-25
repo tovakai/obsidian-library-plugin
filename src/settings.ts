@@ -753,7 +753,7 @@ export class LibrarySettingTab extends PluginSettingTab {
 			input.inputEl.setAttribute("aria-label", "Property name");
 		});
 		row.addDropdown(dropdown => {
-			for (const type of CATALOG_PROPERTY_TYPES) dropdown.addOption(type, type[0].toUpperCase() + type.slice(1));
+			for (const type of CATALOG_PROPERTY_TYPES) dropdown.addOption(type, type.charAt(0).toUpperCase() + type.slice(1));
 			dropdown.setValue(prop.type).onChange(async value => {
 				if (!CATALOG_PROPERTY_TYPES.includes(value as CatalogPropertyType)) return;
 				prop.type = value as CatalogPropertyType;
