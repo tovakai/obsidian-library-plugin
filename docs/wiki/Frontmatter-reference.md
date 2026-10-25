@@ -90,7 +90,7 @@ Source ID: steam:1245620
 | `Source` | The source family that filled the note. |
 | `Source ID` | The title's id at that source. Refresh and sync use it. |
 
-Most fields above are Library-managed. **Owned, Owned Format, and Storage are yours**; remote metadata refreshes and connected-account imports do not alter existing ownership or location values. New notes created through a custom category template keep any ownership defaults already present in that template.
+Most fields above are Library-managed. **Owned, Owned Format, and Storage are yours**; remote metadata refreshes and connected-account imports do not alter existing ownership or location values. New notes created through a custom category template keep any ownership defaults already present in that template. **People (Private), People (Public), and Places** do not receive ownership defaults. **Miscellaneous** does.
 
 Renaming or removing structural fields such as `Type`, `Source`, or `Source ID` breaks refresh, statistics, or sync for that note.
 
@@ -148,6 +148,9 @@ These can't be skipped. See [[Connected accounts|Connected-accounts]] for what e
 | Anime | `anilist` | The AniList id, or `mal:` and the MyAnimeList id |
 | Music | `deezer` | The Deezer album id |
 | MTG | `scryfall` | Scryfall printing UUID, distinct from Oracle ID |
+| People (Public) | `wikidata` | Wikidata human item ID, such as `Q7259` |
+| Places | `wikidata` | Wikidata geolocated item ID, such as `Q60` |
+| People (Private), Misc | none | Manual notes, no remote source |
 
 Notes from older versions can have another `Source`, such as `rawg` or `steam`. They still refresh, because Library tells sources apart by the shape of `Source ID`.
 

@@ -29,7 +29,8 @@
 - **Statistics.** How many titles you have, how many hours of watching or reading that is, and fun comparisons like "in that time you could have watched every Bond film". It also shows your taste (how your scores compare with other viewers, your favourite genres and decade) and your latest diary entries.
 - **A diary.** Tick an episode or a chapter, or mark a title complete, and the day goes into the note's `Log` property.
 - **Magic: The Gathering cards.** Search Scryfall printings (including tokens), save artwork and card metadata, and track normal, foil and etched copies without watch-progress fields. See [MTG and Scryfall](docs/wiki/MTG-and-Scryfall.md).
-- **Own it, or just catalogue it.** New notes in every category receive an `Owned` checkbox and `Storage` text property. Non-MTG notes also receive `Owned Format` text for DVD, Blu-ray, vinyl, digital and other formats; these fields remain yours to edit.
+- **Own it, or just catalogue it.** New media, MTG and Misc notes receive an `Owned` checkbox and `Storage` text property. Non-MTG inventory notes also get `Owned Format`. People and places don't use ownership defaults.
+- **General-purpose catalogue.** Keep private people offline, search public people and places through Wikidata, or build flexible Misc entries. See [general catalogue](docs/wiki/General-catalog.md).
 - **Library blocks.** A `library` code block in any note shows cards picked by category, genre, year or score, what you are in the middle of, the Soon list or the statistics.
 - **A library map.** One command draws your library as a canvas, with posters grouped around the actors and creators they share.
 - **Covers offline.** Turn on "Keep covers in the vault" and covers are saved to a Covers folder, so the library looks the same without internet.

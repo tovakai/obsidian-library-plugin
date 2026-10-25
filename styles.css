@@ -1885,3 +1885,12 @@ sort trigger, the chosen one in the accent colour. */
 	border-radius: var(--radius-s);
 	border: 1px solid var(--background-modifier-border);
 }
+
+
+/* Portraits and landscapes have different natural aspect ratios from movie posters. */
+.library-card.library-person-card .card-image {
+	aspect-ratio: 3 / 4;
+}
+.library-card.library-place-card .card-image {
+	aspect-ratio: 4 / 3;
+}

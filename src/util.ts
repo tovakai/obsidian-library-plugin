@@ -221,13 +221,13 @@ function isComplete(fm: Record<string, unknown>): boolean {
 export type Tracking = 'progress' | 'watched' | 'both' | 'none'
 
 export function trackingOf(kind: ContentType | undefined): Tracking {
-	if (kind === 'mtg') return 'none'
+	if (kind === 'mtg' || kind === 'people_private' || kind === 'people_public' || kind === 'place' || kind === 'misc') return 'none'
 	if (kind === 'series' || kind === 'anime' || kind === 'book') return 'progress'
 	return kind === 'movie' ? 'watched' : 'both'
 }
 
 export function isFinished(fm: Record<string, unknown>, kind?: ContentType): boolean {
-	if (kind === 'mtg') return false
+	if (trackingOf(kind) === 'none') return false
 	if (trackingOf(kind) !== 'progress') return isComplete(fm)
 	const match = toStr(fm.Progress).match(progressPattern)
 	const total = match ? Number(match[2]) : 0
@@ -251,7 +251,7 @@ export function shownProgress(fm: Record<string, unknown>, kind?: ContentType): 
 
 // A rated title counts as seen, ticked or not.
 export function notStarted(fm: Record<string, unknown>, kind?: ContentType): boolean {
-	if (kind === 'mtg') return false
+	if (trackingOf(kind) === 'none') return false
 	if (isFinished(fm, kind) || parseWatched(fm.Progress) > 0) return false
 	if (Number(fm.Playtime) > 0) return false
 	const rating = fm['My Rating'] ?? fm.Rating
@@ -373,6 +373,10 @@ export function inferContentType(typeValue: string): ContentType {
 		case 'Anime': return 'anime'
 		case 'Comic': return 'comic'
 		case 'MTG': return 'mtg'
+		case 'Person (Private)': return 'people_private'
+		case 'Person (Public)': return 'people_public'
+		case 'Place': return 'place'
+		case 'Misc': return 'misc'
 		case 'Manual': return 'manual'
 		default: return 'movie'
 	}

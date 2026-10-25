@@ -30,6 +30,7 @@ import { MalProvider } from './providers/mal'
 import { KitsuProvider } from './providers/kitsu'
 import { ComicsProvider } from './providers/comics'
 import { ScryfallProvider } from './providers/scryfall'
+import { WikidataCatalogProvider } from './providers/wikidataCatalog'
 import { ComicsAggregatorProvider } from './providers/comicsAggregator'
 import { WikidataComicProvider } from './providers/wikidataComics'
 import { MangaProvider } from './providers/manga'
@@ -137,9 +138,24 @@ function typeOf(target: Target): ContentType {
 // Ownership belongs to the user, not a remote metadata provider.
 // Only fill missing keys: a custom category template may already define defaults.
 function ensureOwnershipFields(fields: Record<string, unknown>, type: ContentType): void {
+	// Relationships and places are not possessions. Do not add an "Owned" flag to people.
+	if (type === 'people_private' || type === 'people_public' || type === 'place') return
 	if (!Object.prototype.hasOwnProperty.call(fields, 'Owned')) fields.Owned = false
 	if (!Object.prototype.hasOwnProperty.call(fields, 'Storage')) fields.Storage = ''
 	if (type !== 'mtg' && !Object.prototype.hasOwnProperty.call(fields, 'Owned Format')) fields['Owned Format'] = ''
+}
+
+// Structured starting points without imposing a fixed schema on custom templates.
+function ensureCatalogFields(fields: Record<string, unknown>, type: ContentType): void {
+	const defaults: Partial<Record<ContentType, Record<string, unknown>>> = {
+		people_private: { Relationship: '', Contact: '', Birthday: '' },
+		people_public: { Description: '' },
+		place: { Visited: false, Address: '' },
+		misc: { Description: '' }
+	}
+	for (const [key, value] of Object.entries(defaults[type] ?? {})) {
+		if (!Object.prototype.hasOwnProperty.call(fields, key)) fields[key] = value
+	}
 }
 
 interface FolderMove {
@@ -266,6 +282,7 @@ export default class LibraryPlugin extends Plugin {
 		))
 		this.registry.register(new DeezerProvider())
 		this.registry.register(new ScryfallProvider())
+		this.registry.register(new WikidataCatalogProvider())
 		this.registry.register(new AnimeAggregatorProvider(new AnimeProvider(() => this.settings), new MalProvider(() => MAL_CLIENT_ID, () => this.settings), new KitsuProvider(() => this.settings)))
 		this.registry.register(new ComicsAggregatorProvider(
 			new ComicsProvider(() => this.settings.comicVineApiKey),
@@ -369,6 +386,12 @@ export default class LibraryPlugin extends Plugin {
 		})
 
 		this.addCommand({
+			id: 'add-catalog-manual',
+			name: 'Add catalog entry manually',
+			callback: () => this.openAddManual()
+		})
+
+		this.addCommand({
 			id: 'refresh-metadata',
 			name: tr('cmd.refresh'),
 			checkCallback: (checking: boolean) => {
@@ -411,7 +434,7 @@ export default class LibraryPlugin extends Plugin {
 				const isLibrary = !!target && this.settings.categories.some(
 					c => c.typeValue === toStr(target.fm.Type)
 				)
-				if (!isLibrary) return false
+				if (!isLibrary || (target && this.kindOf(target.fm) === 'people_private')) return false
 				if (!checking && target) new ShareModal(this.app, target.fm, target.name, this.coverProperty()).open()
 				return true
 			}
@@ -646,6 +669,16 @@ export default class LibraryPlugin extends Plugin {
 		}).open()
 	}
 
+	// Always let a user create an unlisted person or place without consulting Wikidata.
+	openAddManual(): void {
+		new PickTypeModal(this.app, this.addChoices(), (choice) => {
+			const target: Target = 'category' in choice ? choice.category : choice.type
+			new PromptModal(this.app, 'Entry name', (title) => {
+				if (title.trim()) void this.createManual(target, title.trim())
+			}).open()
+		}).open()
+	}
+
 	private async categoryFor(target: Target): Promise<ICategory> {
 		if (typeof target !== 'string') return target
 		const existing = this.settings.categories.find(c => c.contentType === target)
@@ -678,10 +711,11 @@ export default class LibraryPlugin extends Plugin {
 					...(tracking !== 'none' ? { 'My Rating': null } : {}),
 					...(tracking === 'watched' || tracking === 'both' ? { Complete: false } : {}),
 					...(tracking === 'progress' || tracking === 'both' ? { Progress: '' } : {}),
-					...(tracking === 'none' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
+					...(category.contentType === 'mtg' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
 					Date: todayDmy(),
 				})
 				ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
+			ensureCatalogFields(fm as Record<string, unknown>, category.contentType)
 			})
 			await this.app.workspace.getLeaf(false).openFile(file)
 			new Notice(tr('notice.created', { name: title }))
@@ -737,13 +771,14 @@ export default class LibraryPlugin extends Plugin {
 				...(tracking === 'progress' || tracking === 'both' ? { Progress: meta.progressTotal ? `0/${String(meta.progressTotal)}` : '' } : {}),
 				...(tracking !== 'none' ? { 'My Rating': null } : {}),
 				...(tracking === 'watched' || tracking === 'both' ? { Complete: false } : {}),
-				...(tracking === 'none' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
+				...(category.contentType === 'mtg' ? { Quantity: 0, 'Foil Quantity': 0, 'Etched Quantity': 0, Wishlist: false } : {}),
 				Date: todayDmy(),
 				Source: source,
 				'Source ID': sourceId,
 			}, extra)
 			this.applyMetaFields(fm as Record<string, unknown>, meta)
 			ensureOwnershipFields(fm as Record<string, unknown>, category.contentType)
+			ensureCatalogFields(fm as Record<string, unknown>, category.contentType)
 		})
 		return file
 	}
@@ -3728,7 +3763,7 @@ export default class LibraryPlugin extends Plugin {
 		const myRating = fm['My Rating'] ? toStr(fm['My Rating']) : ''
 		const kind = this.kindOf(fm)
 		const progressPercent = shownProgress(fm, kind)
-		const complete = trackingOf(kind) !== 'progress' && fm.Complete === true
+		const complete = (trackingOf(kind) === 'watched' || trackingOf(kind) === 'both') && fm.Complete === true
 		const url = safeUrl(fm.URL)
 
 		const header = createDiv()
@@ -3761,15 +3796,17 @@ export default class LibraryPlugin extends Plugin {
 			titleEl.setText(name)
 		}
 
-		const shareBtn = createEl('button')
-		shareBtn.classList.add('note-header-share')
-		shareBtn.setAttribute('aria-label', tr('share.title'))
-		setIcon(shareBtn, 'share-2')
-		shareBtn.addEventListener('click', (e) => {
-			e.preventDefault()
-			new ShareModal(this.app, fm, name, this.coverProperty()).open()
-		})
-		titleEl.appendChild(shareBtn)
+		if (kind !== 'people_private') {
+			const shareBtn = createEl('button')
+			shareBtn.classList.add('note-header-share')
+			shareBtn.setAttribute('aria-label', tr('share.title'))
+			setIcon(shareBtn, 'share-2')
+			shareBtn.addEventListener('click', (e) => {
+				e.preventDefault()
+				new ShareModal(this.app, fm, name, this.coverProperty()).open()
+			})
+			titleEl.appendChild(shareBtn)
+		}
 		infoSide.appendChild(titleEl)
 		const badges = createDiv({ cls: 'note-header-badges' })
 		renderPlatformLabels(badges, fm)
@@ -3791,7 +3828,7 @@ export default class LibraryPlugin extends Plugin {
 		if (creatorStr) addRow(tr('header.creator'), creatorStr)
 		if (cast.length > 0) addRow(tr('header.cast'), cast.join(', '))
 		const yearsStr = year + (endYear ? '–' + endYear : '')
-		if (yearsStr) addRow(tr('header.years'), yearsStr)
+		if (yearsStr && trackingOf(kind) !== 'none') addRow(tr('header.years'), yearsStr)
 		if (season) addRow(tr('header.seasons'), season)
 		const airing = this.airingFor(fm)
 		if (airing) addRow(tr('header.nextEpisode'), airingLabel(airing))
@@ -3856,6 +3893,32 @@ export default class LibraryPlugin extends Plugin {
 			infoSide.appendChild(controls)
 		}
 
+		if (kind === 'people_private') {
+			addRow('Relationship', toStr(fm.Relationship))
+			addRow('Birthday', toStr(fm.Birthday))
+			// Contact details remain only in the local note's editable properties.
+		} else if (kind === 'people_public') {
+			addRow('Born', toStr(fm.Born))
+			addRow('Died', toStr(fm.Died))
+			addRow('Occupation', toStrArray(fm.Occupation).join(', '))
+			addRow('Citizenship', toStrArray(fm.Citizenship).join(', '))
+			addRow('Description', toStr(fm.Description))
+		} else if (kind === 'place') {
+			addRow('Place type', toStrArray(fm['Place Type']).join(', '))
+			addRow('Region', toStrArray(fm.Region).join(', '))
+			addRow('Address', toStr(fm.Address))
+			const lat = Number(fm.Latitude), lon = Number(fm.Longitude)
+			if (Number.isFinite(lat) && Number.isFinite(lon) && fm.Latitude !== undefined && fm.Longitude !== undefined) {
+				addRow('Coordinates', lat.toFixed(5) + ', ' + lon.toFixed(5))
+			}
+			addRow('Visited', fm.Visited === true ? 'Yes' : 'No')
+		} else if (kind === 'misc') {
+			addRow('Owned', fm.Owned === true ? 'Yes' : 'No')
+			addRow('Owned format', toStr(fm['Owned Format']))
+			addRow('Storage', toStr(fm.Storage))
+			addRow('Description', toStr(fm.Description))
+		}
+
 		if (progressPercent !== null) {
 			const progRow = createDiv()
 			progRow.classList.add('note-header-row')
@@ -3891,7 +3954,7 @@ export default class LibraryPlugin extends Plugin {
 		this.buildMediaBlock(wrap, fm, name)
 		this.buildSeasonsBlock(wrap, fm, file)
 		this.buildTrophiesBlock(wrap, fm, file)
-		if (kind !== 'mtg') this.buildRecommendations(wrap, fm)
+		if (trackingOf(kind) !== 'none') this.buildRecommendations(wrap, fm)
 		return wrap
 	}
 
